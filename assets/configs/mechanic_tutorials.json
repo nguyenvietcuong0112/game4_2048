@@ -1,0 +1,62 @@
+{
+  "_script": {
+    "assembly": "Game",
+    "namespace": "Game",
+    "class": "MechanicTutorialContentSource",
+    "source": "gameplay_assets_all_918d53109f422942557a9f7bf7660368.bundle/CAB-83ebb146b2b39830f83c925042e65c48"
+  },
+  "data": {
+    "m_GameObject": {
+      "m_FileID": 0,
+      "m_PathID": 0
+    },
+    "m_Enabled": 1,
+    "m_Script": {
+      "m_FileID": 1,
+      "m_PathID": 7391848793074320910
+    },
+    "m_Name": "MechanicTutorialContentSource",
+    "_entries": [
+      {
+        "_mechanic": 0,
+        "_title": "Ice Blocks",
+        "_subtitle": "New mechanic unlocked!",
+        "_note": "Merge up to the number on the ice to free it!",
+        "_illustration": {
+          "m_FileID": 0,
+          "m_PathID": -6954060800804878102
+        }
+      },
+      {
+        "_mechanic": 2,
+        "_title": "Dud Blocks",
+        "_subtitle": "New mechanic unlocked!",
+        "_note": "Duds can't merge, but you can slide them out of the way!",
+        "_illustration": {
+          "m_FileID": 0,
+          "m_PathID": -3112111625697388294
+        }
+      },
+      {
+        "_mechanic": 3,
+        "_title": "Stationary Blocks",
+        "_subtitle": "New mechanic unlocked!",
+        "_note": "Stationary blocks can't move, but you can merge with them!",
+        "_illustration": {
+          "m_FileID": 0,
+          "m_PathID": -3406700720190438562
+        }
+      },
+      {
+        "_mechanic": 4,
+        "_title": "Arrow Blocks",
+        "_subtitle": "New mechanic unlocked!",
+        "_note": "Arrow Blocks only move in the direction of the arrows!",
+        "_illustration": {
+          "m_FileID": 0,
+          "m_PathID": -8620783616686175744
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,394 @@
+{
+  "liveops_attributes": {
+    "ab_variant_ids": []
+  },
+  "asset_bundle_config": {},
+  "configs": {
+    "localizations": {
+      "url": "https://localisations-server-production-cdn.tripledotapi.com/api/v1/localisations?app_id=100&timestamp=1788180992&type=live"
+    },
+    "adjust_config": {
+      "url": "https://gs-prd-web-cdn.tripledotapi.com/api/v4/adjust_config?application_id=187&id%5B%5D=4262&id%5B%5D=4261&id%5B%5D=4260&id%5B%5D=4259&id%5B%5D=4258&id%5B%5D=4257&id%5B%5D=4256&id%5B%5D=4255&id%5B%5D=4254&id%5B%5D=4253&id%5B%5D=4252&id%5B%5D=4251&id%5B%5D=4250&timestamp=23303380619"
+    },
+    "firebase_config": {
+      "url": "https://gs-prd-web-cdn.tripledotapi.com/api/v4/firebase_config?application_id=187&id%5B%5D=4262&id%5B%5D=4261&id%5B%5D=4260&id%5B%5D=4259&id%5B%5D=4258&id%5B%5D=4257&id%5B%5D=4256&id%5B%5D=4255&id%5B%5D=4254&id%5B%5D=4253&id%5B%5D=4252&id%5B%5D=4251&id%5B%5D=4250&timestamp=23303380619"
+    },
+    "chapter_set": {
+      "url": "https://gs-prd-web-cdn.tripledotapi.com/api/v3/metagame/chapter_based/chapter_sets/manifests?id=150&namespace=Concord%3A%3AChapterSets&timestamp=1793267574.gz",
+      "manifest_url": "https://gs-prd-web-cdn.tripledotapi.com/api/v3/metagame/chapter_based/chapter_sets/manifests?id=150&namespace=Concord%3A%3AChapterSets&timestamp=1793267574.gz"
+    },
+    "level_chests_config": {
+      "url": "https://gs-prd-web-cdn.tripledotapi.com/api/v4/concord/level_chest_configs/9?application_id=187&timestamp=1788180993"
+    }
+  },
+  "ad_remote_config": {
+    "interstitial_prefetch_delay": 30,
+    "rewarded_video_prefetch_delay": 15,
+    "mediation": "max",
+    "amazon": {
+      "android_banner_id": "0dc21742-4ddc-4535-9267-eb5fdfec8253",
+      "android_interstitial_id": "e3ce370d-d84a-40e1-805f-1bc83cef9246",
+      "android_leaderboard_id": "6be7d4e5-bfd2-4aa9-97e5-b6f790b969a4",
+      "android_sdk_key": "2fd3ac2f-15b4-4faf-af85-a21fec697058",
+      "ios_banner_id": "f46296c1-bf6d-469a-9d6d-eefe06430635",
+      "ios_interstitial_id": "09f3fea6-a553-418c-b9a8-59ce4fd599f9",
+      "ios_leaderboard_id": "0da63130-52da-4e05-88ba-ffc69c0a1d76",
+      "ios_sdk_key": "1762126c-e323-4ae8-a8a4-f605a9528f76"
+    },
+    "interstitial_adslots": {
+      "adslots": {
+        "1080.1052": {
+          "adunits": [
+            {
+              "ranking_multiplier": 1.0,
+              "adunit": {
+                "mediation": "max",
+                "tag": "2",
+                "ios_adunit_id": "3aa2c7b22924a140",
+                "android_adunit_id": "a46eddf5c9f944b3",
+                "retry_enabled": true,
+                "sequential_loading_enabled": true
+              },
+              "cpm_floor": {
+                "waterfall": {
+                  "lines": [
+                    {
+                      "type": "fixed",
+                      "value": 0.01
+                    }
+                  ]
+                }
+              },
+              "request_count_limit": 5
+            }
+          ]
+        }
+      }
+    },
+    "rewarded_video_adslots": {
+      "adslots": {
+        "1081.1053": {
+          "adunits": [
+            {
+              "ranking_multiplier": 1.0,
+              "adunit": {
+                "mediation": "max",
+                "tag": "2",
+                "ios_adunit_id": "d64160ca23304aa9",
+                "android_adunit_id": "945880ab8046f61c",
+                "retry_enabled": true,
+                "sequential_loading_enabled": true
+              },
+              "cpm_floor": {
+                "waterfall": {
+                  "lines": [
+                    {
+                      "type": "fixed",
+                      "value": 0.01
+                    }
+                  ]
+                }
+              },
+              "request_count_limit": 5
+            }
+          ]
+        }
+      }
+    },
+    "rewarded_video_placements": [],
+    "placements": {
+      "game_end_win": {
+        "interstitial_probability": 1.0,
+        "interstitial": {
+          "newcomers_restrictions": {
+            "first_session_only": false,
+            "block_first_seconds": 0,
+            "block_first_impressions": 15,
+            "timer_counts_in_background": false
+          },
+          "ad_frequency_restrictions": {
+            "operator": "and",
+            "rules": [
+              {
+                "operator": "and",
+                "rules": [
+                  {
+                    "type": "time_based",
+                    "reset_timer_after_rewarded_video": true,
+                    "reset_timer_after_interstitial": true,
+                    "min_time_between_interstitials": 120,
+                    "timer_counts_in_background": false,
+                    "min_time_placements": [
+                      "any_int",
+                      "any_rv"
+                    ],
+                    "min_time_adjustment": 0,
+                    "min_time_multiplier": 1.0,
+                    "min_time_min_value": 0,
+                    "min_time_max_value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "game_end_lose": {
+        "interstitial_probability": 1.0,
+        "interstitial": {
+          "newcomers_restrictions": {
+            "first_session_only": false,
+            "block_first_seconds": 0,
+            "block_first_impressions": 15,
+            "timer_counts_in_background": false
+          },
+          "ad_frequency_restrictions": {
+            "operator": "and",
+            "rules": [
+              {
+                "operator": "and",
+                "rules": [
+                  {
+                    "type": "time_based",
+                    "reset_timer_after_rewarded_video": true,
+                    "reset_timer_after_interstitial": true,
+                    "min_time_between_interstitials": 120,
+                    "timer_counts_in_background": false,
+                    "min_time_placements": [
+                      "any_int",
+                      "any_rv"
+                    ],
+                    "min_time_adjustment": 0,
+                    "min_time_multiplier": 1.0,
+                    "min_time_min_value": 0,
+                    "min_time_max_value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "max": {
+      "ios_banner_id": "1e5297e7f81608dc",
+      "android_banner_id": "0d7fd0d4740d8000"
+    }
+  },
+  "ios_idfa_native_popup_enabled": true,
+  "popups": {
+    "order": [
+      "Google_CMP",
+      "Allow_Notifications",
+      "IDFA",
+      "Rate_Us",
+      "PushNotifications_Retry_OptIn"
+    ],
+    "triggers": {
+      "IDFA": {
+        "conditions": [
+          {
+            "app_starts": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20
+            ],
+            "game_starts": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          }
+        ]
+      },
+      "Google_CMP": {
+        "conditions": [
+          {
+            "app_starts": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20
+            ],
+            "game_starts": [
+              0
+            ]
+          }
+        ]
+      },
+      "Allow_Notifications": {
+        "conditions": [
+          {
+            "app_starts": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              25,
+              30,
+              35,
+              40,
+              45,
+              50
+            ],
+            "game_starts": [
+              0
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "ads_interstitial_prefetch_delay": 30,
+  "ads_rewarded_video_prefetch_delay": 15,
+  "client_ad_revenue_timeframe": 24.0,
+  "client_ad_revenue_threshold": 0.15,
+  "ads_mediation": "max",
+  "analytics_batching_delay": 3000,
+  "analytics_batching_startup_duration": 60000,
+  "analytics_batching_delay_startup": 1000,
+  "chapter_set_id": 150,
+  "coins_for_wins": {
+    "schema": [
+      {
+        "from": 1,
+        "to": -1,
+        "reward": [
+          {
+            "id": 21807,
+            "reward_type": "coins",
+            "attributes": {},
+            "type": "coins",
+            "quantity": 25,
+            "amount": 25
+          }
+        ]
+      }
+    ]
+  },
+  "game_end_flow": {
+    "enable_try_again": false,
+    "play_on": {
+      "price_coins": 450.0,
+      "price_increment": 150,
+      "additional_time_seconds": 30
+    },
+    "reward_multiplier": {
+      "enabled": false
+    }
+  },
+  "lives": {
+    "lives_max_revivable_number": 5,
+    "lives_max_allowed_number": 5,
+    "onboarding_infinite_lives_duration": 600,
+    "price_coins": 450,
+    "regeneration_time": 1800,
+    "enable_rewarded_purchase": true,
+    "amount_for_rewarded": 1
+  },
+  "powerups": {
+    "level_up": {
+      "unlock_level": 17,
+      "initial_inventory": 3,
+      "price_coins": 600,
+      "amount_for_coins": 3,
+      "amount_for_rewarded": 1,
+      "enable_tutorial": true,
+      "enable_rewarded_purchase": true
+    },
+    "time_freeze": {
+      "unlock_level": 27,
+      "duration_seconds": 20,
+      "initial_inventory": 3,
+      "price_coins": 450,
+      "amount_for_coins": 3,
+      "amount_for_rewarded": 1,
+      "enable_tutorial": true,
+      "enable_rewarded_purchase": true
+    }
+  },
+  "telemetry": {
+    "activation_rate": 0.2,
+    "enabled": true,
+    "enabled_metrics": [
+      "FirstLoadTime",
+      "SubsequentLoadTime",
+      "FrameStability",
+      "FrameStabilityAverage",
+      "RuntimeMemory",
+      "Battery",
+      "ThermalState",
+      "ResumeTime",
+      "AppInstallSize",
+      "DataDownloadVolume",
+      "RuntimeMemorySnapshot",
+      "MemoryHighWatermark",
+      "LowMemoryState",
+      "LMKsConfidence"
+    ],
+    "low_end_devices_enabled": true
+  },
+  "ads_max_ios_banner_id": "1e5297e7f81608dc",
+  "ads_max_android_banner_id": "0d7fd0d4740d8000",
+  "ads_amazon_ios_sdk_key": "1762126c-e323-4ae8-a8a4-f605a9528f76",
+  "ads_amazon_ios_interstitial_id": "09f3fea6-a553-418c-b9a8-59ce4fd599f9",
+  "ads_amazon_ios_banner_id": "f46296c1-bf6d-469a-9d6d-eefe06430635",
+  "ads_amazon_ios_leaderboard_id": "0da63130-52da-4e05-88ba-ffc69c0a1d76",
+  "ads_amazon_android_sdk_key": "2fd3ac2f-15b4-4faf-af85-a21fec697058",
+  "ads_amazon_android_interstitial_id": "e3ce370d-d84a-40e1-805f-1bc83cef9246",
+  "ads_amazon_android_banner_id": "0dc21742-4ddc-4535-9267-eb5fdfec8253",
+  "ads_amazon_android_leaderboard_id": "6be7d4e5-bfd2-4aa9-97e5-b6f790b969a4"
+}

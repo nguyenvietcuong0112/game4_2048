@@ -1,0 +1,83 @@
+{
+  "_script": {
+    "assembly": "Game",
+    "namespace": "Game.BlockOrder",
+    "class": "CameraAnimationConfig",
+    "source": "gameplay_assets_all_918d53109f422942557a9f7bf7660368.bundle/CAB-83ebb146b2b39830f83c925042e65c48"
+  },
+  "data": {
+    "m_GameObject": {
+      "m_FileID": 0,
+      "m_PathID": 0
+    },
+    "m_Enabled": 1,
+    "m_Script": {
+      "m_FileID": 1,
+      "m_PathID": -5160656119728331563
+    },
+    "m_Name": "CameraAnimationConfig",
+    "IntroSizeOffset": 5.0,
+    "IntroDuration": 0.3499999940395355,
+    "IntroCurve": {
+      "m_Curve": [
+        {
+          "time": 0.0,
+          "value": 0.0,
+          "inSlope": 0.0,
+          "outSlope": 0.0,
+          "weightedMode": 0,
+          "inWeight": 0.0,
+          "outWeight": 0.0
+        },
+        {
+          "time": 0.2541460394859314,
+          "value": 0.38741832971572876,
+          "inSlope": 2.369694948196411,
+          "outSlope": 2.369694948196411,
+          "weightedMode": 0,
+          "inWeight": 0.3333333432674408,
+          "outWeight": 0.048266761004924774
+        },
+        {
+          "time": 1.0,
+          "value": 1.0,
+          "inSlope": 0.0,
+          "outSlope": 0.0,
+          "weightedMode": 0,
+          "inWeight": 0.0,
+          "outWeight": 0.0
+        }
+      ],
+      "m_PreInfinity": 2,
+      "m_PostInfinity": 2,
+      "m_RotationOrder": 4
+    },
+    "WinZoomInFactor": 0.8999999761581421,
+    "WinDuration": 0.3499999940395355,
+    "WinCurve": {
+      "m_Curve": [
+        {
+          "time": 0.0,
+          "value": 0.0,
+          "inSlope": 2.0,
+          "outSlope": 2.0,
+          "weightedMode": 0,
+          "inWeight": 0.0,
+          "outWeight": 0.0
+        },
+        {
+          "time": 1.0,
+          "value": 1.0,
+          "inSlope": 0.0,
+          "outSlope": 0.0,
+          "weightedMode": 0,
+          "inWeight": 0.0,
+          "outWeight": 0.0
+        }
+      ],
+      "m_PreInfinity": 2,
+      "m_PostInfinity": 2,
+      "m_RotationOrder": 4
+    }
+  }
+}

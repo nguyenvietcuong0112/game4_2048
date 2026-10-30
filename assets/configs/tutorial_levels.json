@@ -1,0 +1,37 @@
+{
+  "_script": {
+    "assembly": "Game",
+    "namespace": "Game",
+    "class": "TutorialLevelsSource",
+    "source": "gameplay_assets_all_918d53109f422942557a9f7bf7660368.bundle/CAB-83ebb146b2b39830f83c925042e65c48"
+  },
+  "data": {
+    "m_GameObject": {
+      "m_FileID": 0,
+      "m_PathID": 0
+    },
+    "m_Enabled": 1,
+    "m_Script": {
+      "m_FileID": 1,
+      "m_PathID": -2691182157611831497
+    },
+    "m_Name": "TutorialLevelsSource",
+    "_entries": [
+      {
+        "_levelNumber": 1,
+        "_tutorialText": "Drag a block into another with the same number to merge them!",
+        "_showsTutorialHand": 1
+      },
+      {
+        "_levelNumber": 2,
+        "_tutorialText": "Merging doubles the number. Keep going!",
+        "_showsTutorialHand": 0
+      },
+      {
+        "_levelNumber": 3,
+        "_tutorialText": "Merge until only one numbered block remains to win!",
+        "_showsTutorialHand": 0
+      }
+    ]
+  }
+}

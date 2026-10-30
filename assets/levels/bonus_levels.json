@@ -1,0 +1,6261 @@
+[
+  {
+    "name": "Level_18",
+    "data": {
+      "layout_text_json": {
+        "cols": 4,
+        "rows": 5,
+        "walls": [],
+        "time": 180,
+        "timerDisabled": false,
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 0,
+            "row": 1
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 0,
+            "row": 2
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 16,
+            "col": 0,
+            "row": 3
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 0,
+            "row": 4
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 2,
+            "row": 4
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 128,
+            "col": 2,
+            "row": 3
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 2,
+            "row": 2
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 512,
+            "col": 2,
+            "row": 1
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 1,
+            "row": 0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Level_19",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 9,
+        "walls": [],
+        "time": 180,
+        "timerDisabled": false,
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 1,
+            "row": 0
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 0
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 4,
+            "row": 0
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 5,
+            "row": 0
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 0,
+            "row": 1
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 1,
+            "row": 1
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 2,
+            "row": 1
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 1
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 5,
+            "row": 1
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 0,
+            "row": 2,
+            "iceTarget": 32
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 3,
+            "row": 2,
+            "iceTarget": 1024
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 512,
+            "col": 0,
+            "row": 3,
+            "iceTarget": 512,
+            "movement": "vertical"
+          },
+          {
+            "key": "O",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 0,
+            "row": 5
+          },
+          {
+            "key": "P",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 0,
+            "row": 7
+          },
+          {
+            "key": "Q",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 512,
+            "col": 2,
+            "row": 3
+          },
+          {
+            "key": "R",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 64,
+            "col": 2,
+            "row": 6
+          },
+          {
+            "key": "S",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                0,
+                3
+              ],
+              [
+                0,
+                4
+              ],
+              [
+                0,
+                5
+              ]
+            ],
+            "number": 1024,
+            "col": 3,
+            "row": 3,
+            "iceTarget": 1024
+          },
+          {
+            "key": "T",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 3,
+            "iceTarget": 1024
+          },
+          {
+            "key": "U",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 4,
+            "row": 5,
+            "iceTarget": 1024
+          },
+          {
+            "key": "V",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 4,
+            "row": 6,
+            "iceTarget": 1024
+          },
+          {
+            "key": "W",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 4,
+            "row": 7,
+            "iceTarget": 1024
+          },
+          {
+            "key": "X",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 5,
+            "row": 3,
+            "iceTarget": 1024
+          },
+          {
+            "key": "Y",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 5,
+            "row": 5,
+            "iceTarget": 1024
+          },
+          {
+            "key": "Z",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 16,
+            "col": 5,
+            "row": 6,
+            "iceTarget": 1024
+          },
+          {
+            "key": "S1",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 128,
+            "col": 5,
+            "row": 7,
+            "iceTarget": 1024
+          },
+          {
+            "key": "S2",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 5,
+            "row": 8,
+            "iceTarget": 1024
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Level_20",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 10,
+        "walls": [],
+        "time": 180,
+        "timerDisabled": false,
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                2
+              ],
+              [
+                2,
+                3
+              ]
+            ],
+            "number": 1024,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                2
+              ]
+            ],
+            "number": 1024,
+            "col": 3,
+            "row": 0
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 0,
+            "row": 4
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                3,
+                0
+              ],
+              [
+                3,
+                1
+              ],
+              [
+                3,
+                2
+              ],
+              [
+                3,
+                3
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                0,
+                5
+              ],
+              [
+                1,
+                5
+              ],
+              [
+                2,
+                5
+              ],
+              [
+                3,
+                5
+              ]
+            ],
+            "number": 1024,
+            "col": 3,
+            "row": 4
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 0,
+            "row": 8
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                1,
+                2
+              ]
+            ],
+            "number": 1024,
+            "col": 3,
+            "row": 6
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 6,
+            "row": 0
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 3,
+            "row": 4
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "MergeArrowColorsVertical",
+    "data": {
+      "layout_text_json": {
+        "cols": 5,
+        "rows": 10,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "P128",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 128,
+            "col": 0,
+            "row": 0,
+            "movement": "horizontal"
+          },
+          {
+            "key": "P256",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 3,
+            "row": 0,
+            "movement": "vertical"
+          },
+          {
+            "key": "P64",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 64,
+            "col": 0,
+            "row": 2,
+            "movement": "vertical"
+          },
+          {
+            "key": "P512",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 512,
+            "col": 3,
+            "row": 2,
+            "movement": "horizontal"
+          },
+          {
+            "key": "P32",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 2,
+            "row": 3,
+            "movement": "horizontal"
+          },
+          {
+            "key": "P1024",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 4,
+            "row": 3,
+            "movement": "vertical"
+          },
+          {
+            "key": "Dud",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 4,
+            "movement": "horizontal"
+          },
+          {
+            "key": "P16",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 3,
+            "row": 5,
+            "movement": "vertical"
+          },
+          {
+            "key": "P8",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 0,
+            "row": 6,
+            "movement": "horizontal"
+          },
+          {
+            "key": "P2a",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 6,
+            "movement": "vertical"
+          },
+          {
+            "key": "P2048",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2048,
+            "col": 2,
+            "row": 8,
+            "movement": "horizontal"
+          },
+          {
+            "key": "P4",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 1,
+            "row": 8,
+            "movement": "vertical"
+          },
+          {
+            "key": "P2b",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 9,
+            "movement": "horizontal"
+          }
+        ],
+        "time": 120,
+        "timerDisabled": true
+      }
+    }
+  },
+  {
+    "name": "MergeBigCorridor",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 5,
+        "walls": [
+          [
+            3,
+            0
+          ],
+          [
+            3,
+            4
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 1,
+            "number": 2,
+            "movement": "horizontal"
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "col": 4,
+            "row": 1,
+            "number": 2,
+            "movement": "horizontal"
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 3,
+            "number": 2
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 5,
+            "row": 3,
+            "number": 2
+          }
+        ],
+        "time": 120,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "MergeBigDud",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 6,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 0,
+            "number": 2
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "col": 3,
+            "row": 5,
+            "number": 2
+          },
+          {
+            "key": "DUD",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "col": 2,
+            "row": 2
+          }
+        ],
+        "time": 90,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "MergeBigMechanics",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 6,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 0,
+            "number": 2
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "col": 3,
+            "row": 0,
+            "number": 2
+          },
+          {
+            "key": "T",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "col": 0,
+            "row": 3,
+            "number": 4,
+            "iceTarget": 4
+          },
+          {
+            "key": "P",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "col": 5,
+            "row": 4,
+            "number": 8,
+            "pinned": true
+          }
+        ],
+        "time": 120,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "MergeDominoChain",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 6,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 0,
+            "number": 2
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 4,
+            "row": 0,
+            "number": 2
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 5,
+            "number": 2
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 4,
+            "row": 5,
+            "number": 2
+          }
+        ],
+        "time": 90,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "MergeDudIceVertical",
+    "data": {
+      "layout_text_json": {
+        "cols": 4,
+        "rows": 7,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "DudTall",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "Pinned",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 8,
+            "col": 1,
+            "row": 0,
+            "pinned": true
+          },
+          {
+            "key": "DudSingle",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 3,
+            "row": 2
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 3,
+            "movement": "vertical"
+          },
+          {
+            "key": "Ice",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 1,
+            "row": 3,
+            "iceTarget": 4
+          },
+          {
+            "key": "DudL",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "col": 2,
+            "row": 4
+          },
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 6
+          }
+        ],
+        "time": 120,
+        "timerDisabled": true
+      }
+    }
+  },
+  {
+    "name": "MergePinnedChainVertical",
+    "data": {
+      "layout_text_json": {
+        "cols": 4,
+        "rows": 7,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "Pinned8",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 8,
+            "col": 1,
+            "row": 0,
+            "pinned": true
+          },
+          {
+            "key": "Dud",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 1,
+            "row": 3
+          },
+          {
+            "key": "Pinned4",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 3,
+            "row": 3,
+            "pinned": true
+          },
+          {
+            "key": "Pinned2",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 6,
+            "pinned": true
+          },
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 6
+          }
+        ],
+        "time": 120,
+        "timerDisabled": true
+      }
+    }
+  },
+  {
+    "name": "MergePinnedTower",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 7,
+        "walls": [
+          [
+            0,
+            2
+          ]
+        ],
+        "time": 180,
+        "timerDisabled": false,
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 4,
+            "row": 0
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 5,
+            "row": 3,
+            "pinned": true
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 16,
+            "col": 0,
+            "row": 6,
+            "movement": "horizontal"
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 32,
+            "col": 2,
+            "row": 3,
+            "pinned": true
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 4,
+            "row": 6
+          },
+          {
+            "key": "Stn",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 4,
+            "movement": "none"
+          },
+          {
+            "key": "Dud",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 3,
+            "row": 1
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "MergeShapeSizes",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 6,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "SQ",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "col": 0,
+            "row": 0,
+            "number": 4
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 4,
+            "row": 0,
+            "number": 2
+          },
+          {
+            "key": "V",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "col": 4,
+            "row": 3,
+            "number": 2
+          }
+        ],
+        "time": 90,
+        "timerDisabled": true
+      }
+    }
+  },
+  {
+    "name": "MergeSingleAxisVertical",
+    "data": {
+      "layout_text_json": {
+        "cols": 4,
+        "rows": 7,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 1,
+            "row": 0,
+            "movement": "vertical"
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 0,
+            "row": 3,
+            "movement": "horizontal"
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 3,
+            "row": 3,
+            "movement": "vertical"
+          },
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 1,
+            "row": 4,
+            "movement": "vertical"
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 1,
+            "row": 6,
+            "movement": "horizontal"
+          }
+        ],
+        "time": 120,
+        "timerDisabled": true
+      }
+    }
+  },
+  {
+    "name": "Playtest_01",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 7,
+        "walls": [
+          [
+            0,
+            2
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            4,
+            0
+          ],
+          [
+            5,
+            0
+          ],
+          [
+            6,
+            0
+          ],
+          [
+            6,
+            1
+          ],
+          [
+            5,
+            1
+          ],
+          [
+            6,
+            2
+          ],
+          [
+            0,
+            6
+          ],
+          [
+            6,
+            6
+          ],
+          [
+            0,
+            5
+          ],
+          [
+            1,
+            6
+          ],
+          [
+            0,
+            4
+          ],
+          [
+            1,
+            5
+          ],
+          [
+            2,
+            6
+          ],
+          [
+            5,
+            6
+          ],
+          [
+            4,
+            6
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            6,
+            5
+          ],
+          [
+            6,
+            4
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 2,
+            "row": 5
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 1,
+            "row": 2
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 4,
+            "row": 2
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 1,
+            "row": 4
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 4,
+            "row": 4
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 16,
+            "col": 0,
+            "row": 3
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 512,
+            "col": 5,
+            "row": 3
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2048,
+            "col": 2,
+            "row": 3
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 3
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 4096,
+            "col": 4,
+            "row": 3
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 2
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 3,
+            "row": 4
+          }
+        ],
+        "time": 90,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_02",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 8,
+        "walls": [
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ],
+          [
+            4,
+            0
+          ],
+          [
+            5,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            1,
+            3
+          ],
+          [
+            5,
+            1
+          ],
+          [
+            5,
+            2
+          ],
+          [
+            5,
+            3
+          ],
+          [
+            1,
+            6
+          ],
+          [
+            1,
+            7
+          ],
+          [
+            5,
+            6
+          ],
+          [
+            5,
+            7
+          ],
+          [
+            2,
+            1
+          ],
+          [
+            3,
+            1
+          ],
+          [
+            4,
+            1
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 2,
+            "row": 2
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 0,
+            "row": 2
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 8,
+            "col": 6,
+            "row": 0
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 512,
+            "col": 6,
+            "row": 2
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 2,
+            "row": 6
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                2,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 2,
+            "row": 7
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 0,
+            "row": 6
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 6,
+            "row": 6
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 2048,
+            "col": 0,
+            "row": 4
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 4096,
+            "col": 5,
+            "row": 4
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 4
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 4
+          }
+        ],
+        "time": 90,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_03",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 9,
+        "walls": [
+          [
+            0,
+            4
+          ],
+          [
+            0,
+            5
+          ],
+          [
+            6,
+            4
+          ],
+          [
+            6,
+            5
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 8
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 6,
+            "row": 8
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 8,
+            "col": 0,
+            "row": 6
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 5,
+            "row": 6
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 1,
+            "row": 7
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 4,
+            "row": 7
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 0,
+            "row": 2
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 4,
+            "row": 2
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 512,
+            "col": 3,
+            "row": 2
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 2048,
+            "col": 5,
+            "row": 0
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "col": 1,
+            "row": 4
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "col": 5,
+            "row": 4
+          }
+        ],
+        "time": 105,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_04",
+    "data": {
+      "layout_text_json": {
+        "cols": 5,
+        "rows": 8,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 512,
+            "col": 4,
+            "row": 0
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                2
+              ],
+              [
+                2,
+                2
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 4096,
+            "col": 1,
+            "row": 3
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 128,
+            "col": 1,
+            "row": 2
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 0,
+            "row": 2
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 4,
+            "row": 2
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2048,
+            "col": 0,
+            "row": 4
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 4
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 0,
+            "row": 6
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 1,
+            "row": 6
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 2,
+            "row": 6
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 64,
+            "col": 3,
+            "row": 6
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 6
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 1,
+            "row": 1
+          },
+          {
+            "key": "O",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 1,
+            "row": 0
+          }
+        ],
+        "time": 105,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_05",
+    "data": {
+      "layout_text_json": {
+        "cols": 8,
+        "rows": 6,
+        "walls": [
+          [
+            3,
+            3
+          ],
+          [
+            4,
+            3
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            0,
+            5
+          ],
+          [
+            0,
+            4
+          ],
+          [
+            0,
+            3
+          ],
+          [
+            7,
+            5
+          ],
+          [
+            7,
+            4
+          ],
+          [
+            7,
+            3
+          ],
+          [
+            0,
+            2
+          ],
+          [
+            7,
+            2
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 1,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 5,
+            "row": 4
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 16,
+            "col": 5,
+            "row": 3
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 2,
+            "row": 1
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 2048,
+            "col": 6,
+            "row": 1
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 3,
+            "row": 0
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 512,
+            "col": 5,
+            "row": 0
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4096,
+            "col": 5,
+            "row": 1
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 1
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 1,
+            "row": 4
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 1,
+            "row": 3
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 1,
+            "row": 2
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 2
+          }
+        ],
+        "time": 150,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_06",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 7,
+        "walls": [
+          [
+            0,
+            3
+          ],
+          [
+            1,
+            3
+          ],
+          [
+            5,
+            3
+          ],
+          [
+            4,
+            3
+          ],
+          [
+            0,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            4,
+            2
+          ],
+          [
+            5,
+            2
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 6
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 5,
+            "row": 6
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 512,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 8,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 4,
+            "row": 0
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4096,
+            "col": 2,
+            "row": 2
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 32,
+            "col": 3,
+            "row": 2
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 64,
+            "col": 0,
+            "row": 5
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 4,
+            "row": 5
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 1,
+            "row": 4
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 3,
+            "row": 4
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 2,
+            "row": 5
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 2,
+            "row": 6
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 0,
+            "row": 4
+          },
+          {
+            "key": "O",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2048,
+            "col": 5,
+            "row": 4
+          }
+        ],
+        "time": 150,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_07",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 8,
+        "walls": [
+          [
+            2,
+            0
+          ],
+          [
+            3,
+            0
+          ],
+          [
+            3,
+            1
+          ],
+          [
+            2,
+            1
+          ],
+          [
+            2,
+            6
+          ],
+          [
+            3,
+            6
+          ],
+          [
+            3,
+            7
+          ],
+          [
+            2,
+            7
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 3
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 4
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 0,
+            "row": 1
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 8,
+            "col": 4,
+            "row": 0
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 4,
+            "row": 1
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 0,
+            "row": 6
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 512,
+            "col": 0,
+            "row": 5
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 4,
+            "row": 6
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 4,
+            "row": 5
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 64,
+            "col": 0,
+            "row": 3
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 2048,
+            "col": 4,
+            "row": 3
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 2,
+            "row": 2
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 3,
+            "row": 2
+          }
+        ],
+        "time": 135,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_08",
+    "data": {
+      "layout_text_json": {
+        "cols": 5,
+        "rows": 8,
+        "walls": [
+          [
+            0,
+            5
+          ],
+          [
+            1,
+            5
+          ],
+          [
+            1,
+            6
+          ],
+          [
+            0,
+            6
+          ],
+          [
+            3,
+            1
+          ],
+          [
+            4,
+            1
+          ],
+          [
+            4,
+            2
+          ],
+          [
+            3,
+            2
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 3,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 0,
+            "row": 7
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 3,
+            "row": 5
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 8,
+            "col": 4,
+            "row": 5
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 32,
+            "col": 0,
+            "row": 1
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 1,
+            "row": 1
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 2048,
+            "col": 2,
+            "row": 7
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 0,
+            "row": 4
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 512,
+            "col": 0,
+            "row": 3
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 4
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 16,
+            "col": 3,
+            "row": 3
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 2,
+            "row": 3
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "col": 2,
+            "row": 1
+          },
+          {
+            "key": "O",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 2,
+            "row": 5
+          },
+          {
+            "key": "P",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 2,
+            "row": 6
+          }
+        ],
+        "time": 140,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_09",
+    "data": {
+      "layout_text_json": {
+        "cols": 6,
+        "rows": 9,
+        "walls": [],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 128,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                1,
+                2
+              ]
+            ],
+            "number": 512,
+            "col": 4,
+            "row": 0,
+            "iceTarget": 512
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 16,
+            "col": 0,
+            "row": 3,
+            "iceTarget": 16
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                2
+              ]
+            ],
+            "number": 32,
+            "col": 4,
+            "row": 3,
+            "iceTarget": 32
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 4,
+            "col": 1,
+            "row": 1
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 8,
+            "col": 4,
+            "row": 1
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                2
+              ]
+            ],
+            "number": 1024,
+            "col": 0,
+            "row": 6,
+            "iceTarget": 1024
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                1,
+                2
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 256,
+            "col": 4,
+            "row": 6,
+            "iceTarget": 256
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 7
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 4
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "col": 2,
+            "row": 1
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "col": 3,
+            "row": 1
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "col": 1,
+            "row": 5
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "col": 4,
+            "row": 5
+          },
+          {
+            "key": "O",
+            "cells": [
+              [
+                0,
+                2
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 0,
+            "row": 0,
+            "iceTarget": 64
+          }
+        ],
+        "time": 100,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_10",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 8,
+        "walls": [
+          [
+            0,
+            0
+          ],
+          [
+            6,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            5,
+            0
+          ],
+          [
+            5,
+            1
+          ],
+          [
+            5,
+            2
+          ],
+          [
+            0,
+            6
+          ],
+          [
+            1,
+            5
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            6,
+            6
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 2048,
+            "col": 0,
+            "row": 1,
+            "iceTarget": 2048
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 32,
+            "col": 0,
+            "row": 4,
+            "iceTarget": 32
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 1024,
+            "col": 6,
+            "row": 1,
+            "iceTarget": 1024
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 6,
+            "row": 4,
+            "iceTarget": 128
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 2,
+            "row": 2
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 0,
+            "row": 6
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 5,
+            "row": 6,
+            "iceTarget": 256
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 4,
+            "col": 2,
+            "row": 5
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 64,
+            "col": 4,
+            "row": 5,
+            "iceTarget": 64
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 1,
+            "row": 3
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 4,
+            "row": 3
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 4096,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 1,
+            "row": 4
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 4,
+            "row": 4
+          },
+          {
+            "key": "O",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 512,
+            "col": 3,
+            "row": 5
+          },
+          {
+            "key": "P",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 0,
+            "row": 3
+          },
+          {
+            "key": "Q",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 6,
+            "row": 3
+          }
+        ],
+        "time": 135,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_11",
+    "data": {
+      "layout_text_json": {
+        "cols": 7,
+        "rows": 8,
+        "walls": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            2
+          ],
+          [
+            0,
+            3
+          ],
+          [
+            0,
+            5
+          ],
+          [
+            1,
+            6
+          ],
+          [
+            2,
+            7
+          ],
+          [
+            1,
+            7
+          ],
+          [
+            0,
+            7
+          ],
+          [
+            0,
+            6
+          ],
+          [
+            4,
+            7
+          ],
+          [
+            5,
+            7
+          ],
+          [
+            6,
+            7
+          ],
+          [
+            5,
+            6
+          ],
+          [
+            6,
+            6
+          ],
+          [
+            6,
+            5
+          ],
+          [
+            6,
+            3
+          ],
+          [
+            6,
+            2
+          ],
+          [
+            6,
+            1
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 32,
+            "col": 0,
+            "row": 4
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 16,
+            "col": 6,
+            "row": 4
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 4096,
+            "col": 2,
+            "row": 6,
+            "iceTarget": 4096
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                2
+              ],
+              [
+                1,
+                2
+              ],
+              [
+                2,
+                2
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 1024,
+            "col": 2,
+            "row": 3,
+            "iceTarget": 1024
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 128,
+            "col": 0,
+            "row": 0
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 256,
+            "col": 2,
+            "row": 0
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 5,
+            "row": 0
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 4,
+            "col": 1,
+            "row": 1
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 2048,
+            "col": 4,
+            "row": 1
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 1
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 2
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 64,
+            "col": 1,
+            "row": 3
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 512,
+            "col": 5,
+            "row": 3
+          }
+        ],
+        "time": 130,
+        "timerDisabled": false
+      }
+    }
+  },
+  {
+    "name": "Playtest_12",
+    "data": {
+      "layout_text_json": {
+        "cols": 12,
+        "rows": 12,
+        "walls": [
+          [
+            0,
+            2
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ],
+          [
+            0,
+            9
+          ],
+          [
+            0,
+            10
+          ],
+          [
+            0,
+            11
+          ],
+          [
+            1,
+            11
+          ],
+          [
+            2,
+            11
+          ],
+          [
+            9,
+            0
+          ],
+          [
+            10,
+            0
+          ],
+          [
+            11,
+            0
+          ],
+          [
+            11,
+            1
+          ],
+          [
+            11,
+            2
+          ],
+          [
+            11,
+            9
+          ],
+          [
+            11,
+            10
+          ],
+          [
+            11,
+            11
+          ],
+          [
+            10,
+            11
+          ],
+          [
+            9,
+            11
+          ],
+          [
+            2,
+            5
+          ],
+          [
+            3,
+            5
+          ],
+          [
+            4,
+            5
+          ],
+          [
+            7,
+            5
+          ],
+          [
+            8,
+            5
+          ],
+          [
+            9,
+            5
+          ],
+          [
+            2,
+            6
+          ],
+          [
+            9,
+            6
+          ]
+        ],
+        "shapes": [
+          {
+            "key": "A",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "number": 16,
+            "col": 1,
+            "row": 9
+          },
+          {
+            "key": "B",
+            "cells": [
+              [
+                2,
+                0
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 32,
+            "col": 8,
+            "row": 9
+          },
+          {
+            "key": "C",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 512,
+            "col": 1,
+            "row": 1
+          },
+          {
+            "key": "D",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 8,
+            "row": 1
+          },
+          {
+            "key": "E",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "number": 512,
+            "col": 1,
+            "row": 8
+          },
+          {
+            "key": "F",
+            "cells": [
+              [
+                2,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ],
+            "number": 256,
+            "col": 8,
+            "row": 8
+          },
+          {
+            "key": "G",
+            "cells": [
+              [
+                0,
+                2
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 0,
+            "row": 6
+          },
+          {
+            "key": "H",
+            "cells": [
+              [
+                1,
+                2
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 8,
+            "col": 10,
+            "row": 6
+          },
+          {
+            "key": "I",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 64,
+            "col": 7,
+            "row": 7
+          },
+          {
+            "key": "J",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "number": 64,
+            "col": 0,
+            "row": 5
+          },
+          {
+            "key": "K",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 10,
+            "row": 5
+          },
+          {
+            "key": "L",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 0,
+            "row": 3
+          },
+          {
+            "key": "M",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 4,
+            "col": 10,
+            "row": 3
+          },
+          {
+            "key": "N",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 32,
+            "col": 4,
+            "row": 1
+          },
+          {
+            "key": "O",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                2
+              ]
+            ],
+            "number": 16,
+            "col": 7,
+            "row": 1
+          },
+          {
+            "key": "P",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                2,
+                1
+              ]
+            ],
+            "col": 3,
+            "row": 0
+          },
+          {
+            "key": "Q",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "col": 6,
+            "row": 0
+          },
+          {
+            "key": "R",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "col": 4,
+            "row": 5
+          },
+          {
+            "key": "S",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "number": 128,
+            "col": 2,
+            "row": 7
+          },
+          {
+            "key": "T",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "col": 6,
+            "row": 5
+          },
+          {
+            "key": "U",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 8,
+            "row": 6
+          },
+          {
+            "key": "V",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 3,
+            "row": 6
+          },
+          {
+            "key": "W",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 2,
+            "row": 4
+          },
+          {
+            "key": "X",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                2,
+                0
+              ]
+            ],
+            "number": 2,
+            "col": 7,
+            "row": 4
+          },
+          {
+            "key": "Y",
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ],
+            "col": 5,
+            "row": 8
+          },
+          {
+            "key": "Z",
+            "cells": [
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                2,
+                1
+              ],
+              [
+                3,
+                1
+              ],
+              [
+                2,
+                0
+              ],
+              [
+                3,
+                0
+              ],
+              [
+                4,
+                1
+              ],
+              [
+                5,
+                1
+              ]
+            ],
+            "number": 2048,
+            "col": 3,
+            "row": 10
+          },
+          {
+            "key": "26",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 5,
+            "row": 7
+          },
+          {
+            "key": "27",
+            "cells": [
+              [
+                0,
+                0
+              ]
+            ],
+            "col": 6,
+            "row": 7
+          }
+        ],
+        "time": 230,
+        "timerDisabled": false
+      }
+    }
+  }
+]

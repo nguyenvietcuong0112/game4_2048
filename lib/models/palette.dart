@@ -88,7 +88,9 @@ class BlockOrderPalette {
       final rim = Color.lerp(
         topBright,
         Colors.white,
-        numVal == -1 ? 0.66 : (numVal == 2 ? 0.50 : 0.38),
+        numVal == -1
+            ? 0.66
+            : (numVal == 0 ? 0.16 : (numVal == 2 ? 0.50 : 0.38)),
       )!;
 
       final accent =
@@ -166,7 +168,11 @@ class BlockOrderPalette {
       topBright: ramp[2],
       topMid: ramp[1],
       bottomLip: ramp[0],
-      rimHighlight: Color.lerp(ramp[2], Colors.white, key == -1 ? 0.66 : 0.38)!,
+      rimHighlight: Color.lerp(
+        ramp[2],
+        Colors.white,
+        key == -1 ? 0.66 : (key == 0 ? 0.16 : 0.38),
+      )!,
       accent: ramp[2],
       numberStrokeOuter: const Color(0xFF251506),
       numberStrokeMid: ramp[0],

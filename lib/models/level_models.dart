@@ -48,7 +48,7 @@ class PieceModel {
   int row;
   final List<GridCell> localCells;
   int? number; // null => Dud blocker
-  int? iceTarget; // non-null => frozen until any merge reaches >= iceTarget
+  int? iceTarget; // non-null => frozen until any merge produces mergedValue == iceTarget
   MovementConstraint movement;
 
   PieceModel({
@@ -76,6 +76,7 @@ class PieceModel {
   Set<GridCell> get worldCells => worldCellsAt(col, row);
 
   int get widthCols {
+    if (localCells.isEmpty) return 1;
     int minC = 999, maxC = -999;
     for (final (c, _) in localCells) {
       if (c < minC) minC = c;
@@ -85,6 +86,7 @@ class PieceModel {
   }
 
   int get heightRows {
+    if (localCells.isEmpty) return 1;
     int minR = 999, maxR = -999;
     for (final (_, r) in localCells) {
       if (r < minR) minR = r;
@@ -93,51 +95,115 @@ class PieceModel {
     return maxR - minR + 1;
   }
 
-  /// Computes the local coordinates (in cell units, e.g. `(1.5, 1.0)` for a 3x2 rectangle,
-  /// or `(cx + 0.5, cy + 0.5)` of the elbow cell for an L/T polyomino) for placing numbers/locks.
-  (double cx, double cy) computeLabelCenterInCells() {
+  /// Exact match of `BoardView.ShapeSize(pieceId)`: max grid dimension of the piece.
+  int get shapeDimension => math.max(widthCols, heightRows);
+
+  /// Exact match of `PieceBlockGeometry.FootprintCenterLocal` (in cell units).
+  (double cx, double cy) footprintCenterInCells() {
+    if (localCells.isEmpty) return (0.5, 0.5);
+    double sumC = 0.0;
+    double sumR = 0.0;
+    for (final (c, r) in localCells) {
+      sumC += c + 0.5;
+      sumR += r + 0.5;
+    }
+    return (sumC / localCells.length, sumR / localCells.length);
+  }
+
+  /// Exact match of `PieceBlockGeometry.SpanCenterLocal` (bounding box center in cell units).
+  (double cx, double cy) spanCenterInCells() {
     if (localCells.isEmpty) return (0.5, 0.5);
     int minC = 999, maxC = -999, minR = 999, maxR = -999;
-    final cellSet = localCells.toSet();
-    double sumC = 0, sumR = 0;
-    for (final (c, r) in cellSet) {
+    for (final (c, r) in localCells) {
       if (c < minC) minC = c;
       if (c > maxC) maxC = c;
       if (r < minR) minR = r;
       if (r > maxR) maxR = r;
-      sumC += c + 0.5;
-      sumR += r + 0.5;
     }
-    final w = maxC - minC + 1;
-    final h = maxR - minR + 1;
-    // Filled rectangle: exact geometric center of the rectangle
-    if (cellSet.length == w * h) {
-      return (minC + w * 0.5, minR + h * 0.5);
-    }
+    return ((minC + maxC + 1) * 0.5, (minR + maxR + 1) * 0.5);
+  }
 
-    // Non-rectangular polyomino (L, T, U, Plus, Z): pick cell with highest neighbor degree
-    // closest to the shape's centroid so the label never floats outside the L!
-    final avgC = sumC / cellSet.length;
-    final avgR = sumR / cellSet.length;
+  /// Exact match of `PieceBlockGeometry.CoversLabel(offsets, center)`:
+  /// Returns `true` iff every grid cell overlapping the 1x1-cell square centered
+  /// at `(cx, cy)` belongs to `localCells`.
+  bool coversLabel(double cx, double cy) {
+    if (localCells.isEmpty) return false;
+    final cellSet = localCells.toSet();
+    final minX = (cx - 0.5 + 1e-5).floor();
+    final maxX = (cx + 0.5 - 1e-5).ceil() - 1;
+    final minY = (cy - 0.5 + 1e-5).floor();
+    final maxY = (cy + 0.5 - 1e-5).ceil() - 1;
+    for (int x = minX; x <= maxX; x++) {
+      for (int y = minY; y <= maxY; y++) {
+        if (!cellSet.contains((x, y))) return false;
+      }
+    }
+    return true;
+  }
+
+  /// Exact match of `PieceBlockGeometry.LabelAnchorLocal(offsets, cellSize)` (in cell units):
+  /// Uses `FootprintCenterLocal` when `CoversLabel` holds (so `2x1` -> `(1.0, 0.5)`,
+  /// `2x2` -> `(1.0, 1.0)`, `4-cell T` -> `(1.5, 0.75)` / `(0.75, 1.5)`, `4-cell S/Z` -> `(1.5, 1.0)`),
+  /// and snaps to `NearestBlockCenterLocal` otherwise (e.g. `3-cell L` -> `(0.5, 0.5)` elbow cell).
+  (double cx, double cy) computeLabelCenterInCells() {
+    if (localCells.isEmpty) return (0.5, 0.5);
+    final (cx, cy) = footprintCenterInCells();
+    if (coversLabel(cx, cy)) {
+      return (cx, cy);
+    }
 
     GridCell best = localCells.first;
-    double bestScore = -1e9;
-    for (final (c, r) in cellSet) {
-      int deg = 0;
-      if (cellSet.contains((c - 1, r))) deg++;
-      if (cellSet.contains((c + 1, r))) deg++;
-      if (cellSet.contains((c, r - 1))) deg++;
-      if (cellSet.contains((c, r + 1))) deg++;
-      final dist = math.sqrt(
-        math.pow((c + 0.5) - avgC, 2) + math.pow((r + 0.5) - avgR, 2),
-      );
-      final score = deg * 10.0 - dist;
-      if (score > bestScore) {
-        bestScore = score;
+    double bestDistSq = double.infinity;
+    for (final (c, r) in localCells) {
+      final dx = (c + 0.5) - cx;
+      final dy = (r + 0.5) - cy;
+      final distSq = dx * dx + dy * dy;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
         best = (c, r);
       }
     }
     return (best.$1 + 0.5, best.$2 + 0.5);
+  }
+
+  /// Exact match of `PieceBlockGeometry.LabelRoomWidthLocal(offsets, anchor, cellSize)` (in cell units):
+  /// Measures the symmetric horizontal clearance around `(ax, ay)` across all rows overlapping
+  /// the 1-cell vertical band `[ay - 0.5, ay + 0.5]`.
+  double computeLabelRoomWidthInCells([double? anchorX, double? anchorY]) {
+    if (localCells.isEmpty) return 1.0;
+    final (defX, defY) = computeLabelCenterInCells();
+    final ax = anchorX ?? defX;
+    final ay = anchorY ?? defY;
+    final cellSet = localCells.toSet();
+
+    final minY = (ay - 0.5 + 1e-5).floor();
+    final maxY = (ay + 0.5 - 1e-5).ceil() - 1;
+    double minHalfSpan = double.infinity;
+
+    for (int y = minY; y <= maxY; y++) {
+      int startLeft = (ax - 1e-5).floor();
+      int startRight = (ax + 1e-5).floor();
+      if (!cellSet.contains((startLeft, y)) && !cellSet.contains((startRight, y))) {
+        return 1.0;
+      }
+      int xLeft = startLeft;
+      while (cellSet.contains((xLeft - 1, y))) {
+        xLeft--;
+      }
+      int xRight = startRight;
+      while (cellSet.contains((xRight + 1, y))) {
+        xRight++;
+      }
+      final leftEdge = xLeft.toDouble();
+      final rightEdge = (xRight + 1).toDouble();
+      final halfSpan = math.min(ax - leftEdge, rightEdge - ax);
+      if (halfSpan < minHalfSpan) {
+        minHalfSpan = halfSpan;
+      }
+    }
+
+    if (!minHalfSpan.isFinite || minHalfSpan <= 0.0) return 1.0;
+    return math.max(0.5, minHalfSpan * 2.0);
   }
 
   PieceModel clone() {
@@ -187,6 +253,27 @@ class LevelDefinition {
             p.movement == MovementConstraint.horizontalOnly ||
             p.movement == MovementConstraint.verticalOnly,
       );
+
+  /// Exact final merged number when all numbered blocks on the board merge into one:
+  /// Since every 2048 merge (`n + n -> 2n`) conserves the sum of all numbered pieces,
+  /// the maximum/final number of the level equals `sum(p.number)` snapped to a power of 2.
+  int get targetWinNumber {
+    int sum = 0;
+    int maxInit = 2;
+    for (final p in initialPieces) {
+      final n = p.number;
+      if (n != null && n > 0) {
+        sum += n;
+        if (n > maxInit) maxInit = n;
+      }
+    }
+    if (sum <= 2) return 2;
+    int pow2 = 2;
+    while (pow2 * 2 <= sum) {
+      pow2 *= 2;
+    }
+    return math.max(maxInit, pow2);
+  }
 
   bool isPlayableCell(int c, int r) {
     if (c < 0 || c >= cols || r < 0 || r >= rows) return false;

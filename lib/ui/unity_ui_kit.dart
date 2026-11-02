@@ -17,6 +17,15 @@ double uxScale(BuildContext context) {
   return math.min(size.width / 1080.0, size.height / 1920.0);
 }
 
+/// Exact Unity `PopupContainer` `m_LocalScale = (0.816, 0.816)` used across `PlayOnPopupView`,
+/// `LoseGameplayView`, `ExitGameplayView`, `NoLivesPopupView`, and `PopupView`.
+const double kUnityPopupScale = 0.816;
+
+/// Converts a `PopupContainer`-local `RectTransform` unit into logical Flutter pixels.
+double ppx(BuildContext context, double popupLocalPx) {
+  return ux(context, popupLocalPx * kUnityPopupScale);
+}
+
 /// Unity 9-slice border specification `(left, bottom, right, top)` from `sprites.json`.
 class UnitySliceSpec {
   final double left;
@@ -341,16 +350,26 @@ class UnityTextMaterial {
     this.fontWeight = FontWeight.w800,
   });
 
-  /// `Baloo2_ExtraBold_Popup_Title.json` + `Gradient_Popup_Title_Light.png`
+  /// `Baloo2_ExtraBold_Popup_Title` (`_FaceColor=#FFFFFF`, `_OutlineColor=#043C92` `w=0.075`,
+  /// `_UnderlayColor=#01358C` `dilate=0.095` `offsetY=-0.127`).
   static const popupTitle = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
-    faceBottom: Color(0xFFD7E7FF),
+    faceBottom: Color(0xFFFFFFFF),
     strokeColor: Color(0xFF043C92),
-    strokeRatio: 0.165,
-    outerStrokeColor: Color(0xFF012C78),
-    outerStrokeRatio: 0.21,
-    underlayColor: Color(0xCC001038),
-    underlayYRatio: 0.075,
+    strokeRatio: 0.145,
+    underlayColor: Color(0xFF01358C),
+    underlayYRatio: 0.062,
+  );
+
+  /// `Baloo2_ExtraBold_OutOfTime` (`_FaceColor=#FFFFFF`, `_OutlineColor=#285FB9` `w=0.085`,
+  /// `_UnderlayColor=#000000` `offsetY=-0.13`).
+  static const outOfTime = UnityTextMaterial(
+    faceTop: Color(0xFFFFFFFF),
+    faceBottom: Color(0xFFFFFFFF),
+    strokeColor: Color(0xFF285FB9),
+    strokeRatio: 0.155,
+    underlayColor: Color(0xFF000000),
+    underlayYRatio: 0.065,
   );
 
   /// `Baloo2_ExtraBold_LevelCounter.json` (`Level 20` top-right HUD)
@@ -363,44 +382,44 @@ class UnityTextMaterial {
     underlayYRatio: 0.065,
   );
 
-  /// `Baloo2_ExtraBold_CTA_Green_Text.json` (`Next Level`, `Play On`, `Continue`, `Buy`, `Try Again`)
+  /// `Baloo2_ExtraBold_CTA_Green_Text` (`_OutlineColor=#027C05` `w=0.08`, `_UnderlayDilate=0.221`, `_UnderlayOffsetY=-0.358`)
   static const ctaGreen = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
-    faceBottom: Color(0xFFF3FFE8),
+    faceBottom: Color(0xFFFFFFFF),
     strokeColor: Color(0xFF027C05),
-    strokeRatio: 0.175,
-    underlayColor: Color(0xFF026104),
-    underlayYRatio: 0.085,
+    strokeRatio: 0.165,
+    underlayColor: Color(0xFF027C05),
+    underlayYRatio: 0.105,
   );
 
-  /// `Baloo2_ExtraBold_CTA_Blue_Text.json` (`25` coin reward, `Watch`, `Get`)
+  /// `Baloo2_ExtraBold_CTA_Blue_Text` (`_OutlineColor=#295FB9` `w=0.08`, `_UnderlayDilate=0.221`, `_UnderlayOffsetY=-0.358`)
   static const ctaBlue = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
-    faceBottom: Color(0xFFEDF5FF),
+    faceBottom: Color(0xFFFFFFFF),
     strokeColor: Color(0xFF295FB9),
-    strokeRatio: 0.185,
-    underlayColor: Color(0xFF174191),
-    underlayYRatio: 0.085,
+    strokeRatio: 0.165,
+    underlayColor: Color(0xFF2A5FB9),
+    underlayYRatio: 0.105,
   );
 
-  /// `Baloo2_ExtraBold_CTA_Red_Text.json` (`Restart` red CTA)
+  /// `Baloo2_ExtraBold_CTA_Red_Text` (`_OutlineColor=#83001E` `w=0.08`, `_UnderlayDilate=0.089`, `_UnderlayOffsetY=-0.179`)
   static const ctaRed = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
-    faceBottom: Color(0xFFFFEEF1),
+    faceBottom: Color(0xFFFFFFFF),
     strokeColor: Color(0xFF83001E),
-    strokeRatio: 0.175,
-    underlayColor: Color(0xFF5C0013),
-    underlayYRatio: 0.075,
+    strokeRatio: 0.165,
+    underlayColor: Color(0xFF83001E),
+    underlayYRatio: 0.082,
   );
 
-  /// `Baloo2_ExtraBold_CTA_Gray_Text.json` (Disabled CTA buttons)
+  /// `Baloo2_ExtraBold_CTA_Gray_Text` (`_OutlineColor=#354953` `w=0.08`, `_UnderlayDilate=0.221`, `_UnderlayOffsetY=-0.358`)
   static const ctaGray = UnityTextMaterial(
-    faceTop: Color(0xFFF2F5F8),
-    faceBottom: Color(0xFFDCE2E8),
+    faceTop: Color(0xFFFFFFFF),
+    faceBottom: Color(0xFFFFFFFF),
     strokeColor: Color(0xFF354953),
-    strokeRatio: 0.17,
-    underlayColor: Color(0xFF26353D),
-    underlayYRatio: 0.075,
+    strokeRatio: 0.165,
+    underlayColor: Color(0xFF354953),
+    underlayYRatio: 0.105,
   );
 
   /// `Baloo2_ExtraBold_CTA_Yellow_Text.json` (`Ice Blocks`, `Dud Blocks`, `Level Up` FTUE title)
@@ -416,36 +435,37 @@ class UnityTextMaterial {
   );
 
   /// `Baloo2_ExtraBold_Brown_Text.json` + `Gradient_Title_Light.png` (`AMAZING!` on `Banner_Gold.png`)
+  /// Exact `_OutlineWidth: 0.061` thin crisp `#761400` stroke + `-0.173` `#621100` underlay!
   static const bannerBrown = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
-    faceBottom: Color(0xFFFFEAB5),
+    faceBottom: Color(0xFFFFE5B4),
     strokeColor: Color(0xFF761400),
-    strokeRatio: 0.16,
-    underlayColor: Color(0xFF540D00),
-    underlayYRatio: 0.08,
-    letterSpacing: 0.6,
+    strokeRatio: 0.118,
+    underlayColor: Color(0xFF621100),
+    underlayYRatio: 0.070,
+    letterSpacing: 0.4,
   );
 
-  /// `Baloo2_ExtraBold_Level_Complete.json` (`Level complete!` Stage-1 Win wave text)
+  /// `Baloo2_ExtraBold_Level_Complete.json` + `Gradient_Title_Light.png` (`Level complete!` Stage-1 Win wave text)
   static const levelCompleteWave = UnityTextMaterial(
-    faceTop: Color(0xFFFFF35C),
-    faceBottom: Color(0xFFFFD000),
+    faceTop: Color(0xFFFFFFFF),
+    faceBottom: Color(0xFFFFDE82),
     strokeColor: Color(0xFFDD6237),
-    strokeRatio: 0.16,
+    strokeRatio: 0.135,
     outerStrokeColor: Color(0xFF9F1B00),
-    outerStrokeRatio: 0.21,
-    underlayColor: Color(0xD9000000),
-    underlayYRatio: 0.10,
+    outerStrokeRatio: 0.185,
+    underlayColor: Color(0xE0000000),
+    underlayYRatio: 0.105,
   );
 
-  /// `Baloo2_ExtraBold_Label.json` (`Level 19` inside `Label_Level.png`)
+  /// `Baloo2_ExtraBold_Label.json` (`Level X` inside `Label_Level.png`)
   static const blueLabel = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
-    faceBottom: Color(0xFFEAF3FF),
+    faceBottom: Color(0xFFFFFFFF),
     strokeColor: Color(0xFF0436C4),
-    strokeRatio: 0.19,
-    underlayColor: Color(0x88011C6E),
-    underlayYRatio: 0.055,
+    strokeRatio: 0.185,
+    underlayColor: Color(0x66011C6E),
+    underlayYRatio: 0.035,
   );
 
   /// `Baloo2_ExtraBold_Label_Pink.json` (Power-up magenta count badge `3`)
@@ -458,14 +478,15 @@ class UnityTextMaterial {
     underlayYRatio: 0.08,
   );
 
-  /// `Baloo2_ExtraBold_Navigation_Bar_Label_Brown.json` (`-1` on `Icon_BrokenLife.png`)
+  /// `Baloo2_ExtraBold_Navigation_Bar_Label_Brown` (`-1` on `Icon_BrokenLife.png`:
+  /// `_OutlineColor=#610000` `w=0.12`, `_UnderlayColor=#470009` `dilate=0.15` `offsetY=-0.399`)
   static const brownCounter = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
-    faceBottom: Color(0xFFFFEFEA),
+    faceBottom: Color(0xFFFFFFFF),
     strokeColor: Color(0xFF610000),
-    strokeRatio: 0.18,
+    strokeRatio: 0.195,
     underlayColor: Color(0xFF470009),
-    underlayYRatio: 0.085,
+    underlayYRatio: 0.115,
   );
 
   /// `Baloo2_ExtraBold_Tutorial_Text.json` (Tutorial text & FTUE subtitles)
@@ -499,6 +520,7 @@ class UnitySdfText extends StatelessWidget {
   final UnityTextMaterial material;
   final TextAlign textAlign;
   final int? maxLines;
+  final double? letterSpacing;
 
   const UnitySdfText(
     this.text, {
@@ -507,6 +529,7 @@ class UnitySdfText extends StatelessWidget {
     this.material = UnityTextMaterial.popupTitle,
     this.textAlign = TextAlign.center,
     this.maxLines,
+    this.letterSpacing,
   });
 
   @override
@@ -522,7 +545,7 @@ class UnitySdfText extends StatelessWidget {
           fontSize: fs,
           fontWeight: material.fontWeight,
           fontVariations: variations,
-          letterSpacing: material.letterSpacing,
+          letterSpacing: letterSpacing ?? material.letterSpacing,
           height: 1.08,
           foreground: foreground,
           color: color,
@@ -534,24 +557,22 @@ class UnitySdfText extends StatelessWidget {
         : innerSw;
     final dropY = fs * material.underlayYRatio;
 
-    Widget faceText = Text(
-      text,
-      textAlign: textAlign,
-      maxLines: maxLines,
-      style: baseStyle(color: Colors.white),
-    );
-
+    final Widget faceText;
     if (material.faceTop != material.faceBottom) {
-      faceText = ShaderMask(
-        blendMode: BlendMode.srcIn,
-        shaderCallback: (bounds) => LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [material.faceTop, material.faceBottom],
-        ).createShader(bounds),
-        child: faceText,
+      faceText = Text(
+        text,
+        textAlign: textAlign,
+        maxLines: maxLines,
+        style: baseStyle(
+          foreground: Paint()
+            ..shader = ui.Gradient.linear(
+              Offset(0, fs * 0.12),
+              Offset(0, fs * 0.98),
+              [material.faceTop, material.faceBottom],
+            ),
+        ),
       );
-    } else if (material.faceTop != Colors.white) {
+    } else {
       faceText = Text(
         text,
         textAlign: textAlign,
@@ -629,6 +650,7 @@ class UnityCtaButton extends StatefulWidget {
   final double unityWidth;
   final double unityHeight;
   final double unityFontSize;
+  final double sliceScale;
   final int? coinPrice;
   final bool showAdBadge;
   final Widget? trailingBadge;
@@ -641,6 +663,7 @@ class UnityCtaButton extends StatefulWidget {
     this.unityWidth = 560,
     this.unityHeight = 158,
     this.unityFontSize = 84,
+    this.sliceScale = 1.0,
     this.coinPrice,
     this.showAdBadge = false,
     this.trailingBadge,
@@ -693,10 +716,11 @@ class _UnityCtaButtonState extends State<UnityCtaButton> {
           sprite: sprite,
           width: w,
           height: h,
+          pixelMultiplier: widget.sliceScale,
           padding: EdgeInsets.only(
-            left: ux(context, 34),
-            right: ux(context, 30),
-            bottom: ux(context, 12),
+            left: ux(context, 34 * widget.sliceScale),
+            right: ux(context, 30 * widget.sliceScale),
+            bottom: ux(context, 18 * widget.sliceScale),
           ),
           child: _buildInnerContent(context, textMat, enabled),
         ),
@@ -855,114 +879,273 @@ class _UnitySpriteButtonState extends State<UnitySpriteButton> {
   }
 }
 
-/// Exact replica of Unity's shared `PopupView.prefab` (`Background_Popup.png` bright sky-blue
-/// 3D outer frame + `Header` title + overlapping top-right `Button_Close.png` + `Panel_Popup.png`
-/// crisp icy-white inner card + `Footer` CTA buttons).
+/// Exact 1:1 replica of Unity's shared `PopupContainer` (`sz = (1106.25, 1337.91)`, `sc = (0.816, 0.816)`
+/// -> `902.70 x 1091.73` in 1080x1920 reference space) used by `PlayOnPopupView`, `LoseGameplayView`,
+/// `ExitGameplayView`, and `PopupView`:
+/// - `Background` (`Background_Popup.png`, `ppuMult = 1.0`): `pos = (0, -35), sz = (+70, +80)` -> `1176.25 x 1417.91`
+/// - `Header`: `amin=(0,1) amax=(1,1) pos=(0.12, -120) sz=(-79.75, 195)` -> `1026.50 x 195.00` at `top = 22.50`
+///   - `CloseButton`: `amin=(1,1) amax=(1,1) pos=(11.10, -16.91) sz=(153.90, 155.18)` -> child `Button_Close.png`
+///     `pos=(0, -7.50) sz=(+20, +15)` -> `173.90 x 170.18` centered at `(1077.60, 46.91)`
+/// - `Panel`: `amin=(0,0) amax=(1,1) pos=(0.12, 75.47) sz=(-79.75, -603.68)` -> `1026.50 x 734.23` at `top = 226.37`
+///   - `Image` (`Panel_Popup.png`, `ppuMult = 1.0`): `pos=(0, -2.50) sz=(+10, +25)` -> `1036.50 x 759.23`
+/// - `Footer` / `ButtonsContainer`: `1026.50 x 290.00` at `top = 988.91` (center `204.00` above bottom).
 class UnityPopupCard extends StatelessWidget {
+  static const double localWidth = 1106.25;
+  static const double localHeight = 1337.91;
+  static const double localInnerWidth = 1026.50;
+  static const double localPanelHeight = 734.23;
+
   final String title;
-  final double titleUnitySize;
+  final double localTitleFontSize;
   final VoidCallback? onClose;
   final Widget panelChild;
   final Widget footerChild;
-  final double unityWidth;
-  final EdgeInsets? panelPadding;
+  final bool animateEntrance;
 
   const UnityPopupCard({
     super.key,
     required this.title,
-    this.titleUnitySize = 104,
+    this.localTitleFontSize = 116.5,
     this.onClose,
     required this.panelChild,
     required this.footerChild,
-    this.unityWidth = 910,
-    this.panelPadding,
+    this.animateEntrance = true,
   });
+
+  static const double _hitPadX = 60.0;
+  static const double _hitPadY = 75.0;
 
   @override
   Widget build(BuildContext context) {
-    final cardW = ux(context, unityWidth);
-    final closeSize = ux(context, 136);
+    Widget shell = SizedBox(
+      width: ppx(context, localWidth + _hitPadX * 2.0),
+      height: ppx(context, localHeight + _hitPadY * 2.0),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 1. `Background` (`Background_Popup.png`, `pos=(0,-35) sz=(+70,+80)`)
+          // Absorbs pointer hits inside the visual card body so taps on the card
+          // never leak through to `DarkOverlay` hold-to-peek.
+          Positioned(
+            left: ppx(context, _hitPadX - 35.0),
+            right: ppx(context, _hitPadX - 35.0),
+            top: ppx(context, _hitPadY - 5.0),
+            bottom: ppx(context, _hitPadY - 75.0),
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              child: const UnityNineSlice(
+                sprite: 'Background_Popup.png',
+                pixelMultiplier: kUnityPopupScale,
+              ),
+            ),
+          ),
+
+          // 2. `Header` (`1026.50 x 195.00` at `left = 40.00, top = 22.50`)
+          Positioned(
+            left: ppx(context, _hitPadX + 40.00),
+            top: ppx(context, _hitPadY + 22.50),
+            width: ppx(context, localInnerWidth),
+            height: ppx(context, 195.00),
+            child: IgnorePointer(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ppx(context, onClose != null ? 88.0 : 20.0),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: UnitySdfText(
+                      title,
+                      unityFontSize: localTitleFontSize * kUnityPopupScale,
+                      material: UnityTextMaterial.popupTitle,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 3. `Panel` (`1026.50 x 734.23` at `left = 40.00, top = 226.37`)
+          Positioned(
+            left: ppx(context, _hitPadX + 40.00),
+            top: ppx(context, _hitPadY + 226.37),
+            width: ppx(context, localInnerWidth),
+            height: ppx(context, localPanelHeight),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // `Panel/Image` (`Panel_Popup.png`, `pos=(0,-2.5) sz=(+10,+25)`)
+                Positioned(
+                  left: ppx(context, -5.0),
+                  right: ppx(context, -5.0),
+                  top: ppx(context, -10.0),
+                  bottom: ppx(context, -15.0),
+                  child: const IgnorePointer(
+                    child: UnityNineSlice(
+                      sprite: 'Panel_Popup.png',
+                      pixelMultiplier: kUnityPopupScale,
+                    ),
+                  ),
+                ),
+
+                // Exact `1026.50 x 734.23` local content box
+                Positioned.fill(child: panelChild),
+              ],
+            ),
+          ),
+
+          // 4. `Footer / ButtonsContainer` (`1026.50 x 290.00` centered at `cy = 1133.91`)
+          Positioned(
+            left: ppx(context, _hitPadX + 40.00),
+            top: ppx(context, _hitPadY + 988.91),
+            width: ppx(context, localInnerWidth),
+            height: ppx(context, 290.00),
+            child: Center(child: footerChild),
+          ),
+
+          // 5. `Header / CloseButton` (`173.90 x 170.18` `Button_Close.png` centered at `(1077.60, 46.91)`)
+          if (onClose != null)
+            Positioned(
+              left: ppx(context, _hitPadX + 990.65),
+              top: ppx(context, _hitPadY - 38.18),
+              width: ppx(context, 173.90),
+              height: ppx(context, 170.18),
+              child: UnitySpriteButton(
+                onTap: onClose,
+                child: Image.asset(
+                  'assets/images/Button_Close.png',
+                  width: ppx(context, 173.90),
+                  height: ppx(context, 170.18),
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (!animateEntrance) {
+      return shell;
+    }
 
     return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.78, end: 1.0),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutBack,
+      tween: Tween(begin: 0.90, end: 1.0),
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
       builder: (context, scale, child) => Transform.scale(
         scale: scale,
         child: child,
       ),
-      child: SizedBox(
-        width: cardW,
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.topCenter,
-          children: [
-            // 1. Sky-Blue 3D Outer Shell (`Background_Popup.png`)
-            UnityNineSlice(
-              sprite: 'Background_Popup.png',
-              width: cardW,
-              padding: EdgeInsets.fromLTRB(
-                ux(context, 52),
-                ux(context, 38),
-                ux(context, 52),
-                ux(context, 62),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Header Title
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: ux(context, 54)),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: UnitySdfText(
-                        title,
-                        unityFontSize: titleUnitySize,
-                        material: UnityTextMaterial.popupTitle,
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: ux(context, 28)),
+      child: shell,
+    );
+  }
+}
 
-                  // 2. Crisp Icy-White Inner Card (`Panel_Popup.png`)
-                  UnityNineSlice(
-                    sprite: 'Panel_Popup.png',
-                    width: double.infinity,
-                    padding: panelPadding ??
-                        EdgeInsets.fromLTRB(
-                          ux(context, 44),
-                          ux(context, 46),
-                          ux(context, 44),
-                          ux(context, 46),
-                        ),
-                    child: panelChild,
-                  ),
+/// Exact `PopupContainer`-scale single CTA button (`LoseGameplayView` `"Try Again"` &
+/// `ExitGameplayView` `"Restart"`, `sz = (585.20, 217.44)`, `Background` `pos=(0,-10) sz=(+20,+20)`,
+/// `m_PixelsPerUnitMultiplier = 0.82`, `Label` `fontSize = 116.6` at `pos = (0, -3.0)`,
+/// `Button_Down` scale `= 0.95`).
+class UnityPopupCtaButton extends StatefulWidget {
+  final String label;
+  final VoidCallback? onTap;
+  final UnityButtonSkin skin;
+  final double localWidth;
+  final double localHeight;
+  final double localFontSize;
 
-                  SizedBox(height: ux(context, 34)),
+  const UnityPopupCtaButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.skin = UnityButtonSkin.green,
+    this.localWidth = 585.20,
+    this.localHeight = 217.44,
+    this.localFontSize = 116.6,
+  });
 
-                  // 3. Footer Buttons
-                  footerChild,
-                ],
-              ),
-            ),
+  @override
+  State<UnityPopupCtaButton> createState() => _UnityPopupCtaButtonState();
+}
 
-            // 4. Overlapping Top-Right 3D Royal-Blue Close Button (`Button_Close.png`)
-            if (onClose != null)
+class _UnityPopupCtaButtonState extends State<UnityPopupCtaButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final sprite = !enabled
+        ? 'Button_CTA_Disabled.png'
+        : switch (widget.skin) {
+            UnityButtonSkin.green => 'Button_CTA.png',
+            UnityButtonSkin.blue => 'Button_Blue.png',
+            UnityButtonSkin.red => 'Button_Red.png',
+          };
+    final textMat = !enabled
+        ? UnityTextMaterial.ctaGray
+        : switch (widget.skin) {
+            UnityButtonSkin.green => UnityTextMaterial.ctaGreen,
+            UnityButtonSkin.blue => UnityTextMaterial.ctaBlue,
+            UnityButtonSkin.red => UnityTextMaterial.ctaRed,
+          };
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+      onTapUp: enabled
+          ? (_) {
+              setState(() => _pressed = false);
+              widget.onTap?.call();
+            }
+          : null,
+      onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+      child: AnimatedScale(
+        scale: _pressed && enabled ? 0.95 : 1.0,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOutCubic,
+        child: SizedBox(
+          width: ppx(context, widget.localWidth),
+          height: ppx(context, widget.localHeight),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // `Background`: `amin=(0,0) amax=(1,1) pos=(0,-10) sz=(+20,+20)` (`left=-10, right=-10, top=0, bottom=-20`)
               Positioned(
-                top: -ux(context, 24),
-                right: -ux(context, 18),
-                child: UnitySpriteButton(
-                  onTap: onClose,
-                  child: Image.asset(
-                    'assets/images/Button_Close.png',
-                    width: closeSize,
-                    height: closeSize,
+                left: ppx(context, -10.0),
+                right: ppx(context, -10.0),
+                top: 0.0,
+                bottom: ppx(context, -20.0),
+                child: IgnorePointer(
+                  child: UnityNineSlice(
+                    sprite: sprite,
+                    pixelMultiplier: enabled
+                        ? (kUnityPopupScale / 0.82)
+                        : kUnityPopupScale,
                   ),
                 ),
               ),
-          ],
+
+              // `Label`: `amin=(0,0) amax=(1,1) pos=(0,-3.0) sz=(-48,-48)`
+              Positioned(
+                left: ppx(context, 24.0),
+                right: ppx(context, 24.0),
+                top: ppx(context, 27.0),
+                bottom: ppx(context, 21.0),
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: UnitySdfText(
+                      widget.label,
+                      unityFontSize: widget.localFontSize * kUnityPopupScale,
+                      material: textMat,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
+

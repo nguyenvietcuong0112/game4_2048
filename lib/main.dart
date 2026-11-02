@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'models/level_models.dart';
@@ -11,6 +13,10 @@ import 'ui/unity_ui_kit.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Align high-frequency touch digitizer samples with 90Hz/120Hz display VSync timestamps
+  GestureBinding.instance.resamplingEnabled = true;
+  PaintingBinding.instance.imageCache.maximumSize = 256;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 160 << 20;
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -37,6 +43,34 @@ class BlockOrder2048App extends StatefulWidget {
 
 class _BlockOrder2048AppState extends State<BlockOrder2048App>
     with WidgetsBindingObserver {
+  static const List<String> _criticalUiAssetImages = [
+    'assets/images/Icon_Coin.png',
+    'assets/images/Icon_Timer.png',
+    'assets/images/Icon_Settings.png',
+    'assets/images/Powerup_Base.png',
+    'assets/images/PowerUp_LevelUp.png',
+    'assets/images/PowerUp_LevelUp_Locked.png',
+    'assets/images/PowerUp_TimeFreeze.png',
+    'assets/images/PowerUp_TimeFreeze_Locked.png',
+    'assets/images/PowerUp_Free.png',
+    'assets/images/PowerUp_Add.png',
+    'assets/images/Button_Close.png',
+    'assets/images/Icon_Ad.png',
+    'assets/images/Reward_Coin.png',
+    'assets/images/Banner_Gold.png',
+    'assets/images/Icon_Clock_PlayOn.png',
+    'assets/images/Icon_BrokenLife.png',
+    'assets/images/Snow.png',
+    'assets/images/Ice_Top.png',
+    'assets/images/Ice_Bottom.png',
+    'assets/images/Ice_Corner_TopLeft.png',
+    'assets/images/Ice_Corner_TopRight.png',
+    'assets/images/Ice_Corner_BottomLeft.png',
+    'assets/images/Ice_Corner_BottomRight.png',
+    'assets/images/Ice_Blurry_TopLeft.png',
+    'assets/images/Ice_Blurry_BottomRight.png',
+  ];
+
   final AudioHapticsService _audio = AudioHapticsService();
   final PlayerProgressService _progress = PlayerProgressService();
   final ValueNotifier<double> _loadProgress = ValueNotifier<double>(0.08);
@@ -74,6 +108,29 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
     }
   }
 
+  Future<void> _prewarmUiImageCache() async {
+    const cfg = ImageConfiguration.empty;
+    for (final assetPath in _criticalUiAssetImages) {
+      try {
+        final stream = AssetImage(assetPath).resolve(cfg);
+        final completer = Completer<void>();
+        late final ImageStreamListener listener;
+        listener = ImageStreamListener(
+          (_, __) {
+            stream.removeListener(listener);
+            if (!completer.isCompleted) completer.complete();
+          },
+          onError: (_, __) {
+            stream.removeListener(listener);
+            if (!completer.isCompleted) completer.complete();
+          },
+        );
+        stream.addListener(listener);
+        await completer.future;
+      } catch (_) {}
+    }
+  }
+
   Future<void> _initializeAll() async {
     try {
       final minSplashFuture =
@@ -101,6 +158,7 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
         _progress.init(),
         _audio.init(),
         spriteFuture,
+        _prewarmUiImageCache(),
       ]);
 
       _loadProgress.value = 1.0;

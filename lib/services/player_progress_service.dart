@@ -9,19 +9,30 @@ class PlayerProgressService extends ChangeNotifier {
   static const _kLevelUpCount = 'bo_pu_level_up';
   static const _kTimeFreezeCount = 'bo_pu_time_freeze';
   static const _kSeenMechanics = 'bo_seen_mechanics';
+  static const _kFreePowerUpsPending = 'bo_free_pu_pending';
 
   static const int maxLives = 5;
+
+  /// Exact Unity `remote_config.json` power-up progression & economy settings:
+  /// - `LevelUp` (`type = 0`): `unlock_level = 17`, `initial_inventory = 3`, `price_coins = 600` (`x3`)
+  /// - `TimeFreeze` (`type = 1`): `unlock_level = 27`, `initial_inventory = 3`, `price_coins = 450` (`x3`), `duration = 20s`
+  static const int levelUpUnlockLevel = 17;
+  static const int timeFreezeUnlockLevel = 27;
+  static const int levelUpPackCost = 600;
+  static const int timeFreezePackCost = 450;
+  static const int initialPowerUpInventory = 3;
 
   SharedPreferences? _prefs;
 
   int _currentLevel = 1;
-  int _highestLevel = 20;
+  int _highestLevel = 1;
   int _coins = 875;
   int _lives = maxLives;
-  int _levelUpCount = 3;
-  int _timeFreezeCount = 3;
+  int _levelUpCount = initialPowerUpInventory;
+  int _timeFreezeCount = initialPowerUpInventory;
   int _pendingWinCoins = 0;
   Set<String> _seenMechanics = {};
+  Set<String> _freePowerUpsPending = {};
 
   int get currentLevel => _currentLevel;
   int get highestLevel => _highestLevel;
@@ -31,15 +42,34 @@ class PlayerProgressService extends ChangeNotifier {
   int get timeFreezeCount => _timeFreezeCount;
   int get pendingWinCoins => _pendingWinCoins;
 
+  /// Exact `PowerUpService.IsUnlockLevelReached(type)` checked against active campaign level
+  /// (`levelNumber >= 17` for `LevelUp`, `levelNumber >= 27` for `TimeFreeze`).
+  bool isLevelUpUnlockedForLevel(int levelNumber) {
+    final effective = levelNumber >= 1000 ? _highestLevel : levelNumber;
+    return effective >= levelUpUnlockLevel;
+  }
+
+  bool isTimeFreezeUnlockedForLevel(int levelNumber) {
+    final effective = levelNumber >= 1000 ? _highestLevel : levelNumber;
+    return effective >= timeFreezeUnlockLevel;
+  }
+
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _currentLevel = _prefs?.getInt(_kCurrentLevel) ?? 1;
-    _highestLevel = _prefs?.getInt(_kHighestLevel) ?? 20;
+    _highestLevel = _prefs?.getInt(_kHighestLevel) ?? _currentLevel;
+    if (_highestLevel < _currentLevel && _currentLevel < 1000) {
+      _highestLevel = _currentLevel;
+    }
     _coins = _prefs?.getInt(_kCoins) ?? 875;
     _lives = (_prefs?.getInt(_kLives) ?? maxLives).clamp(1, maxLives);
-    _levelUpCount = _prefs?.getInt(_kLevelUpCount) ?? 3;
-    _timeFreezeCount = _prefs?.getInt(_kTimeFreezeCount) ?? 3;
+    _levelUpCount =
+        _prefs?.getInt(_kLevelUpCount) ?? initialPowerUpInventory;
+    _timeFreezeCount =
+        _prefs?.getInt(_kTimeFreezeCount) ?? initialPowerUpInventory;
     _seenMechanics = (_prefs?.getStringList(_kSeenMechanics) ?? []).toSet();
+    _freePowerUpsPending =
+        (_prefs?.getStringList(_kFreePowerUpsPending) ?? []).toSet();
     notifyListeners();
   }
 
@@ -50,6 +80,41 @@ class PlayerProgressService extends ChangeNotifier {
       _prefs?.setStringList(_kSeenMechanics, _seenMechanics.toList());
       notifyListeners();
     }
+  }
+
+  bool isFreePowerUpPending(String id) => _freePowerUpsPending.contains(id);
+
+  void setFreePowerUpPending(String id, bool pending) {
+    final changed = pending
+        ? _freePowerUpsPending.add(id)
+        : _freePowerUpsPending.remove(id);
+    if (changed) {
+      _prefs?.setStringList(
+        _kFreePowerUpsPending,
+        _freePowerUpsPending.toList(),
+      );
+      notifyListeners();
+    }
+  }
+
+  /// Consumes the free FTUE trial usage (`PowerUpService.ConsumeFreeUsage`) without
+  /// decrementing the player's `3` initial inventory!
+  bool consumeFreePowerUp(String id) {
+    final removed = _freePowerUpsPending.remove(id);
+    final seenAdded = _seenMechanics.add(id);
+    if (removed) {
+      _prefs?.setStringList(
+        _kFreePowerUpsPending,
+        _freePowerUpsPending.toList(),
+      );
+    }
+    if (seenAdded) {
+      _prefs?.setStringList(_kSeenMechanics, _seenMechanics.toList());
+    }
+    if (removed || seenAdded) {
+      notifyListeners();
+    }
+    return removed;
   }
 
   void setCurrentLevel(int level) {
@@ -173,10 +238,12 @@ class PlayerProgressService extends ChangeNotifier {
 
   bool buyPowerUpPack({
     required bool isLevelUp,
-    int cost = 200,
+    int? cost,
     int count = 3,
   }) {
-    if (!spendCoins(cost)) return false;
+    final resolvedCost =
+        cost ?? (isLevelUp ? levelUpPackCost : timeFreezePackCost);
+    if (!spendCoins(resolvedCost)) return false;
     if (isLevelUp) {
       _levelUpCount += count;
       _prefs?.setInt(_kLevelUpCount, _levelUpCount);
@@ -202,9 +269,9 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool buyLevelUpPack({int cost = 200, int count = 3}) =>
+  bool buyLevelUpPack({int cost = levelUpPackCost, int count = 3}) =>
       buyPowerUpPack(isLevelUp: true, cost: cost, count: count);
 
-  bool buyTimeFreezePack({int cost = 200, int count = 3}) =>
+  bool buyTimeFreezePack({int cost = timeFreezePackCost, int count = 3}) =>
       buyPowerUpPack(isLevelUp: false, cost: cost, count: count);
 }

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 import '../models/level_models.dart';
+import '../models/unity_curve.dart';
 
 class _DirEdge {
   final int x0, y0, x1, y1;
@@ -10,16 +11,58 @@ class _DirEdge {
   int get dy => y1 - y0;
 }
 
+class PinnedScrewAnchor {
+  final Offset restPos;
+  final Offset outwardSign;
+  final double baseScale;
+
+  const PinnedScrewAnchor({
+    required this.restPos,
+    required this.outwardSign,
+    required this.baseScale,
+  });
+
+  Offset positionWithPinPush(double pinPushPx) => Offset(
+        restPos.dx + outwardSign.dx * pinPushPx,
+        restPos.dy + outwardSign.dy * pinPushPx,
+      );
+}
+
+enum NumberLabelLayoutMode {
+  full,
+  compactCentre,
+  compactBetweenSideArrows,
+  betweenArrows,
+  betweenPins,
+}
+
+class MovementArrowLayout {
+  final bool isHorizontal;
+  final bool isCompact;
+  final bool isCombined;
+  final Offset negRestPos;
+  final Offset posRestPos;
+  final double arrowScale;
+  final double negativeCellLimit;
+  final double positiveCellLimit;
+
+  const MovementArrowLayout({
+    required this.isHorizontal,
+    required this.isCompact,
+    required this.isCombined,
+    required this.negRestPos,
+    required this.posRestPos,
+    required this.arrowScale,
+    required this.negativeCellLimit,
+    required this.positiveCellLimit,
+  });
+
+  bool get hasArrowGap => !isCompact && !isCombined;
+}
+
 class PolyominoPathBuilder {
   /// Builds a closed, smoothly rounded [Path] (with both outer convex corners
   /// and inner concave L-fillets) for any set of grid cells [cells].
-  ///
-  /// - [cellSize]: pixel size of one grid square.
-  /// - [inset]: positive values shrink the shape inward (creating clean gaps between
-  ///   adjacent blocks); negative values expand outward (e.g. for the board tray).
-  /// - [cornerRadius]: fillet radius for convex corners.
-  /// - [concaveRadius]: optional separate radius for inner concave corners
-  ///   (defaults to `cornerRadius * 0.65`).
   static Path buildRoundedPath({
     required Set<GridCell> cells,
     required double cellSize,
@@ -188,33 +231,243 @@ class PolyominoPathBuilder {
     return path;
   }
 
-  /// Computes crisp screw positions near the outer convex corners of a stationary/pinned piece,
-  /// matching `StationaryBlocksParts.json` (`_cornerOffset: ~0.24`, `_singleBlockCornerOffset: 0.30`).
-  static List<Offset> computePinnedScrewOffsets({
+  /// Exact match of `PieceBlockBuilder.BuildStationaryAnchors` + `StationaryBlocksParts`:
+  /// Places corner screw pins ONLY on outer convex 90° corners (`!hasVertical && !hasHorizontal`):
+  /// - `1x1` piece: `scale = 0.65`, offset `(±0.30, ±0.30) * cellSize` from cell center.
+  /// - Multi-cell piece: `scale = 1.0`, offset `(±0.23979275, ±0.237994) * cellSize` from cell center.
+  static List<PinnedScrewAnchor> computePinnedScrewAnchors({
     required Set<GridCell> cells,
     required double cellSize,
   }) {
     if (cells.isEmpty) return const [];
     final isSingle = cells.length == 1;
-    final margin = cellSize * (isSingle ? 0.26 : 0.24);
-    final screws = <Offset>[];
+    final baseScale = isSingle ? UnityComponentVisualConfig.singleBlockScale : 1.0;
+    final dx = cellSize *
+        (isSingle
+            ? UnityComponentVisualConfig.singleBlockCornerOffset
+            : UnityComponentVisualConfig.multiBlockCornerOffsetX);
+    final dy = cellSize *
+        (isSingle
+            ? UnityComponentVisualConfig.singleBlockCornerOffset
+            : UnityComponentVisualConfig.multiBlockCornerOffsetY);
 
+    final anchors = <PinnedScrewAnchor>[];
     for (final (c, r) in cells) {
       final noLeft = !cells.contains((c - 1, r));
       final noRight = !cells.contains((c + 1, r));
       final noTop = !cells.contains((c, r - 1));
       final noBottom = !cells.contains((c, r + 1));
 
-      final x0 = c * cellSize;
-      final y0 = r * cellSize;
+      final cx = (c + 0.5) * cellSize;
+      final cy = (r + 0.5) * cellSize;
 
-      if (noLeft && noTop) screws.add(Offset(x0 + margin, y0 + margin));
-      if (noRight && noTop) screws.add(Offset(x0 + cellSize - margin, y0 + margin));
-      if (noLeft && noBottom) screws.add(Offset(x0 + margin, y0 + cellSize - margin));
+      if (noLeft && noTop) {
+        anchors.add(
+          PinnedScrewAnchor(
+            restPos: Offset(cx - dx, cy - dy),
+            outwardSign: const Offset(-1.0, -1.0),
+            baseScale: baseScale,
+          ),
+        );
+      }
+      if (noRight && noTop) {
+        anchors.add(
+          PinnedScrewAnchor(
+            restPos: Offset(cx + dx, cy - dy),
+            outwardSign: const Offset(1.0, -1.0),
+            baseScale: baseScale,
+          ),
+        );
+      }
+      if (noLeft && noBottom) {
+        anchors.add(
+          PinnedScrewAnchor(
+            restPos: Offset(cx - dx, cy + dy),
+            outwardSign: const Offset(-1.0, 1.0),
+            baseScale: baseScale,
+          ),
+        );
+      }
       if (noRight && noBottom) {
-        screws.add(Offset(x0 + cellSize - margin, y0 + cellSize - margin));
+        anchors.add(
+          PinnedScrewAnchor(
+            restPos: Offset(cx + dx, cy + dy),
+            outwardSign: const Offset(1.0, 1.0),
+            baseScale: baseScale,
+          ),
+        );
       }
     }
-    return screws;
+    return anchors;
+  }
+
+  static List<Offset> computePinnedScrewOffsets({
+    required Set<GridCell> cells,
+    required double cellSize,
+  }) {
+    return computePinnedScrewAnchors(cells: cells, cellSize: cellSize)
+        .map((a) => a.restPos)
+        .toList();
+  }
+
+  /// Exact match of `MovementComponentPresenter.ResolvePositions` & `ResolveAxis`:
+  /// Computes directional arrow positions, compact/normal scaling, seam placement on `2x2` squares,
+  /// and combined-arrow detection on staircase polyominoes.
+  static MovementArrowLayout? resolveMovementArrows({
+    required PieceModel model,
+    required double cellSize,
+  }) {
+    final isHoriz = model.movement == MovementConstraint.horizontalOnly;
+    final isVert = model.movement == MovementConstraint.verticalOnly;
+    if (!isHoriz && !isVert) return null;
+
+    final cells = model.localCells.toSet();
+    if (cells.isEmpty) return null;
+
+    final (spanCx, spanCy) = model.spanCenterInCells();
+    final centerAcross = isHoriz ? spanCy : spanCx;
+
+    int alongOf(GridCell cell) => isHoriz ? cell.$1 : cell.$2;
+    int acrossOf(GridCell cell) => isHoriz ? cell.$2 : cell.$1;
+
+    // 1. RoomiestLines: group cells by Across line (row for H, col for V) & keep lines with max count
+    final countsByLine = <int, int>{};
+    for (final cell in cells) {
+      final line = acrossOf(cell);
+      countsByLine[line] = (countsByLine[line] ?? 0) + 1;
+    }
+    int maxCount = 0;
+    for (final cnt in countsByLine.values) {
+      if (cnt > maxCount) maxCount = cnt;
+    }
+    final roomiest = <int>{
+      for (final e in countsByLine.entries)
+        if (e.value == maxCount) e.key,
+    };
+
+    // 2. NearestLineDistance to spanCenter
+    double nearestDist = double.infinity;
+    for (final line in roomiest) {
+      final d = ((line + 0.5) - centerAcross).abs();
+      if (d < nearestDist) nearestDist = d;
+    }
+    final nearestLines = <int>[
+      for (final line in roomiest)
+        if ((((line + 0.5) - centerAcross).abs() - nearestDist).abs() <= 1e-4)
+          line,
+    ]..sort();
+
+    int extremeOnLine(int line, {required bool towardsPositive}) {
+      int? best;
+      for (final cell in cells) {
+        if (acrossOf(cell) != line) continue;
+        final a = alongOf(cell);
+        if (best == null || (towardsPositive ? a > best : a < best)) {
+          best = a;
+        }
+      }
+      return best ?? 0;
+    }
+
+    (int extremeAlong, int extremeLine, bool decided) findExtreme({
+      required bool towardsPositive,
+    }) {
+      int? bestAlong;
+      final winningLines = <int>[];
+      for (final line in nearestLines) {
+        final ext = extremeOnLine(line, towardsPositive: towardsPositive);
+        if (bestAlong == null ||
+            (towardsPositive ? ext > bestAlong : ext < bestAlong)) {
+          bestAlong = ext;
+          winningLines
+            ..clear()
+            ..add(line);
+        } else if (ext == bestAlong) {
+          winningLines.add(line);
+        }
+      }
+      return (
+        bestAlong ?? 0,
+        winningLines.isNotEmpty ? winningLines.first : 0,
+        winningLines.length == 1,
+      );
+    }
+
+    // 3. FindExtreme for negative & positive ends + cross-end tie-breaking
+    var (negAlong, negLine, negDecided) = findExtreme(towardsPositive: false);
+    var (posAlong, posLine, posDecided) = findExtreme(towardsPositive: true);
+
+    if (negDecided && !posDecided) {
+      posLine = negLine;
+      posAlong = extremeOnLine(negLine, towardsPositive: true);
+      posDecided = true;
+    } else if (posDecided && !negDecided) {
+      negLine = posLine;
+      negAlong = extremeOnLine(posLine, towardsPositive: false);
+      negDecided = true;
+    }
+
+    // 4. UndecidedAcross: places arrows right on the seam `(minLine + 1.0) * cellSize` for `2x2`!
+    double undecidedAcrossPx() {
+      if (nearestLines.isEmpty) return centerAcross * cellSize;
+      final minLine = nearestLines.first;
+      final maxLine = nearestLines.last;
+      if (maxLine - minLine == 1) {
+        return (minLine + 1.0) * cellSize;
+      }
+      return (minLine + 0.5) * cellSize;
+    }
+
+    final sharedUndecided =
+        (!negDecided || !posDecided) ? undecidedAcrossPx() : 0.0;
+    final negAcrossPx =
+        negDecided ? (negLine + 0.5) * cellSize : sharedUndecided;
+    final posAcrossPx =
+        posDecided ? (posLine + 0.5) * cellSize : sharedUndecided;
+
+    final negAlongPx = (negAlong + 0.5) * cellSize;
+    final posAlongPx = (posAlong + 0.5) * cellSize;
+
+    final baseNegPos = isHoriz
+        ? Offset(negAlongPx, negAcrossPx)
+        : Offset(negAcrossPx, negAlongPx);
+    final basePosPos = isHoriz
+        ? Offset(posAlongPx, posAcrossPx)
+        : Offset(posAcrossPx, posAlongPx);
+
+    final isCompact =
+        (isHoriz && model.widthCols == 1) || (isVert && model.heightRows == 1);
+    if (isCompact) {
+      final compactOffset = isHoriz
+          ? Offset(UnityComponentVisualConfig.compactSideOffset * cellSize, 0.0)
+          : Offset(
+              0.0,
+              UnityComponentVisualConfig.compactVerticalOffset * cellSize,
+            );
+      return MovementArrowLayout(
+        isHorizontal: isHoriz,
+        isCompact: true,
+        isCombined: false,
+        negRestPos: baseNegPos - compactOffset,
+        posRestPos: basePosPos + compactOffset,
+        arrowScale: UnityComponentVisualConfig.compactArrowScale,
+        negativeCellLimit: negAlongPx - 0.5 * cellSize,
+        positiveCellLimit: posAlongPx + 0.5 * cellSize,
+      );
+    }
+
+    final isCombined =
+        (negAlong == posAlong) && (negAcrossPx - posAcrossPx).abs() <= 1e-4;
+    return MovementArrowLayout(
+      isHorizontal: isHoriz,
+      isCompact: false,
+      isCombined: isCombined,
+      negRestPos: baseNegPos,
+      posRestPos: basePosPos,
+      arrowScale: 1.0,
+      negativeCellLimit: negAlongPx - 0.5 * cellSize,
+      positiveCellLimit: posAlongPx + 0.5 * cellSize,
+    );
   }
 }
+

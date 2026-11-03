@@ -32,6 +32,7 @@ class MagicSandJarComponent extends PositionComponent {
   BlockColorStyle _style;
   final int levelNumber;
 
+  double _appearProgress = 0.0;
   double _fillProgress = 0.0;
   double _glowIntensity = 0.0;
   double _openProgress = 0.0;
@@ -60,7 +61,9 @@ class MagicSandJarComponent extends PositionComponent {
     required Vector2 centerPosition,
     required double jarWidth,
     required double jarHeight,
+    double initialAppearProgress = 0.0,
   })  : _style = style,
+        _appearProgress = initialAppearProgress.clamp(0.0, 1.0),
         super(
           position: centerPosition,
           size: Vector2(jarWidth, jarHeight),
@@ -84,6 +87,7 @@ class MagicSandJarComponent extends PositionComponent {
   }
 
   BlockColorStyle get style => _style;
+  double get appearProgress => _appearProgress;
   double get fillProgress => _fillProgress;
   double get glowIntensity => _glowIntensity;
   double get shakeIntensity => _shakeIntensity;
@@ -91,6 +95,7 @@ class MagicSandJarComponent extends PositionComponent {
   bool get isOpened => _isOpened;
 
   bool get isAnimating =>
+      (_appearProgress > 0.001 && _appearProgress < 0.999) ||
       _shakeIntensity > 0.001 ||
       _glowIntensity > 0.001 ||
       (_fillProgress > 0.001 && !_isOpened) ||
@@ -106,7 +111,8 @@ class MagicSandJarComponent extends PositionComponent {
     _style = newStyle;
   }
 
-  void resetJarState() {
+  void resetJarState({double initialAppearProgress = 0.0}) {
+    _appearProgress = initialAppearProgress.clamp(0.0, 1.0);
     _fillProgress = 0.0;
     _glowIntensity = 0.0;
     _openProgress = 0.0;
@@ -115,11 +121,13 @@ class MagicSandJarComponent extends PositionComponent {
   }
 
   void setWinSequenceState({
+    double appearProgress = 1.0,
     required double fillProgress,
     required double glowIntensity,
     required double shakeIntensity,
     required double openProgress,
   }) {
+    _appearProgress = appearProgress.clamp(0.0, 1.0);
     _fillProgress = fillProgress.clamp(0.0, 1.0);
     _glowIntensity = glowIntensity.clamp(0.0, 1.0);
     _shakeIntensity = shakeIntensity.clamp(0.0, 1.0);
@@ -141,13 +149,30 @@ class MagicSandJarComponent extends PositionComponent {
   void render(Canvas canvas) {
     final w = size.x;
     final h = size.y;
-    if (w <= 4 || h <= 4) return;
+    if (w <= 4 || h <= 4 || _appearProgress <= 0.005) return;
 
     canvas.save();
 
-    // Apply rhythmic shake & scale throb during Steps 2 & 3
     final cx = w * 0.5;
     final cy = h * 0.54;
+    final bool needsAppearFade = _appearProgress < 0.995;
+    if (needsAppearFade) {
+      final popScale = 0.36 +
+          0.64 * Curves.easeOutBack.transform(_appearProgress.clamp(0.0, 1.0));
+      final fadeAlpha =
+          Curves.easeOut.transform((_appearProgress / 0.72).clamp(0.0, 1.0));
+      canvas.translate(cx, cy);
+      canvas.scale(popScale, popScale);
+      canvas.translate(-cx, -cy);
+      if (fadeAlpha < 0.995) {
+        canvas.saveLayer(
+          Rect.fromLTWH(-w * 0.5, -h * 0.5, w * 2.0, h * 2.0),
+          Paint()..color = Colors.white.withValues(alpha: fadeAlpha),
+        );
+      }
+    }
+
+    // Apply rhythmic shake & scale throb during Steps 2 & 3
     if (_shakeIntensity > 0.001 || _glowIntensity > 0.001) {
       final wobbleAngle =
           math.sin(_animTime * 38.0) * 0.095 * _shakeIntensity;
@@ -163,7 +188,7 @@ class MagicSandJarComponent extends PositionComponent {
     }
 
     // 0. Outer Ambient Halo & Opening God-Rays (`Step 3 & Step 4`)
-    if (_glowIntensity > 0.01 || _openProgress > 0.01) {
+    if (_glowIntensity > 0.01 || _openProgress > 0.01 || needsAppearFade) {
       _drawOuterAuraAndGodRays(canvas, w, h);
     }
 
@@ -414,12 +439,21 @@ class MagicSandJarComponent extends PositionComponent {
     // 7. Cork / Stopper Lid (sits on mouth, then pops open with light beam in Step 3!)
     _drawJarLid(canvas, w, h);
 
+    if (needsAppearFade &&
+        Curves.easeOut.transform((_appearProgress / 0.72).clamp(0.0, 1.0)) <
+            0.995) {
+      canvas.restore();
+    }
     canvas.restore();
   }
 
   void _drawOuterAuraAndGodRays(Canvas canvas, double w, double h) {
     final center = Offset(w * 0.5, h * 0.52);
-    final auraIntensity = math.max(_glowIntensity, _openProgress).clamp(0.0, 1.0);
+    final popAura = (_appearProgress > 0.01 && _appearProgress < 1.0)
+        ? math.sin(_appearProgress * math.pi) * 0.65
+        : 0.0;
+    final auraIntensity =
+        math.max(math.max(_glowIntensity, _openProgress), popAura).clamp(0.0, 1.0);
     final auraRadius = w * (0.62 + 0.38 * auraIntensity + 0.26 * _openProgress);
 
     canvas.drawCircle(

@@ -600,10 +600,29 @@ class _GameplayScreenState extends State<GameplayScreen>
                       ],
                     ),
 
-                    // Top-Center `TimerGameplayView.prefab` (`3:00` pill / frozen snow pill / urgent red pill)
+                    // Top-Center `TimerGameplayView.prefab` (hides immediately on level complete so the Magic Sand Jar appears without overlap!)
                     if (!_activeLevel.timerDisabled) ...[
                       SizedBox(height: ux(context, 18)),
-                      _buildTimerGameplayView(context),
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _game.isWinSequenceActiveNotifier,
+                        builder: (context, winActive, child) {
+                          return AnimatedScale(
+                            scale: winActive ? 0.65 : 1.0,
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeInBack,
+                            child: AnimatedOpacity(
+                              opacity: winActive ? 0.0 : 1.0,
+                              duration: const Duration(milliseconds: 160),
+                              curve: Curves.easeOut,
+                              child: IgnorePointer(
+                                ignoring: winActive,
+                                child: child,
+                              ),
+                            ),
+                          );
+                        },
+                        child: _buildTimerGameplayView(context),
+                      ),
                     ],
                   ],
                 ),
@@ -613,7 +632,7 @@ class _GameplayScreenState extends State<GameplayScreen>
 
           // 5b. Top-Anchored `TutorialText` (`GameplayView.prefab`: `AnchoredPos=(0, -419.20)`,
           // `SizeDelta=(-70.52, 124.60)`, `fontSize = 47.3`, Levels 1-3).
-          // Stays visible for the ENTIRE duration of Levels 1-3 (`PlayTutorialTextIntroAsync` pop-in)!
+          // Stays visible during gameplay on Levels 1-3 and fades out when win sequence starts so the Jar appears cleanly!
           if (tutorialHint != null)
             SafeArea(
               child: IgnorePointer(
@@ -625,27 +644,39 @@ class _GameplayScreenState extends State<GameplayScreen>
                       left: ux(context, 35.26),
                       right: ux(context, 35.26),
                     ),
-                    child: TweenAnimationBuilder<double>(
-                      key: ValueKey(
-                        'tut_text_${_activeLevel.number}_$_tutorialBannerAnimEpoch',
-                      ),
-                      tween: Tween(begin: 0.0, end: 1.0),
-                      duration: const Duration(milliseconds: 520),
-                      curve: const Interval(0.30, 1.0, curve: Curves.easeOutBack),
-                      builder: (context, anim, child) => Transform.scale(
-                        scale: 0.72 + 0.28 * anim,
-                        child: Opacity(
-                          opacity: anim.clamp(0.0, 1.0),
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _game.isWinSequenceActiveNotifier,
+                      builder: (context, winActive, child) {
+                        return AnimatedOpacity(
+                          opacity: winActive ? 0.0 : 1.0,
+                          duration: const Duration(milliseconds: 160),
+                          curve: Curves.easeOut,
                           child: child,
+                        );
+                      },
+                      child: TweenAnimationBuilder<double>(
+                        key: ValueKey(
+                          'tut_text_${_activeLevel.number}_$_tutorialBannerAnimEpoch',
                         ),
-                      ),
-                      child: SizedBox(
-                        height: ux(context, 132),
-                        child: Center(
-                          child: UnitySdfText(
-                            tutorialHint,
-                            unityFontSize: 47.3,
-                            material: UnityTextMaterial.tutorialText,
+                        tween: Tween(begin: 0.0, end: 1.0),
+                        duration: const Duration(milliseconds: 520),
+                        curve:
+                            const Interval(0.30, 1.0, curve: Curves.easeOutBack),
+                        builder: (context, anim, child) => Transform.scale(
+                          scale: 0.72 + 0.28 * anim,
+                          child: Opacity(
+                            opacity: anim.clamp(0.0, 1.0),
+                            child: child,
+                          ),
+                        ),
+                        child: SizedBox(
+                          height: ux(context, 132),
+                          child: Center(
+                            child: UnitySdfText(
+                              tutorialHint,
+                              unityFontSize: 47.3,
+                              material: UnityTextMaterial.tutorialText,
+                            ),
                           ),
                         ),
                       ),

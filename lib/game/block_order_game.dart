@@ -1016,29 +1016,60 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         .min(availW / framedCols, availH / framedRows)
         .clamp(24.0, 220.0);
 
+    // Top HUD clearance:
+    // - Without Timer (`timerDisabled`): Coins/Level row ends at `_safeTop + 141*u` -> `168*u` with margin.
+    // - With Timer (`!timerDisabled`): Coins row (`141*u`) + gap (`18*u`) + Timer pill (`124*u`) = `283*u` -> `305*u` with margin!
+    final minJarTopScreenY =
+        _safeTop + (_level.timerDisabled ? 168.0 * u : 305.0 * u);
+    final maxBoardBottomScreenY = size.y - _safeBottom - 216.0 * u;
+    final maxVerticalSpan =
+        math.max(160.0, maxBoardBottomScreenY - minJarTopScreenY);
+
+    double jarHeight =
+        math.min(_cellSize * 1.68, size.y * 0.165).clamp(84.0, 178.0);
+    double boardSpanWithRims = (_level.rows + 0.58) * _cellSize;
+    double jarAndGap = jarHeight * 1.02 + _cellSize * 0.05;
+
+    if (boardSpanWithRims + jarAndGap > maxVerticalSpan) {
+      // 1. First compact `jarHeight` slightly if needed
+      final minAllowedJarH =
+          math.min(jarHeight, math.max(72.0, _cellSize * 1.20));
+      final availForJar =
+          (maxVerticalSpan - boardSpanWithRims - _cellSize * 0.05) / 1.02;
+      jarHeight = availForJar.clamp(minAllowedJarH, jarHeight);
+      jarAndGap = jarHeight * 1.02 + _cellSize * 0.05;
+
+      // 2. On tall timed boards (e.g., 6-8 rows with Timer active), scale `_cellSize` & `jarHeight`
+      //    together so the Jar + Board fit 100% between the Timer pill and the bottom PowerUps bar!
+      if (!_level.timerDisabled &&
+          boardSpanWithRims + jarAndGap > maxVerticalSpan) {
+        final fitRatio =
+            (maxVerticalSpan / (boardSpanWithRims + jarAndGap)).clamp(0.65, 1.0);
+        _cellSize = (_cellSize * fitRatio).clamp(24.0, 220.0);
+        jarHeight = (jarHeight * fitRatio).clamp(68.0, 178.0);
+      }
+    }
+
     final boardW = _level.cols * _cellSize;
     final boardH = _level.rows * _cellSize;
     _boardOrigin = Vector2(-boardW * 0.5, -boardH * 0.5 - _cellSize * 0.10);
 
     // Mount the Magic Sand Jar right above the top rim of the board, colored to
     // match the level's final/largest target number (`level.targetWinNumber`).
-    final jarHeight =
-        math.min(_cellSize * 1.68, size.y * 0.165).clamp(92.0, 178.0);
     final jarWidth = jarHeight * 0.90;
     final topBoardRimY = _boardOrigin.y - _cellSize * 0.24;
     final jarCenterY = topBoardRimY - jarHeight * 0.50 - _cellSize * 0.05;
 
     double stageCenterY = centerY;
     final jarTopStageY = jarCenterY - jarHeight * 0.52;
-    final minJarTopScreenY =
-        _safeTop + (_level.timerDisabled ? 195.0 * u : 244.0 * u);
-    if (stageCenterY + jarTopStageY < minJarTopScreenY) {
-      final bottomBoardRimY = _boardOrigin.y + boardH + _cellSize * 0.34;
-      final maxCenterY = size.y - _safeBottom - 220.0 * u - bottomBoardRimY;
-      stageCenterY = math.max(
-        stageCenterY,
-        math.min(minJarTopScreenY - jarTopStageY, maxCenterY),
-      );
+    final bottomBoardRimY = _boardOrigin.y + boardH + _cellSize * 0.34;
+    final maxCenterY = maxBoardBottomScreenY - bottomBoardRimY;
+    final minCenterY = minJarTopScreenY - jarTopStageY;
+    if (stageCenterY > maxCenterY) {
+      stageCenterY = maxCenterY;
+    }
+    if (stageCenterY < minCenterY) {
+      stageCenterY = minCenterY;
     }
 
     _boardStage.position = Vector2(

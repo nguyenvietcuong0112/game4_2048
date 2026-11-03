@@ -103,6 +103,40 @@ class _BakedStaticPieceSprite {
   });
 }
 
+class _SandSwarmGrain {
+  double worldX;
+  double worldY;
+  double velX;
+  double velY;
+  final double homeLocalX;
+  final double homeLocalY;
+  final double size;
+  double life;
+  final double maxLife;
+  double swirlPhase;
+  final double swirlFreq;
+  final int colorKind;
+  final bool isDiamond;
+  final bool isForeground;
+
+  _SandSwarmGrain({
+    required this.worldX,
+    required this.worldY,
+    required this.velX,
+    required this.velY,
+    required this.homeLocalX,
+    required this.homeLocalY,
+    required this.size,
+    required this.life,
+    required this.maxLife,
+    required this.swirlPhase,
+    required this.swirlFreq,
+    required this.colorKind,
+    required this.isDiamond,
+    required this.isForeground,
+  });
+}
+
 class PieceComponent extends PositionComponent {
   static const double _tmpUnitToCellRatio = 0.082;
   static const int _pinFitSteps = 12;
@@ -213,10 +247,23 @@ class PieceComponent extends PositionComponent {
   double _absorbElapsed = 0.0;
   bool _areComponentsRemovedForAbsorb = false;
 
-  // Exact `PieceJellyDeformer` (`k = 300`, `zeta = 0.20`, per-axis `SizeScale`)
+  // Sand Swarm Trail (`Hóa Cát Bay Theo Tay`) & Deformer state:
   Offset _jellyLean = Offset.zero;
   Offset _jellyVel = Offset.zero;
   Offset _jellyDeformWritten = Offset.zero;
+  final List<_SandSwarmGrain> _sandSwarmGrains = <_SandSwarmGrain>[];
+  final List<Offset> _sandTrailCentersWorld = <Offset>[];
+  Vector2? _prevSandWorldPos;
+  Offset _sandTravelDir = const Offset(1.0, 0.0);
+  double _sandErosionIntensity = 0.0;
+  double _sandReformFlash = 0.0;
+  double _sandShimmerClock = 0.0;
+  int _lastSandGridCol = -999;
+  int _lastSandGridRow = -999;
+  final Paint _sandErosionPaint = Paint();
+  final Paint _sandGrainPaint = Paint()..style = PaintingStyle.fill;
+  final Paint _sandRibbonPaint = Paint()..style = PaintingStyle.fill;
+  final Paint _sandRingPaint = Paint()..style = PaintingStyle.stroke;
 
   // `PieceFollow.PlayLeanImpulse` (`MergeSurvivorStaysImpulseCurve`)
   Offset _leanImpulseDir = Offset.zero;
@@ -423,7 +470,10 @@ class PieceComponent extends PositionComponent {
       (_normalNumberSizeFactor - 1.0).abs() < 1e-4 &&
       _previewNumberSizeFactor <= 0.005 &&
       _screwShrinkTimer < 0 &&
-      _icePopTimer < 0;
+      _icePopTimer < 0 &&
+      _sandSwarmGrains.isEmpty &&
+      _sandErosionIntensity <= 0.005 &&
+      _sandReformFlash <= 0.005;
 
   @visibleForTesting
   bool get debugHasStaticBakedSprite {
@@ -1210,7 +1260,7 @@ class PieceComponent extends PositionComponent {
       }
     }
 
-    // 3. Tick `PieceJellyDeformer` (`leanScale = 0` for Duds, `k = 300`, `zeta = 0.20`, sub-stepped <= 8ms)
+    // 3. Tick Deformer & Sand Swarm Trail (`Hóa Cát Bay Theo Tay`)
     if (clampedDt > 1e-5) {
       if (model.isDud ||
           _followState == _FollowState.absorbing ||
@@ -1218,6 +1268,10 @@ class PieceComponent extends PositionComponent {
         _jellyLean = Offset.zero;
         _jellyVel = Offset.zero;
         _jellyDeformWritten = Offset.zero;
+        _sandSwarmGrains.clear();
+        _sandTrailCentersWorld.clear();
+        _sandErosionIntensity = 0.0;
+        _sandReformFlash = 0.0;
       } else {
         final rawLagX = (_followState == _FollowState.dragging && !_allowsDragH)
             ? 0.0
@@ -1260,6 +1314,8 @@ class PieceComponent extends PositionComponent {
             _jellyLean.dy * sizeScaleY,
           );
         }
+
+        _tickSandSwarmTrail(clampedDt, lagCells);
       }
     }
 
@@ -1499,10 +1555,21 @@ class PieceComponent extends PositionComponent {
     final wallInflateScaleY =
         1.0 + (totalBlockInflate * 0.72) / math.max(1, model.heightRows);
 
-    final finalScaleX =
-        visualScale * visualScaleXMultiplier * _mergePulseScale * wallInflateScaleX;
-    final finalScaleY =
-        visualScale * visualScaleYMultiplier * _mergePulseScale * wallInflateScaleY;
+    // Sand Swarm Reform Pulse when sand grains implode back into the block on stop:
+    final sandReformPop = _sandReformFlash > 0.01
+        ? (1.0 + math.sin(_sandReformFlash * math.pi) * 0.035)
+        : 1.0;
+
+    final finalScaleX = visualScale *
+        visualScaleXMultiplier *
+        _mergePulseScale *
+        wallInflateScaleX *
+        sandReformPop;
+    final finalScaleY = visualScale *
+        visualScaleYMultiplier *
+        _mergePulseScale *
+        wallInflateScaleY *
+        sandReformPop;
     final finalScaleZ = _mergePulseScale * _candidatePulseScaleZ * _tapScaleZ;
 
     final effectiveLipDepth = (_lipDepth * finalScaleZ).clamp(2.0, _lipDepth * 1.85);
@@ -1510,10 +1577,8 @@ class PieceComponent extends PositionComponent {
 
     final totalLiftCells = _currentZLiftCells + _candidateLiftCells;
     final liftPx = totalLiftCells * cellSize * 1.15 + zHeightGrowPx * 0.55;
-    final topJellyShift = Offset(
-      _jellyDeformWritten.dx * cellSize,
-      _jellyDeformWritten.dy * cellSize,
-    );
+    // Zero jelly wobble: block stays crisp while its edges dissolve into swirling sand!
+    const topJellyShift = Offset.zero;
 
     canvas.save();
     if (visualOpacity < 0.999) {
@@ -1522,6 +1587,11 @@ class PieceComponent extends PositionComponent {
         _localBounds.inflate(cellSize * 0.9),
         _opacityLayerPaint,
       );
+    }
+
+    // Background Sand Swarm Wake & Wind-Swept Sand Ribbons (in world-relative local coords)
+    if (_sandSwarmGrains.isNotEmpty || _sandTrailCentersWorld.length >= 2) {
+      _drawSandSwarmWake(canvas, baseStyle);
     }
 
     // Pivot compensation around `_visualPivotLocal` (`PieceFollow.ApplyPose`) + 2D shake jitter
@@ -1622,7 +1692,7 @@ class PieceComponent extends PositionComponent {
     // Shift piece upward by Z-lift (`position.z = -OffsetWhileDragging`)
     canvas.translate(0, -liftPx);
 
-    // 2. Chunky 2.5D Body Surface (Planted Base Wall + Jelly-Shifted Top Face)
+    // 2. Chunky 2.5D Body Surface + Sand Erosion Crust
     _drawBodySurface(
       canvas,
       baseStyle,
@@ -1682,11 +1752,10 @@ class PieceComponent extends PositionComponent {
     canvas.drawPath(_topPath, _outerContourPaint);
     canvas.restore();
 
-    // 7, 8, 9. Top-Face Riders (tilting/riding with `topJellyShift` via `PieceView.RideTopFace`!)
+    // 7, 8, 9. Top-Face Riders
     if (!_areComponentsRemovedForAbsorb) {
       canvas.save();
       canvas.translate(topJellyShift.dx, topJellyShift.dy);
-      _applyTopFaceTiltTransform(canvas);
 
       if (_isIceCovered) {
         // `PieceFaceCover.IsCovered == true`: hides underlying number, arrows, and pins!
@@ -1741,28 +1810,15 @@ class PieceComponent extends PositionComponent {
       canvas.restore();
     }
 
+    // Foreground Sand Swarm Grains swirling over the block edges and imploding on stop
+    if (_sandSwarmGrains.isNotEmpty) {
+      _drawSandSwarmForeground(canvas, baseStyle, liftPx: liftPx);
+    }
+
     if (visualOpacity < 0.999) {
       canvas.restore();
     }
     canvas.restore();
-  }
-
-  /// Applies subtle 3D foreshortening matching `PieceJellyDeformer.TopFaceTurn`
-  /// (`angleDeg = deform.magnitude * JellyTiltPerLeanCell` = `90° * mag`).
-  void _applyTopFaceTiltTransform(Canvas canvas) {
-    final mag = _jellyDeformWritten.distance;
-    if (mag < 1e-4) return;
-    final tiltRad =
-        mag * visualSettings.jellyTiltPerLeanCell * (math.pi / 180.0);
-    final cosTheta = math.cos(tiltRad).clamp(0.88, 1.0);
-    if ((1.0 - cosTheta) < 1e-4) return;
-
-    final angle = math.atan2(_jellyDeformWritten.dy, _jellyDeformWritten.dx);
-    canvas.translate(_visualPivotLocal.dx, _visualPivotLocal.dy);
-    canvas.rotate(angle);
-    canvas.scale(cosTheta, 1.0);
-    canvas.rotate(-angle);
-    canvas.translate(-_visualPivotLocal.dx, -_visualPivotLocal.dy);
   }
 
   /// Paints the opaque 3D extruded wall with ZERO per-frame `Path.combine` or `Path.shift` allocations:
@@ -1845,8 +1901,389 @@ class PieceComponent extends PositionComponent {
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
     canvas.drawPath(_topPath, _cachedTopPaint);
+    if ((_sandErosionIntensity > 0.01 || _sandReformFlash > 0.01) &&
+        !_isIceCovered) {
+      _drawSandErosionOnBlock(canvas, style);
+    }
     canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
     canvas.restore();
+  }
+
+  /// Ticks the Sand Swarm Trail (`Hóa Cát Bay Theo Tay`):
+  /// - Emits swirling colored & golden sand grains along the block's trailing edges while dragging.
+  /// - Records world trail points for wind-swept sand ribbons.
+  /// - When stopping or releasing, rapidly implodes all sand grains back into the block with a golden condense ring!
+  void _tickSandSwarmTrail(double clampedDt, Offset lagCells) {
+    _sandShimmerClock += clampedDt;
+    final prevPos = _prevSandWorldPos ?? position.clone();
+    final dx = position.x - prevPos.x;
+    final dy = position.y - prevPos.y;
+    _prevSandWorldPos = position.clone();
+
+    final frameMoveDist = math.sqrt(dx * dx + dy * dy);
+    final lagMag = lagCells.distance;
+
+    if (frameMoveDist > 0.35) {
+      _sandTravelDir = Offset(dx / frameMoveDist, dy / frameMoveDist);
+    } else if (lagMag > 0.012) {
+      _sandTravelDir = Offset(lagCells.dx / lagMag, lagCells.dy / lagMag);
+    }
+
+    // Detect grid-cell steps to fire a sand step burst
+    if (_lastSandGridCol == -999) {
+      _lastSandGridCol = model.col;
+      _lastSandGridRow = model.row;
+    } else if (model.col != _lastSandGridCol || model.row != _lastSandGridRow) {
+      _lastSandGridCol = model.col;
+      _lastSandGridRow = model.row;
+      if (isDragging || _followState == _FollowState.dragging) {
+        _sandReformFlash = math.max(_sandReformFlash, 0.72);
+        _spawnSandSwarmGrains(14, burstSpeedMultiplier: 1.35);
+      }
+    }
+
+    final activelyDragging =
+        isDragging || _followState == _FollowState.dragging;
+    final isMoving = frameMoveDist > 0.25 || lagMag > 0.012;
+
+    if (activelyDragging) {
+      final targetErosion = (0.44 +
+              (frameMoveDist / (cellSize * 0.14)) * 0.56 +
+              (lagMag / 0.14) * 0.45)
+          .clamp(0.42, 1.0);
+      _sandErosionIntensity = ui.lerpDouble(
+        _sandErosionIntensity,
+        targetErosion,
+        (clampedDt * 14.0).clamp(0.0, 1.0),
+      )!;
+
+      final spawnCount = isMoving
+          ? (3 + (frameMoveDist / (cellSize * 0.055)).round() + (lagMag * 18.0).round())
+              .clamp(3, 12)
+          : 2;
+      _spawnSandSwarmGrains(spawnCount, burstSpeedMultiplier: isMoving ? 1.0 : 0.45);
+
+      if (isMoving) {
+        final worldCenter = Offset(
+          position.x + _visualPivotLocal.dx,
+          position.y + _visualPivotLocal.dy,
+        );
+        if (_sandTrailCentersWorld.isEmpty ||
+            (worldCenter - _sandTrailCentersWorld.last).distance >
+                cellSize * 0.08) {
+          _sandTrailCentersWorld.add(worldCenter);
+          if (_sandTrailCentersWorld.length > 8) {
+            _sandTrailCentersWorld.removeAt(0);
+          }
+        }
+      } else if (_sandTrailCentersWorld.isNotEmpty) {
+        _sandTrailCentersWorld.removeAt(0);
+      }
+    } else {
+      // Finger released or piece settling: trigger Sand Implosion Condense Burst!
+      if (_sandErosionIntensity > 0.24 && _sandReformFlash < 0.35) {
+        _sandReformFlash = 1.0;
+      }
+      _sandErosionIntensity =
+          math.max(0.0, _sandErosionIntensity - clampedDt * 5.2);
+      if (_sandTrailCentersWorld.isNotEmpty) {
+        _sandTrailCentersWorld.removeAt(0);
+      }
+    }
+
+    if (_sandReformFlash > 0.0) {
+      _sandReformFlash = math.max(0.0, _sandReformFlash - clampedDt * 2.85);
+    }
+
+    if (_sandSwarmGrains.isEmpty) return;
+
+    final perpX = -_sandTravelDir.dy;
+    final perpY = _sandTravelDir.dx;
+    final imploding = !activelyDragging || !isMoving;
+
+    for (int i = _sandSwarmGrains.length - 1; i >= 0; i--) {
+      final g = _sandSwarmGrains[i];
+      g.life += clampedDt * (imploding ? 2.35 : 1.0);
+      if (g.life >= g.maxLife) {
+        _sandSwarmGrains.removeAt(i);
+        continue;
+      }
+
+      g.swirlPhase += g.swirlFreq * clampedDt;
+      final homeWorldX = position.x + g.homeLocalX;
+      final homeWorldY = position.y + g.homeLocalY;
+
+      if (imploding) {
+        // Magnetic Sand Implosion: rapidly suck all trailing grains back into their block cell!
+        final homingAlpha =
+            (1.0 - math.exp(-24.0 * clampedDt)).clamp(0.0, 1.0);
+        g.worldX = ui.lerpDouble(g.worldX, homeWorldX, homingAlpha)!;
+        g.worldY = ui.lerpDouble(g.worldY, homeWorldY, homingAlpha)!;
+        g.velX *= 0.80;
+        g.velY *= 0.80;
+        final distSq = (g.worldX - homeWorldX) * (g.worldX - homeWorldX) +
+            (g.worldY - homeWorldY) * (g.worldY - homeWorldY);
+        if (distSq < 9.0 && g.life > g.maxLife * 0.35) {
+          _sandSwarmGrains.removeAt(i);
+        }
+      } else {
+        // Swirling Vortex Trail following behind the dragged block
+        final swirlForce = math.sin(g.swirlPhase) * cellSize * 2.4;
+        g.worldX += (g.velX + perpX * swirlForce) * clampedDt;
+        g.worldY += (g.velY + perpY * swirlForce) * clampedDt;
+
+        // Soft elastic leash toward trailing wake behind home position
+        final trailTargetX =
+            homeWorldX - _sandTravelDir.dx * cellSize * 0.42;
+        final trailTargetY =
+            homeWorldY - _sandTravelDir.dy * cellSize * 0.42;
+        final leashAlpha =
+            (1.0 - math.exp(-6.5 * clampedDt)).clamp(0.0, 1.0);
+        g.worldX = ui.lerpDouble(g.worldX, trailTargetX, leashAlpha)!;
+        g.worldY = ui.lerpDouble(g.worldY, trailTargetY, leashAlpha)!;
+      }
+    }
+  }
+
+  void _spawnSandSwarmGrains(
+    int count, {
+    required double burstSpeedMultiplier,
+  }) {
+    if (model.localCells.isEmpty) return;
+    const maxGrains = 76;
+    final available = maxGrains - _sandSwarmGrains.length;
+    final toSpawn = math.min(count, available);
+    if (toSpawn <= 0) return;
+
+    final perpX = -_sandTravelDir.dy;
+    final perpY = _sandTravelDir.dx;
+
+    for (int i = 0; i < toSpawn; i++) {
+      final cell = model.localCells[_rng.nextInt(model.localCells.length)];
+      // Bias spawn toward the trailing edge of the cell while keeping home inside the cell
+      final homeLocalX = (cell.$1 + 0.14 + _rng.nextDouble() * 0.72) * cellSize;
+      final homeLocalY = (cell.$2 + 0.14 + _rng.nextDouble() * 0.72) * cellSize;
+
+      final edgeScatter = (_rng.nextDouble() - 0.5) * cellSize * 0.65;
+      final trailOffset = (0.06 + _rng.nextDouble() * 0.34) * cellSize;
+      final spawnWorldX = position.x +
+          homeLocalX -
+          _sandTravelDir.dx * trailOffset +
+          perpX * edgeScatter * 0.35;
+      final spawnWorldY = position.y +
+          homeLocalY -
+          _sandTravelDir.dy * trailOffset +
+          perpY * edgeScatter * 0.35;
+
+      final backwardSpeed =
+          (0.65 + _rng.nextDouble() * 1.45) * cellSize * burstSpeedMultiplier;
+      final sideSpeed =
+          (_rng.nextDouble() - 0.5) * 1.85 * cellSize * burstSpeedMultiplier;
+
+      _sandSwarmGrains.add(
+        _SandSwarmGrain(
+          worldX: spawnWorldX,
+          worldY: spawnWorldY,
+          velX: -_sandTravelDir.dx * backwardSpeed + perpX * sideSpeed,
+          velY: -_sandTravelDir.dy * backwardSpeed + perpY * sideSpeed,
+          homeLocalX: homeLocalX,
+          homeLocalY: homeLocalY,
+          size: (cellSize * (0.036 + _rng.nextDouble() * 0.052)).clamp(2.2, 6.2),
+          life: 0.0,
+          maxLife: 0.28 + _rng.nextDouble() * 0.18,
+          swirlPhase: _rng.nextDouble() * math.pi * 2.0,
+          swirlFreq: 10.0 + _rng.nextDouble() * 10.0,
+          colorKind: _rng.nextInt(4),
+          isDiamond: _rng.nextBool(),
+          isForeground: _rng.nextDouble() < 0.48,
+        ),
+      );
+    }
+  }
+
+  Color _sandGrainColor(BlockColorStyle style, int colorKind, double alpha) {
+    switch (colorKind) {
+      case 0:
+        return style.topBright.withValues(alpha: alpha);
+      case 1:
+        return style.rimHighlight.withValues(alpha: alpha);
+      case 2:
+        return Color.lerp(style.topMid, const Color(0xFFFFE082), 0.45)!
+            .withValues(alpha: alpha);
+      default:
+        return const Color(0xFFFFF6D6).withValues(alpha: alpha);
+    }
+  }
+
+  /// Renders wind-swept sand ribbons and background sand grains trailing behind the block.
+  void _drawSandSwarmWake(Canvas canvas, BlockColorStyle style) {
+    // 1. Translucent swirling sand-stream ribbons connecting `_sandTrailCentersWorld`
+    if (_sandTrailCentersWorld.length >= 2 && _sandErosionIntensity > 0.05) {
+      final perp = Offset(-_sandTravelDir.dy, _sandTravelDir.dx);
+      final maxHalfW =
+          math.min(_localBounds.width, _localBounds.height) * 0.36;
+      for (final ribbonSign in const [-0.55, 0.0, 0.55]) {
+        final ribbonPath = Path();
+        final n = _sandTrailCentersWorld.length;
+        for (int i = 0; i < n; i++) {
+          final frac = i / math.max(1, n - 1);
+          final worldPt = _sandTrailCentersWorld[i];
+          final wave =
+              math.sin(_sandShimmerClock * 14.0 + i * 0.9 + ribbonSign * 2.0) *
+                  cellSize *
+                  0.08 *
+                  (1.0 - frac);
+          final offsetSide =
+              perp * (ribbonSign * maxHalfW * frac + wave) -
+                  _sandTravelDir * (cellSize * 0.18 * (1.0 - frac));
+          final localPt = Offset(
+                worldPt.dx - position.x,
+                worldPt.dy - position.y,
+              ) +
+              offsetSide;
+          if (i == 0) {
+            ribbonPath.moveTo(localPt.dx, localPt.dy);
+          } else {
+            ribbonPath.lineTo(localPt.dx, localPt.dy);
+          }
+        }
+        _sandRibbonPaint
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = (cellSize * (ribbonSign == 0.0 ? 0.22 : 0.13))
+              .clamp(4.0, 22.0)
+          ..color = (ribbonSign == 0.0
+                  ? style.topBright
+                  : const Color(0xFFFFEFA8))
+              .withValues(
+            alpha: (0.22 * _sandErosionIntensity).clamp(0.0, 0.28),
+          );
+        canvas.drawPath(ribbonPath, _sandRibbonPaint);
+      }
+    }
+
+    // 2. Background Sand Swarm Grains
+    for (final g in _sandSwarmGrains) {
+      if (g.isForeground) continue;
+      _drawSingleSandGrain(canvas, style, g, liftOffsetY: 0.0);
+    }
+  }
+
+  /// Renders foreground sand grains swirling over the block edges and imploding into the top face.
+  void _drawSandSwarmForeground(
+    Canvas canvas,
+    BlockColorStyle style, {
+    required double liftPx,
+  }) {
+    for (final g in _sandSwarmGrains) {
+      if (!g.isForeground) continue;
+      _drawSingleSandGrain(canvas, style, g, liftOffsetY: liftPx * 0.35);
+    }
+  }
+
+  void _drawSingleSandGrain(
+    Canvas canvas,
+    BlockColorStyle style,
+    _SandSwarmGrain g, {
+    required double liftOffsetY,
+  }) {
+    final progress = (g.life / g.maxLife).clamp(0.0, 1.0);
+    final env = math.sin(progress * math.pi).clamp(0.0, 1.0);
+    final alpha = (env * 0.92).clamp(0.0, 1.0);
+    if (alpha <= 0.02) return;
+
+    final lx = g.worldX - position.x;
+    final ly = g.worldY - position.y + liftOffsetY;
+    final r = g.size * (0.65 + 0.45 * env);
+
+    // Outer soft golden/colored sand glow
+    _sandGrainPaint.color = _sandGrainColor(style, g.colorKind, alpha * 0.38);
+    canvas.drawCircle(Offset(lx, ly), r * 1.45, _sandGrainPaint);
+
+    // Crisp sand crystal core (diamond or round grain)
+    _sandGrainPaint.color = _sandGrainColor(style, g.colorKind, alpha);
+    if (g.isDiamond) {
+      final dPath = Path()
+        ..moveTo(lx, ly - r * 1.15)
+        ..lineTo(lx + r * 0.95, ly)
+        ..lineTo(lx, ly + r * 1.15)
+        ..lineTo(lx - r * 0.95, ly)
+        ..close();
+      canvas.drawPath(dPath, _sandGrainPaint);
+    } else {
+      canvas.drawCircle(Offset(lx, ly), r, _sandGrainPaint);
+    }
+  }
+
+  /// Renders the trailing-edge Sand Erosion crust while swiping and the
+  /// Golden Sand Implosion Condense Ring when stopping at a grid cell.
+  void _drawSandErosionOnBlock(Canvas canvas, BlockColorStyle style) {
+    final diag =
+        math.sqrt(_localBounds.width * _localBounds.width + _localBounds.height * _localBounds.height);
+    final halfSpan = math.max(16.0, diag * 0.52);
+
+    // 1. Trailing-edge sand dissolve shimmer gradient
+    if (_sandErosionIntensity > 0.01) {
+      final intensity = _sandErosionIntensity.clamp(0.0, 1.0);
+      final leadPt = _visualPivotLocal + _sandTravelDir * halfSpan;
+      final trailPt = _visualPivotLocal - _sandTravelDir * halfSpan;
+      final sandGold =
+          Color.lerp(style.rimHighlight, const Color(0xFFFFEDA6), 0.62)!;
+
+      _sandErosionPaint.shader = ui.Gradient.linear(
+        leadPt,
+        trailPt,
+        [
+          Colors.white.withValues(alpha: 0.0),
+          style.rimHighlight.withValues(alpha: 0.18 * intensity),
+          sandGold.withValues(alpha: 0.52 * intensity),
+          const Color(0xFFFFF8DC).withValues(alpha: 0.72 * intensity),
+        ],
+        const [0.0, 0.42, 0.78, 1.0],
+      );
+      canvas.drawPath(_topPath, _sandErosionPaint);
+
+      // Animated surface sand specks peeling off along the trailing half of the block
+      final perp = Offset(-_sandTravelDir.dy, _sandTravelDir.dx);
+      for (int i = 0; i < 24; i++) {
+        final phase = (_sandShimmerClock * 3.8 + i * 0.37) % 1.0;
+        final hash1 = ((i * 73 + 19) % 97) / 97.0;
+        final hash2 = ((i * 41 + 53) % 89) / 89.0;
+        final cell = model.localCells[i % model.localCells.length];
+        final baseLocal = Offset(
+          (cell.$1 + 0.12 + hash1 * 0.76) * cellSize,
+          (cell.$2 + 0.12 + hash2 * 0.76) * cellSize,
+        );
+        final drift = -_sandTravelDir * (phase * cellSize * 0.24) +
+            perp * (math.sin(phase * math.pi * 2.0 + i) * cellSize * 0.06);
+        final pt = baseLocal + drift;
+        final speckAlpha =
+            (math.sin(phase * math.pi) * intensity * 0.85).clamp(0.0, 1.0);
+        if (speckAlpha <= 0.03) continue;
+        final sr = (cellSize * (0.024 + (i % 3) * 0.011)).clamp(1.6, 4.2);
+        _sandGrainPaint.color = (i.isEven
+                ? const Color(0xFFFFF7D6)
+                : style.rimHighlight)
+            .withValues(alpha: speckAlpha);
+        canvas.drawCircle(pt, sr, _sandGrainPaint);
+      }
+    }
+
+    // 2. Sand Implosion Condense Ring when stopping or stepping across a grid cell
+    if (_sandReformFlash > 0.01) {
+      final f = _sandReformFlash.clamp(0.0, 1.0);
+      final progress = 1.0 - f; // 0 -> 1 as ring expands and condenses
+      final ringRadius =
+          math.max(_localBounds.width, _localBounds.height) *
+              (0.18 + 0.52 * Curves.easeOutCubic.transform(progress));
+      _sandRingPaint
+        ..strokeWidth = (cellSize * 0.065 * f).clamp(1.5, 5.5)
+        ..color = const Color(0xFFFFF3C4).withValues(alpha: (f * 0.75).clamp(0.0, 1.0));
+      canvas.save();
+      canvas.clipPath(_topPath);
+      canvas.drawCircle(_visualPivotLocal, ringRadius, _sandRingPaint);
+      canvas.restore();
+    }
   }
 
   /// Exact port of `PieceBlock` GLSL fragment shader `_MergeCylinder` rendered with

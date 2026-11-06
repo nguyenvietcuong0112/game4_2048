@@ -39,21 +39,21 @@ class BlockOrderPalette {
 
   const BlockOrderPalette(this._styles);
 
-  /// Exact ColorRamp & `ref_gameplay.png` sampled stops: `[bottomLip, topMid, topBright]`.
+  /// Vibrant `com.chaos.drink.sort` liquid color stops: `[bottomLip, topMid, topBright]`.
   static const Map<int, List<Color>> _rampColors = {
-    2: [Color(0xFFCFA161), Color(0xFFF1D499), Color(0xFFFAF0C5)],
-    4: [Color(0xFFCB5700), Color(0xFFF38A0F), Color(0xFFFD9F16)],
-    8: [Color(0xFFC8142E), Color(0xFFF33C5E), Color(0xFFFC557C)],
-    16: [Color(0xFFB30295), Color(0xFFEC24CA), Color(0xFFFA38DC)],
-    32: [Color(0xFF6703B2), Color(0xFF9E1CF4), Color(0xFFB32BFF)],
-    64: [Color(0xFF2B13BF), Color(0xFF3E22F6), Color(0xFF5339FF)],
-    128: [Color(0xFF035299), Color(0xFF0574CE), Color(0xFF1490F0)],
-    256: [Color(0xFF058354), Color(0xFF0BA870), Color(0xFF13C485)],
-    512: [Color(0xFF21862A), Color(0xFF36C226), Color(0xFF4AE02E)],
-    1024: [Color(0xFF409703), Color(0xFF88CB0A), Color(0xFFA7E20F)],
-    2048: [Color(0xFFD98102), Color(0xFFF8BA04), Color(0xFFFFD812)],
-    4096: [Color(0xFF5A29E6), Color(0xFF8465F8), Color(0xFF9B82FD)],
-    8192: [Color(0xFF0AA5BE), Color(0xFF28C3EC), Color(0xFF48DCFF)],
+    2: [Color(0xFF0088B8), Color(0xFF00C8EE), Color(0xFF28EEFF)], // Sky Aqua / Cyan Fizz
+    4: [Color(0xFFC85200), Color(0xFFF47B06), Color(0xFFFF9E1B)], // Juicy Orange Soda
+    8: [Color(0xFFB80814), Color(0xFFEE1824), Color(0xFFFF3B47)], // Cherry Crimson
+    16: [Color(0xFFA80088), Color(0xFFE612BA), Color(0xFFFF38D8)], // Neon Hot Pink / Dragonfruit
+    32: [Color(0xFF5E04B0), Color(0xFF8E14F0), Color(0xFFAC38FF)], // Royal Grape Purple
+    64: [Color(0xFF0446B8), Color(0xFF0A70F4), Color(0xFF2892FF)], // Electric Dodger Blue
+    128: [Color(0xFF128E06), Color(0xFF1EC80E), Color(0xFF3CE81E)], // Lime / Green Apple
+    256: [Color(0xFFCC8A00), Color(0xFFF6C206), Color(0xFFFFDF18)], // Lemon Sunburst Yellow
+    512: [Color(0xFF047C48), Color(0xFF08B86B), Color(0xFF1CE08A)], // Emerald Mint Lagoon
+    1024: [Color(0xFF780854), Color(0xFFB81280), Color(0xFFE028A2)], // Berry Wine / Ruby Punch
+    2048: [Color(0xFFD46A00), Color(0xFFFFA804), Color(0xFFFFD214)], // Golden Mango Nectar
+    4096: [Color(0xFF2812B8), Color(0xFF462EF2), Color(0xFF6852FF)], // Cosmic Blueberry Indigo
+    8192: [Color(0xFF00889E), Color(0xFF08C6DF), Color(0xFF34EAFF)], // Glacier Turquoise Fizz
     0: [Color(0xFF743508), Color(0xFFA85C24), Color(0xFFBF6F34)], // Dud
     -1: [Color(0xFF197AF0), Color(0xFF63A2FA), Color(0xFF82BEFF)], // Ice
   };

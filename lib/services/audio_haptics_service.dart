@@ -228,6 +228,47 @@ class AudioHapticsService extends ChangeNotifier {
     _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
+  /// Progressive audio punch for high-value merges (`mergedNumber >= 32`).
+  void playHighTierMergeBoost(int mergedNumber) {
+    if (mergedNumber < 32) return;
+    int tier = 0;
+    int v = mergedNumber;
+    while (v >= 32) {
+      tier++;
+      v ~/= 2;
+    }
+    final boostVol = (0.30 + 0.10 * tier).clamp(0.35, 0.95);
+    _playSfx('sfx_levelup_merge.wav', volume: boostVol);
+    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+  }
+
+  /// Progressive multi-pulse haptic aftershock for `mergedNumber >= 32` driven by game `update(dt)`.
+  void hapticHighTierAftershock(int mergedNumber) {
+    if (mergedNumber < 32) return;
+    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+  }
+
+  /// Progressive audio & haptic feedback for consecutive merge combos (`x2, x3, x4...`).
+  void playComboPraise(int comboCount) {
+    if (comboCount <= 1) return;
+    if (comboCount == 2) {
+      _playSfx('sfx_target_collect.wav', volume: 0.65);
+      _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+    } else if (comboCount == 3) {
+      _playSfx('sfx_target_collect.wav', volume: 0.85);
+      _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+    } else if (comboCount == 4) {
+      _playSfx('sfx_levelup_merge.wav', volume: 0.58);
+      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    } else if (comboCount == 5) {
+      _playSfx('sfx_levelup_merge.wav', volume: 0.78);
+      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    } else {
+      _playSfx('sfx_win_amazing.wav', volume: 0.72);
+      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    }
+  }
+
   /// Exact `IceComponentView::PopThenUpdateCountAsync`: `PlaySfx("ice_small_break", vol: 1.0)` (no haptic).
   void playIceBreakSmall() {
     _playSfx('sfx_ice_break_small.wav', volume: 1.0);

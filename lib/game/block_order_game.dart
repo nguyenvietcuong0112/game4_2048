@@ -293,8 +293,11 @@ class _AbsorbingMergeAnim {
   final _MergeColorTransitionController? transition;
   final Color topTargetColor;
   final double initialOverlapStrength;
+  final int mergedNumber;
   double elapsed = 0.0;
   bool mergeImpactHapticFired = false;
+  bool aftershock1Fired = false;
+  bool aftershock2Fired = false;
   final double duration;
 
   _AbsorbingMergeAnim({
@@ -304,6 +307,7 @@ class _AbsorbingMergeAnim {
     required this.topTargetColor,
     required this.initialOverlapStrength,
     required this.duration,
+    this.mergedNumber = 4,
   });
 }
 
@@ -606,6 +610,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       ValueNotifier<Color>(const Color(0xFFFFFFFF));
   final ValueNotifier<bool> isWinSequenceActiveNotifier =
       ValueNotifier<bool>(false);
+  final ValueNotifier<int> comboCountNotifier = ValueNotifier<int>(0);
+  final ValueNotifier<double> comboCountdownFractionNotifier =
+      ValueNotifier<double>(0.0);
 
   bool isModalPaused = false;
   bool allowEngineSleepBehindModal = false;
@@ -621,10 +628,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   PieceComponent? _finalWinningPiece;
   double _elapsedGameTime = 0.0;
 
-  // Countdown timer accumulators
+  // Countdown timer & merge combo accumulators
   double _countdownFrac = 0.0;
   double _timeFreezeRemaining = 0.0;
   static const double maxTimeFreezeSeconds = 20.0;
+  double _comboRemainingSeconds = 0.0;
+  static const double comboWindowSeconds = 3.5;
 
   // Stage & board layout
   final PositionComponent _boardStage = PositionComponent(priority: 5);
@@ -633,6 +642,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   _TutorialHandComponent? _tutorialHand;
   MagicSandJarComponent? _sandJar;
   JarOpenAndFullscreenLightWaveVfx? _jarOpenWaveVfx;
+  ComboPraiseCalloutVfx? _activeComboCallout;
 
   // Flat O(1) playable & piece occupancy grids (zero HashSet allocations during 120Hz drags!)
   int _gridCols = 0;
@@ -652,6 +662,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   double _introStartZoom = 0.58;
   double _winZoomTimer = -1.0;
   double _stageZoom = 1.0;
+  Vector2 _baseStagePosition = Vector2.zero();
+  double _mergeImpactShakeElapsed = -1.0;
+  double _mergeImpactShakeDuration = 0.0;
+  double _mergeImpactShakeAmpPx = 0.0;
+  double _mergeImpactZoomPunch = 0.0;
+  final math.Random _shakeRng = math.Random();
 
   // Exact `FingerDragInput` & Hold-to-Merge Candidate State
   int? _activePointerId;
@@ -748,6 +764,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (_winZoomTimer >= 0 && _winZoomTimer < visualSettings.cameraWinDuration) {
       return false;
     }
+    if (_mergeImpactShakeElapsed >= 0) return false;
     if (_winSequenceElapsed >= 0 && !_winCallbackFired) return false;
     if (_sandJar?.isAnimating == true) return false;
     if (_draggedPiece != null || _mergeCandidate != null) return false;
@@ -859,9 +876,25 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   bool get debugIsJarOpen => _sandJar?.isOpened ?? false;
 
   @visibleForTesting
+  int get debugComboCount => comboCountNotifier.value;
+
+  @visibleForTesting
+  double get debugComboRemainingSeconds => _comboRemainingSeconds;
+
+  void _resetComboState() {
+    _comboRemainingSeconds = 0.0;
+    if (comboCountNotifier.value != 0) {
+      comboCountNotifier.value = 0;
+    }
+    if (comboCountdownFractionNotifier.value != 0.0) {
+      comboCountdownFractionNotifier.value = 0.0;
+    }
+  }
+
+  @visibleForTesting
   Offset debugCellCenterCanvas(int col, int row) {
     final stagePt = _cellCenterWorld(col, row);
-    final canvasPt = _boardStage.position + stagePt * _stageZoom;
+    final canvasPt = _baseStagePosition + stagePt * _stageZoom;
     return Offset(canvasPt.x, canvasPt.y);
   }
 
@@ -930,8 +963,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _winCallbackFired = false;
     _finalWinningPiece = null;
     _jarOpenWaveVfx = null;
+    _mergeImpactShakeElapsed = -1.0;
     winScreenFlashNotifier.value = 0.0;
     isWinSequenceActiveNotifier.value = false;
+    _resetComboState();
     _firstActionTriggered = false;
     isTimerStartedNotifier.value = false;
     isTimeFreezeIntroInFlight = false;
@@ -986,6 +1021,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _tutorialHand = null;
     _sandJar = null;
     _jarOpenWaveVfx = null;
+    _activeComboCallout = null;
+    _mergeImpactShakeElapsed = -1.0;
     for (final t in _mergeTransitions) {
       t.clearAllImmediate();
     }
@@ -1019,38 +1056,49 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         .min(availW / framedCols, availH / framedRows)
         .clamp(24.0, 220.0);
 
+    // On timed levels (`!_level.timerDisabled`), ensure `[Jar + Board]` fits cleanly
+    // between the bottom of the Timer (`_safeTop + 284*u`) and the top of the bottom PowerUps
+    // (`size.y - _safeBottom - 226*u`) so BOTH Timer and Jar are always visible without overlapping!
+    final minJarTopScreenY =
+        _safeTop + (_level.timerDisabled ? 150.0 : 284.0) * u;
+    final maxBoardBottomScreenY = size.y - _safeBottom - 222.0 * u;
+    if (!_level.timerDisabled) {
+      final maxTimedSpanH =
+          (maxBoardBottomScreenY - minJarTopScreenY).clamp(180.0, 4000.0);
+      final totalTimedSpanCells = (_level.rows + 0.30) * 1.021836 + 2.18;
+      _cellSize = math
+          .min(_cellSize, maxTimedSpanH / totalTimedSpanCells)
+          .clamp(24.0, 220.0);
+    }
+
     final boardW = _level.cols * _cellSize;
     final boardH = _level.rows * _cellSize;
     _boardOrigin = Vector2(-boardW * 0.5, -boardH * 0.5 - _cellSize * 0.10);
 
-    // The Magic Sand Jar stays hidden during gameplay and materializes right above the board
-    // when the level is completed (at the exact moment the Timer hides!).
+    // The Magic Sand Jar is ALWAYS visible from the start of every level (`initialAppearProgress = 1.0`),
+    // sitting right above the board!
     final jarHeight =
-        math.min(_cellSize * 1.68, size.y * 0.165).clamp(92.0, 178.0);
-    final jarWidth = jarHeight * 0.90;
+        math.min(_cellSize * 2.10, size.y * 0.185).clamp(115.0, 210.0);
+    final jarWidth = jarHeight * 0.72;
     final topBoardRimY = _boardOrigin.y - _cellSize * 0.24;
-    double jarCenterY = topBoardRimY - jarHeight * 0.50 - _cellSize * 0.05;
+    final jarCenterY = topBoardRimY - jarHeight * 0.50 - _cellSize * 0.05;
 
     double stageCenterY = centerY;
-    // Since the Timer hides on win, the Jar only needs to stay below the top Coins/Level row (`_safeTop + 150*u`)
-    final minJarTopScreenY = _safeTop + 150.0 * u;
     final jarTopStageY = jarCenterY - jarHeight * 0.52;
     if (stageCenterY + jarTopStageY < minJarTopScreenY) {
       final bottomBoardRimY = _boardOrigin.y + boardH + _cellSize * 0.34;
-      final maxCenterY = size.y - _safeBottom - 216.0 * u - bottomBoardRimY;
+      final maxCenterY = maxBoardBottomScreenY - bottomBoardRimY;
       stageCenterY = math.max(
         stageCenterY,
         math.min(minJarTopScreenY - jarTopStageY, maxCenterY),
       );
-      if (stageCenterY + jarTopStageY < minJarTopScreenY) {
-        jarCenterY = (minJarTopScreenY - stageCenterY) + jarHeight * 0.52;
-      }
     }
 
-    _boardStage.position = Vector2(
+    _baseStagePosition = Vector2(
       size.x * 0.5,
       stageCenterY,
     );
+    _boardStage.position.setFrom(_baseStagePosition);
 
     _rebuildPlayableGrid();
 
@@ -1067,17 +1115,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       isFrozen: false,
     );
     winScreenFlashColorNotifier.value = jarStyle.rimHighlight;
-    final initialAppear = _hasWon
-        ? ((_winSequenceElapsed >= 0 ? _winSequenceElapsed : 0.36) / 0.36)
-            .clamp(0.0, 1.0)
-        : 0.0;
     _sandJar = MagicSandJarComponent(
       style: jarStyle,
       levelNumber: _level.number,
       centerPosition: Vector2(0.0, jarCenterY),
       jarWidth: jarWidth,
       jarHeight: jarHeight,
-      initialAppearProgress: initialAppear,
+      initialAppearProgress: 1.0,
     );
     _boardStage.add(_sandJar!);
 
@@ -1141,7 +1185,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
   Vector2 _canvasToStage(Vector2 canvasPos) {
     final z = _stageZoom <= 1e-4 ? 1.0 : _stageZoom;
-    return (canvasPos - _boardStage.position) / z;
+    return (canvasPos - _baseStagePosition) / z;
   }
 
   /// Exact `BoardView.TryPickPiece` + `TryPickNearbyUnsurroundedPiece`:
@@ -1434,8 +1478,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
   /// Exact `Board.TryFindMergeTarget` + `BlockOrderGame.CanCompleteMerge`:
   /// Stepping `dragged` from `(contactCol, contactRow)` by `pushDir` to `desiredOrigin`
-  /// must touch a single matching mergeable `target`, AND every cell of `dragged` at
-  /// `desiredOrigin` must be playable and free of any 3rd piece (`CanRelocate` / `IsFootprintPlayable`).
+  /// must touch matching mergeable `target` and must NOT collide with any 3rd piece.
+  /// We do not reject merges if non-contact extremities of `dragged` touch wall cells,
+  /// because one piece is absorbed/swallowed into the survivor.
   bool _canCompleteMerge({
     required PieceComponent dragged,
     required int contactCol,
@@ -1447,14 +1492,47 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (dragged.model.number != target.model.number) return false;
     if (!_allowsDirection(dragged.model.movement, pushDir)) return false;
 
+    final outcome = _resolveMergeOutcome(
+      dragged: dragged,
+      target: target,
+      pushDir: pushDir,
+    );
+
+    // If survivor is dragged and it needs to step forward:
+    // It MUST be able to occupy the forward position without hitting walls or other pieces.
+    if (outcome.survivor == dragged && outcome.survivorMoves) {
+      if (!_canOccupy(
+        dragged.model,
+        outcome.survivorNextCol,
+        outcome.survivorNextRow,
+        ignorePieceId: target.model.id,
+      )) {
+        return false;
+      }
+    }
+
     final desiredCol = contactCol + pushDir.$1;
     final desiredRow = contactRow + pushDir.$2;
-    return _canOccupy(
-      dragged.model,
-      desiredCol,
-      desiredRow,
-      ignorePieceId: target.model.id,
-    );
+    final draggedId = dragged.model.id;
+    final targetId = target.model.id;
+
+    for (final cell in dragged.model.localCells) {
+      final c = desiredCol + cell.$1;
+      final r = desiredRow + cell.$2;
+      if (c >= 0 && c < _gridCols && r >= 0 && r < _gridRows) {
+        final idx = r * _gridCols + c;
+        final occ = _occupancyGrid[idx];
+        if (occ >= 0 && occ < _pieces.length) {
+          final other = _pieces[occ];
+          if (!other.isFlyingOrSwallowed &&
+              other.model.id != draggedId &&
+              other.model.id != targetId) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
   }
 
   (PieceComponent target, PieceComponent survivor)? _tryGetMergeCandidate({
@@ -1477,16 +1555,15 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       final cell = local[i];
       final c = desiredCol + cell.$1;
       final r = desiredRow + cell.$2;
-      if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) return null;
+      if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) continue;
       final idx = r * _gridCols + c;
-      if (_playableGrid[idx] == 0) return null;
 
       final occIdx = _occupancyGrid[idx];
       if (occIdx < 0 || occIdx >= _pieces.length) continue;
       final other = _pieces[occIdx];
       if (other.isFlyingOrSwallowed || other.model.id == draggedId) continue;
 
-      // Touching two distinct pieces simultaneously at `desiredOrigin` is rejected by `Board.TryFindMergeTarget`!
+      // Touching two distinct pieces simultaneously at `desiredOrigin` is rejected!
       if (matched != null && matched.model.id != other.model.id) {
         return null;
       }
@@ -1498,10 +1575,45 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       return null;
     }
 
-    final draggedSurvives =
-        matched.model.localCells.length < draggedModel.localCells.length;
-    final survivor = draggedSurvives ? dragged : matched;
-    return (matched, survivor);
+    // Stepping must not collide with any 3rd active piece
+    for (int i = 0; i < local.length; i++) {
+      final cell = local[i];
+      final c = desiredCol + cell.$1;
+      final r = desiredRow + cell.$2;
+      if (c >= 0 && c < _gridCols && r >= 0 && r < _gridRows) {
+        final idx = r * _gridCols + c;
+        final occIdx = _occupancyGrid[idx];
+        if (occIdx >= 0 && occIdx < _pieces.length) {
+          final other = _pieces[occIdx];
+          if (!other.isFlyingOrSwallowed &&
+              other.model.id != draggedId &&
+              other.model.id != matched.model.id) {
+            return null;
+          }
+        }
+      }
+    }
+
+    final outcome = _resolveMergeOutcome(
+      dragged: dragged,
+      target: matched,
+      pushDir: dir,
+    );
+
+    // If survivor is dragged and it must move forward into target,
+    // ensure it can occupy the destination cell.
+    if (outcome.survivor == dragged && outcome.survivorMoves) {
+      if (!_canOccupy(
+        dragged.model,
+        outcome.survivorNextCol,
+        outcome.survivorNextRow,
+        ignorePieceId: matched.model.id,
+      )) {
+        return null;
+      }
+    }
+
+    return (matched, outcome.survivor);
   }
 
   // --- Exact `FingerDragInput` Math (`CommitSteps`, `EaseTowardCap`, Straight + Off-Corner Contact) ---
@@ -2019,6 +2131,49 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     }
   }
 
+  int _countLegalMoves(
+    PieceModel piece, {
+    required int col,
+    required int row,
+    required MovementConstraint movement,
+    int? ignorePieceId,
+  }) {
+    if (!movement.canMove) return 0;
+    int moves = 0;
+    const dirs = <GridCell>[(1, 0), (-1, 0), (0, 1), (0, -1)];
+    for (final d in dirs) {
+      if (!_allowsDirection(movement, d)) continue;
+      final targetCol = col + d.$1;
+      final targetRow = row + d.$2;
+      bool canFit = true;
+      for (final cell in piece.localCells) {
+        final c = targetCol + cell.$1;
+        final r = targetRow + cell.$2;
+        if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) {
+          canFit = false;
+          break;
+        }
+        final idx = r * _gridCols + c;
+        if (_playableGrid[idx] == 0) {
+          canFit = false;
+          break;
+        }
+        final occ = _occupancyGrid[idx];
+        if (occ >= 0 && occ < _pieces.length) {
+          final p = _pieces[occ];
+          if (!p.isFlyingOrSwallowed &&
+              p.model.id != piece.id &&
+              p.model.id != ignorePieceId) {
+            canFit = false;
+            break;
+          }
+        }
+      }
+      if (canFit) moves++;
+    }
+    return moves;
+  }
+
   _ResolvedMergeOutcome _resolveMergeOutcome({
     required PieceComponent dragged,
     required PieceComponent target,
@@ -2026,27 +2181,29 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   }) {
     final draggedCells = dragged.model.localCells.length;
     final targetCells = target.model.localCells.length;
-    final survivor = targetCells < draggedCells ? dragged : target;
+    final combinedMovement =
+        dragged.model.movement.resolveMergedWith(target.model.movement);
+
+    final targetMobility = _countLegalMoves(
+      target.model,
+      col: target.model.col,
+      row: target.model.row,
+      movement: combinedMovement,
+      ignorePieceId: dragged.model.id,
+    );
+
+    final forwardCol = dragged.model.col + pushDir.$1;
+    final forwardRow = dragged.model.row + pushDir.$2;
+
+    final draggedSurvives = (target.model.movement.isPinned && targetCells < draggedCells) ||
+        (targetMobility == 0 && targetCells < draggedCells) ||
+        (draggedCells > targetCells);
+    final survivor = draggedSurvives ? dragged : target;
     final partner = survivor == dragged ? target : dragged;
 
-    int nextCol = survivor.model.col;
-    int nextRow = survivor.model.row;
-    bool survivorMoves = false;
-
-    if (survivor == dragged && (pushDir.$1 != 0 || pushDir.$2 != 0)) {
-      final candidateCol = survivor.model.col + pushDir.$1;
-      final candidateRow = survivor.model.row + pushDir.$2;
-      if (_canOccupy(
-        survivor.model,
-        candidateCol,
-        candidateRow,
-        ignorePieceId: partner.model.id,
-      )) {
-        nextCol = candidateCol;
-        nextRow = candidateRow;
-        survivorMoves = true;
-      }
-    }
+    final bool survivorMoves = survivor == dragged;
+    final int nextCol = survivorMoves ? forwardCol : target.model.col;
+    final int nextRow = survivorMoves ? forwardRow : target.model.row;
 
     return _ResolvedMergeOutcome(
       survivor: survivor,
@@ -2192,6 +2349,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       shoveDir: shoveOffset,
       wasPinnedBeforeMerge: wasPinnedBeforeMerge,
       previousStyle: oldStyle,
+      mergedNumber: newNumber,
     );
 
     // Absorb `consumed` linearly into nearest survivor cell over `0.28s`
@@ -2213,6 +2371,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         topTargetColor: newStyle.topBright,
         initialOverlapStrength: commitOverlapStrength,
         duration: _absorbDurationSeconds,
+        mergedNumber: newNumber,
       ),
     );
 
@@ -2239,6 +2398,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         pushDir: shoveOffset,
         edges: splashEdges,
         cellSize: _cellSize,
+        mergedNumber: newNumber,
       ),
     );
     _boardStage.add(
@@ -2250,6 +2410,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         delaySeconds: UnityBoardConfig.mergeSparksDelay,
         downOffsetCells: UnityBoardConfig.mergeSparksDownOffset,
         liftCells: UnityBoardConfig.mergeSparksLift,
+        mergedNumber: newNumber,
       ),
     );
     // Exact Unity `GameplayState`: `OnMovementEnded` (`TriggerPieceDrop`) +
@@ -2257,10 +2418,89 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     // fire together at `t = 0ms`, followed by `TriggerMerge()` (`hapticMergeImpact`) at `t = 45ms`!
     audio.playPut();
     audio.playMerge();
+    _triggerHighTierMergeImpact(survivor, newNumber, shoveOffset);
+    _advanceMergeComboAndSpawnPraise(survivor);
 
     _unlockEligibleIceBlocks(newNumber);
     _refreshCanLevelUp();
     _checkWinCondition();
+  }
+
+  /// Advances consecutive merge combo (`x1, x2, x3...`), resets the `3.5s` countdown window,
+  /// and spawns `ComboPraiseCalloutVfx` (`NICE!`, `GREAT!`, `PERFECT!`, `WOW!`, `AMAZING!`, `UNSTOPPABLE!`).
+  void _advanceMergeComboAndSpawnPraise(PieceComponent survivor) {
+    final nextCombo =
+        (_comboRemainingSeconds > 0.0 && comboCountNotifier.value > 0)
+            ? (comboCountNotifier.value + 1)
+            : 1;
+    _comboRemainingSeconds = comboWindowSeconds;
+    comboCountNotifier.value = nextCombo;
+    comboCountdownFractionNotifier.value = 1.0;
+
+    final prevCallout = _activeComboCallout;
+    if (prevCallout != null && prevCallout.isMounted) {
+      prevCallout.removeFromParent();
+    }
+    final minX = _boardOrigin.x + _cellSize * 1.1;
+    final maxX = _boardOrigin.x + (_gridCols * _cellSize) - _cellSize * 1.1;
+    final minY = _boardOrigin.y + _cellSize * 0.85;
+    final callout = ComboPraiseCalloutVfx(
+      anchorWorld: survivor.worldCenter,
+      comboCount: nextCombo,
+      cellSize: _cellSize,
+      minWorldX: minX <= maxX ? minX : null,
+      maxWorldX: minX <= maxX ? maxX : null,
+      minWorldY: minY,
+    );
+    _activeComboCallout = callout;
+    _boardStage.add(callout);
+
+    if (nextCombo >= 3 && _mergeImpactShakeElapsed < 0) {
+      final capped = math.min(nextCombo, 7);
+      _mergeImpactShakeElapsed = 0.0;
+      _mergeImpactShakeDuration = 0.14 + 0.02 * capped;
+      _mergeImpactShakeAmpPx = _cellSize * (0.015 + 0.005 * capped);
+      _mergeImpactZoomPunch = 0.006 + 0.002 * capped;
+    }
+
+    audio.playComboPraise(nextCombo);
+  }
+
+  /// Progressive board-wide impact shake, camera zoom punch, sympathetic neighbor
+  /// block tremor, and layered audio boost for `mergedNumber >= 32` (`tier = 1..8`).
+  void _triggerHighTierMergeImpact(
+    PieceComponent survivor,
+    int mergedNumber,
+    Offset shoveOffset,
+  ) {
+    final tier = mergeEscalationTierForNumber(mergedNumber);
+    if (tier <= 0) return;
+
+    // 1. Damped board stage impact shake + micro camera zoom punch
+    _mergeImpactShakeElapsed = 0.0;
+    _mergeImpactShakeDuration = 0.18 + 0.036 * tier;
+    _mergeImpactShakeAmpPx = _cellSize * (0.022 + 0.0085 * tier);
+    _mergeImpactZoomPunch = 0.009 + 0.0038 * tier;
+
+    // 2. Sympathetic shockwave shake on nearby pieces for >= 64 (`tier >= 2`)
+    if (tier >= 2) {
+      final survivorCenter = survivor.worldCenter;
+      final maxRadius = _cellSize * (2.2 + 0.45 * tier);
+      for (final p in _pieces) {
+        if (identical(p, survivor) || p.isFlyingOrSwallowed || p.isDragging) {
+          continue;
+        }
+        final dist = (p.worldCenter - survivorCenter).length;
+        if (dist <= maxRadius) {
+          final falloff = (1.0 - dist / maxRadius).clamp(0.25, 1.0);
+          final mult = (0.42 + 0.16 * tier) * falloff;
+          p.triggerBlockedShake(shoveOffset, mult);
+        }
+      }
+    }
+
+    // 3. Layered high-tier audio boost
+    audio.playHighTierMergeBoost(mergedNumber);
   }
 
   /// Exact `IceComponent` rule (`target == mergedNumber`, NOT `<=`!):
@@ -2458,7 +2698,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
 
-    // 1. Camera Intro & Win Zoom (`camera_anim.json`)
+    // 1. Camera Intro & Win Zoom (`camera_anim.json`) + High-Tier Merge Impact Shake (`>= 32`)
     if (_winZoomTimer >= 0) {
       _winZoomTimer += clampedDt;
       final t =
@@ -2479,6 +2719,31 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       _boardStage.scale = Vector2.all(_stageZoom);
     }
 
+    if (_mergeImpactShakeElapsed >= 0) {
+      _mergeImpactShakeElapsed += clampedDt;
+      if (_mergeImpactShakeElapsed >= _mergeImpactShakeDuration) {
+        _mergeImpactShakeElapsed = -1.0;
+        _boardStage.position.setFrom(_baseStagePosition);
+        _boardStage.scale = Vector2.all(_stageZoom);
+      } else {
+        final u = (_mergeImpactShakeElapsed /
+                math.max(0.01, _mergeImpactShakeDuration))
+            .clamp(0.0, 1.0);
+        final damp = math.pow(1.0 - u, 1.65).toDouble();
+        final angle = _mergeImpactShakeElapsed * 68.0 +
+            (_shakeRng.nextDouble() - 0.5) * 1.4;
+        final jx = math.cos(angle) * _mergeImpactShakeAmpPx * damp;
+        final jy = math.sin(angle * 1.37) * _mergeImpactShakeAmpPx * damp;
+        _boardStage.position.setValues(
+          _baseStagePosition.x + jx,
+          _baseStagePosition.y + jy,
+        );
+        final zoomPunch =
+            math.sin(u * math.pi) * _mergeImpactZoomPunch * (1.0 - u * 0.4);
+        _boardStage.scale = Vector2.all(_stageZoom * (1.0 + zoomPunch));
+      }
+    }
+
     // 2. 4-Step Magic Sand Jar Win Choreography (with comfortable breathing room before popup):
     // - Step 1 (`0.00s .. 0.42s`): Timer hides (`isWinSequenceActiveNotifier`), Jar materializes (`appearProgress: 0 -> 1`),
     //   and final tile glows, scales up gently (`1.24x`), and bursts light.
@@ -2491,19 +2756,28 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (_winSequenceElapsed >= 0) {
       _winSequenceElapsed += clampedDt;
 
-      // Keep the final winning tile luminous during Steps 1 & 2 while sand lifts off the board
-      if (_finalWinningPiece != null &&
-          _finalWinningPiece!.isMounted &&
-          _winSequenceElapsed < 1.80) {
-        final glowKeep =
-            (1.0 - (_winSequenceElapsed / 1.80) * 0.25).clamp(0.75, 1.0);
-        if (_finalWinningPiece!.levelUpTargetGlow < glowKeep) {
-          _finalWinningPiece!.levelUpTargetGlow = glowKeep;
+      // Step 1b -> Step 2: Final winning tile glows, fractures (`0.10s .. 0.40s`),
+      // and crumbles/dissolves into sand (`0.38s .. 1.05s`) as the sand stream erupts upward!
+      if (_finalWinningPiece != null && _finalWinningPiece!.isMounted) {
+        if (_winSequenceElapsed < 1.15) {
+          final glowKeep =
+              (1.0 - (_winSequenceElapsed / 1.15) * 0.25).clamp(0.75, 1.0);
+          if (_finalWinningPiece!.levelUpTargetGlow < glowKeep) {
+            _finalWinningPiece!.levelUpTargetGlow = glowKeep;
+          }
         }
+        final fractureP =
+            ((_winSequenceElapsed - 0.10) / 0.30).clamp(0.0, 1.0);
+        final crumbleP =
+            ((_winSequenceElapsed - 0.38) / 0.66).clamp(0.0, 1.0);
+        _finalWinningPiece!.setWinCrumbleState(
+          fractureProgress: fractureP,
+          crumbleProgress: crumbleP,
+        );
       }
 
-      // Step 2: Spawn upward sand stream from board & final tile to jar after Step 1 beat (`0.42s`)
-      if (!_winSandStreamSpawned && _winSequenceElapsed >= 0.42) {
+      // Step 2: Spawn upward sand stream from the crumbling final tile into the jar (`0.38s`)
+      if (!_winSandStreamSpawned && _winSequenceElapsed >= 0.38) {
         _winSandStreamSpawned = true;
         final winPiece = _finalWinningPiece;
         final winStyle = _sandJar?.style ??
@@ -2511,34 +2785,28 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
               number: winPiece?.model.number ?? _level.targetWinNumber,
               isFrozen: false,
             );
-        final boardOrigins = <Vector2>[];
-        for (int r = 0; r < _gridRows; r++) {
-          for (int c = 0; c < _gridCols; c++) {
-            if (_playableGrid[r * _gridCols + c] != 0) {
-              boardOrigins.add(_cellCenterWorld(c, r));
-            }
-          }
-        }
         final primaryOrigin = winPiece != null && winPiece.isMounted
             ? winPiece.worldCenter
             : Vector2.zero();
-        if (boardOrigins.isEmpty) {
-          boardOrigins.add(primaryOrigin);
-        }
+        final tileOrigins = (winPiece != null &&
+                winPiece.isMounted &&
+                winPiece.worldCellCenters.isNotEmpty)
+            ? winPiece.worldCellCenters
+            : <Vector2>[primaryOrigin];
         _boardStage.add(
           BoardSandStreamToJarVfx(
             finalTileCenter: primaryOrigin,
-            boardOrigins: boardOrigins,
+            boardOrigins: tileOrigins,
             targetMouthProvider: () =>
                 _sandJar?.mouthWorldPos ?? Vector2(0.0, _boardOrigin.y - _cellSize),
             style: winStyle,
             cellSize: _cellSize,
           ),
         );
+        audio.hapticMergeImpact();
       }
 
-      // Step 1 -> Step 3: Jar pop-in (`0..0.36s`), shake, glow, swirling sand fill & hidden object reveal, then jar opening
-      final appearP = (_winSequenceElapsed / 0.36).clamp(0.0, 1.0);
+      // Step 1 -> Step 3: Jar shake, glow, swirling sand fill & hidden object reveal, then jar opening
       final fillP = ((_winSequenceElapsed - 0.55) / 1.30).clamp(0.0, 1.0);
       final glowP = ((_winSequenceElapsed - 0.46) / 1.15).clamp(0.0, 1.0);
       final shakeP =
@@ -2549,7 +2817,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
               : 0.0;
       final openP = ((_winSequenceElapsed - 2.10) / 0.48).clamp(0.0, 1.0);
       _sandJar?.setWinSequenceState(
-        appearProgress: appearP,
+        appearProgress: 1.0,
         fillProgress: fillP,
         glowIntensity: glowP,
         shakeIntensity: shakeP,
@@ -2612,6 +2880,18 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       if (!anim.mergeImpactHapticFired && anim.elapsed >= 0.045) {
         anim.mergeImpactHapticFired = true;
         audio.hapticMergeImpact();
+      }
+      if (!anim.aftershock1Fired &&
+          anim.mergedNumber >= 32 &&
+          anim.elapsed >= 0.115) {
+        anim.aftershock1Fired = true;
+        audio.hapticHighTierAftershock(anim.mergedNumber);
+      }
+      if (!anim.aftershock2Fired &&
+          anim.mergedNumber >= 128 &&
+          anim.elapsed >= 0.195) {
+        anim.aftershock2Fired = true;
+        audio.hapticHighTierAftershock(anim.mergedNumber);
       }
       if (anim.consumed.isAbsorbFinished || anim.elapsed >= anim.duration + 0.02) {
         if (!anim.mergeImpactHapticFired) {
@@ -2744,28 +3024,43 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
 
-    // 7. Countdown Timer & Time Freeze (`GameplayTimer.IsStarted`)
+    // 7. Countdown Timer, Time Freeze (`GameplayTimer.IsStarted`), & Merge Combo Window (`3.5s`)
     if (!isModalPaused &&
         !isTimeFreezeIntroInFlight &&
         !_hasWon &&
-        !_hasLost &&
-        !_level.timerDisabled) {
-      if (_timeFreezeRemaining > 0.0) {
-        _setTimeFreezeRemaining(_timeFreezeRemaining - clampedDt);
-      } else if (isTimerStartedNotifier.value) {
-        _countdownFrac += clampedDt;
-        if (_countdownFrac >= 1.0) {
-          final wholeSecs = _countdownFrac.floor();
-          _countdownFrac -= wholeSecs;
-          final nextVal =
-              math.max(0, remainingSecondsNotifier.value - wholeSecs);
-          remainingSecondsNotifier.value = nextVal;
-          if (nextVal <= 0 && !_hasWon && !_hasLost) {
-            _hasLost = true;
-            _cancelDrag(silent: true);
-            _refreshCanLevelUp();
-            audio.playOutOfTime();
-            onTimeExpired();
+        !_hasLost) {
+      if (_comboRemainingSeconds > 0.0) {
+        _comboRemainingSeconds = math.max(0.0, _comboRemainingSeconds - clampedDt);
+        if (_comboRemainingSeconds <= 0.0) {
+          _resetComboState();
+        } else {
+          final frac =
+              (_comboRemainingSeconds / comboWindowSeconds).clamp(0.0, 1.0);
+          if ((frac - comboCountdownFractionNotifier.value).abs() >= 0.08) {
+            comboCountdownFractionNotifier.value = frac;
+          }
+        }
+      }
+
+      if (!_level.timerDisabled) {
+        if (_timeFreezeRemaining > 0.0) {
+          _setTimeFreezeRemaining(_timeFreezeRemaining - clampedDt);
+        } else if (isTimerStartedNotifier.value) {
+          _countdownFrac += clampedDt;
+          if (_countdownFrac >= 1.0) {
+            final wholeSecs = _countdownFrac.floor();
+            _countdownFrac -= wholeSecs;
+            final nextVal =
+                math.max(0, remainingSecondsNotifier.value - wholeSecs);
+            remainingSecondsNotifier.value = nextVal;
+            if (nextVal <= 0 && !_hasWon && !_hasLost) {
+              _hasLost = true;
+              _resetComboState();
+              _cancelDrag(silent: true);
+              _refreshCanLevelUp();
+              audio.playOutOfTime();
+              onTimeExpired();
+            }
           }
         }
       }
@@ -2821,6 +3116,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       shoveDir: const Offset(0, 1),
       wasPinnedBeforeMerge: wasPinnedBeforeMerge,
       previousStyle: oldStyle,
+      mergedNumber: newNumber,
     );
 
     _boardStage.add(
@@ -2830,6 +3126,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         accentColor: newStyle.accent,
         ringColor: newStyle.topBright,
         cellSize: _cellSize,
+        mergedNumber: newNumber,
       ),
     );
     _boardStage.add(
@@ -2841,9 +3138,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         delaySeconds: UnityBoardConfig.mergeSparksDelay,
         downOffsetCells: UnityBoardConfig.mergeSparksDownOffset,
         liftCells: UnityBoardConfig.mergeSparksLift,
+        mergedNumber: newNumber,
       ),
     );
     audio.playLevelUpMerge();
+    _triggerHighTierMergeImpact(kept, newNumber, const Offset(0, 1));
+    _advanceMergeComboAndSpawnPraise(kept);
 
     _unlockEligibleIceBlocks(newNumber);
     _refreshCanLevelUp();

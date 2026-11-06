@@ -247,7 +247,7 @@ class PieceComponent extends PositionComponent {
   double _absorbElapsed = 0.0;
   bool _areComponentsRemovedForAbsorb = false;
 
-  // Sand Swarm Trail (`Hóa Cát Bay Theo Tay`) & Deformer state:
+  // Sloshing Water Physics (`FakeWater` / `ANIM_SONG_SANH`) & Deformer state:
   Offset _jellyLean = Offset.zero;
   Offset _jellyVel = Offset.zero;
   Offset _jellyDeformWritten = Offset.zero;
@@ -255,15 +255,14 @@ class PieceComponent extends PositionComponent {
   final List<Offset> _sandTrailCentersWorld = <Offset>[];
   Vector2? _prevSandWorldPos;
   Offset _sandTravelDir = const Offset(1.0, 0.0);
+  double _waterSloshTilt = 0.0;
+  double _waterSloshVel = 0.0;
   double _sandErosionIntensity = 0.0;
   double _sandReformFlash = 0.0;
   double _sandShimmerClock = 0.0;
   int _lastSandGridCol = -999;
   int _lastSandGridRow = -999;
   final Paint _sandErosionPaint = Paint();
-  final Paint _sandGrainPaint = Paint()..style = PaintingStyle.fill;
-  final Paint _sandRibbonPaint = Paint()..style = PaintingStyle.fill;
-  final Paint _sandRingPaint = Paint()..style = PaintingStyle.stroke;
 
   // `PieceFollow.PlayLeanImpulse` (`MergeSurvivorStaysImpulseCurve`)
   Offset _leanImpulseDir = Offset.zero;
@@ -430,6 +429,12 @@ class PieceComponent extends PositionComponent {
       (position.x - (boardOrigin.x + model.col * cellSize)).abs() <= 0.05 &&
       (position.y - (boardOrigin.y + model.row * cellSize)).abs() <= 0.05;
 
+  double _winFractureProgress = 0.0;
+  double _winCrumbleProgress = 0.0;
+
+  @visibleForTesting
+  double get debugWinCrumbleProgress => _winCrumbleProgress;
+
   /// True when the piece has zero active physics, jelly lean, lift, pulse,
   /// shader wipe, seam overlap, number preview, screw shrink, or ice pop,
   /// allowing single-quad GPU texture rendering and idle physics bypass.
@@ -471,9 +476,13 @@ class PieceComponent extends PositionComponent {
       _previewNumberSizeFactor <= 0.005 &&
       _screwShrinkTimer < 0 &&
       _icePopTimer < 0 &&
+      _waterSloshTilt.abs() < 1e-3 &&
+      _waterSloshVel.abs() < 1e-2 &&
       _sandSwarmGrains.isEmpty &&
       _sandErosionIntensity <= 0.005 &&
-      _sandReformFlash <= 0.005;
+      _sandReformFlash <= 0.005 &&
+      _winFractureProgress <= 0.001 &&
+      _winCrumbleProgress <= 0.001;
 
   @visibleForTesting
   bool get debugHasStaticBakedSprite {
@@ -833,21 +842,28 @@ class PieceComponent extends PositionComponent {
 
   // --- Micro-Juice: Tap Bounce & Blocked 2D Random Shake ---
 
-  /// Exact match of `PieceView.PlayTapBounce()`: no-op on Dud blocks!
+  /// Exact match of `PieceView.PlayTapBounce()` + sloshing water impulse (`ANIM_SONG_SANH`): no-op on Dud blocks!
   void triggerTapSquish() {
     if (model.isDud) return;
     _tapElapsed = 0.0;
+    _waterSloshVel += (_waterSloshTilt >= 0 ? -1.0 : 1.0) * 6.5;
+    _sandErosionIntensity = math.max(_sandErosionIntensity, 0.72);
   }
 
   /// Exact match of `PieceFollow.ShakeAsync(rangeMultiplier)`:
   /// `0.20s` of per-frame random 2D XY jitter in `[-r, +r]` (`r = 0.03 * mult * cellSize`).
   void triggerBlockedShake([
-    Offset _ = const Offset(1, 0),
+    Offset dir = const Offset(1, 0),
     double rangeMultiplier = 1.0,
   ]) {
     _shakeElapsed = 0.0;
     _shakeRangeMultiplier = rangeMultiplier;
     _sampleRandomShakeOffset();
+    if (!model.isDud) {
+      final sign = dir.dx.abs() > 0.05 ? (dir.dx >= 0 ? -1.0 : 1.0) : 1.0;
+      _waterSloshVel += sign * 7.8 * rangeMultiplier;
+      _sandErosionIntensity = math.max(_sandErosionIntensity, 0.82);
+    }
   }
 
   void _sampleRandomShakeOffset() {
@@ -932,6 +948,10 @@ class PieceComponent extends PositionComponent {
       _isPulsePlaying = true;
       _isPulseReleasing = false;
       _isInflateReleasing = false;
+      if (!model.isDud) {
+        _waterSloshVel += (asSurvivor ? 1.0 : -1.0) * 5.2;
+        _sandErosionIntensity = math.max(_sandErosionIntensity, 0.68);
+      }
     }
 
     if (asSurvivor && mergedPreviewValue != null) {
@@ -953,6 +973,10 @@ class PieceComponent extends PositionComponent {
       _candidateInflate = isSurvivor
           ? visualSettings.mergeCandidatePushInflate.evaluate(_candidatePush)
           : 0.0;
+    }
+    if (!model.isDud && clamped > 0.02) {
+      _sandErosionIntensity =
+          math.max(_sandErosionIntensity, (0.48 + 0.52 * clamped).clamp(0.0, 1.0));
     }
     pushNumberPreview(clamped);
   }
@@ -1051,9 +1075,12 @@ class PieceComponent extends PositionComponent {
       finishNumberPreview();
       return;
     }
+    final tier =
+        mergeEscalationTierForNumber(_activePreviewNumber ?? fallbackMergedNumber ?? 4);
     _settleReleaseGap =
         visualSettings.mergePreviewNumberSize.evaluate(_numberPreviewPush) -
-            visualSettings.mergeNumberSettleSize.evaluate(0.0);
+            visualSettings.mergeNumberSettleSize.evaluate(0.0) +
+            0.055 * tier;
     _normalNumberSizeFactor = 0.0;
     _numberPreviewTimer = 0.0;
     _numberPreviewMode = _NumberPreviewMode.settling;
@@ -1072,11 +1099,14 @@ class PieceComponent extends PositionComponent {
   /// Exact match of `PieceView.PlayMergeSurvivorMovesAsync()` (`1.12x` peak over `0.28s`)
   /// and `PlayMergeSurvivorStaysAsync(shoveDir)` (`PlayLeanImpulse` + `1.20x` curve over `0.28s`),
   /// plus `ScaleSwapAnimator.ShrinkAsync` (`1 - curve`) when stationary pins unlock!
+  /// Also injects a strong sloshing water impulse (`_waterSloshVel`, `_sandErosionIntensity`)
+  /// so the newly merged liquid inside the block rocks and sloshes (`nước sóng sánh`)!
   void triggerSurvivorCommitResponse({
     required bool survivorMoves,
     required Offset shoveDir,
     required bool wasPinnedBeforeMerge,
     required BlockColorStyle previousStyle,
+    int mergedNumber = 4,
   }) {
     if (wasPinnedBeforeMerge && !model.movement.isPinned) {
       final prevLayout = _resolveLabelAndArrowLayout(
@@ -1090,21 +1120,58 @@ class PieceComponent extends PositionComponent {
     }
     refreshGeometryForMovement();
 
+    final tier = mergeEscalationTierForNumber(mergedNumber);
+    final extraScale = 0.034 * tier;
+    final extraDur = 0.022 * tier;
+
     if (survivorMoves) {
-      _mergePulseDuration = visualSettings.mergeSurvivorMovesDuration;
-      _mergePulsePeakScale = visualSettings.mergeSurvivorMovesPulseScale;
+      _mergePulseDuration = visualSettings.mergeSurvivorMovesDuration + extraDur;
+      _mergePulsePeakScale =
+          visualSettings.mergeSurvivorMovesPulseScale + extraScale;
       _mergePulseCurve = visualSettings.mergeSurvivorMovesPulseCurve;
       _mergePulseElapsed = 0.0;
+      if (tier > 0 && shoveDir.distance > 1e-3) {
+        _leanImpulseDir =
+            (shoveDir / shoveDir.distance) * (0.45 + 0.12 * tier);
+        _leanImpulseDuration =
+            visualSettings.mergeSurvivorStaysDuration + extraDur * 0.8;
+        _leanImpulseElapsed = 0.0;
+      }
     } else {
-      _mergePulseDuration = visualSettings.mergeSurvivorStaysDuration;
-      _mergePulsePeakScale = visualSettings.mergeSurvivorStaysPulseScale;
+      _mergePulseDuration = visualSettings.mergeSurvivorStaysDuration + extraDur;
+      _mergePulsePeakScale =
+          visualSettings.mergeSurvivorStaysPulseScale + extraScale;
       _mergePulseCurve = visualSettings.mergeSurvivorStaysPulseCurve;
       _mergePulseElapsed = 0.0;
 
       if (shoveDir.distance > 1e-3) {
-        _leanImpulseDir = shoveDir / shoveDir.distance;
-        _leanImpulseDuration = visualSettings.mergeSurvivorStaysDuration;
+        _leanImpulseDir =
+            (shoveDir / shoveDir.distance) * (1.0 + 0.16 * tier);
+        _leanImpulseDuration =
+            visualSettings.mergeSurvivorStaysDuration + extraDur * 0.8;
         _leanImpulseElapsed = 0.0;
+      }
+    }
+
+    if (!model.isDud) {
+      final shoveSign = shoveDir.dx.abs() > 0.05
+          ? (shoveDir.dx >= 0 ? -1.0 : 1.0)
+          : (shoveDir.dy >= 0 ? 1.0 : -1.0);
+      _waterSloshVel += shoveSign * (8.5 + 1.2 * tier);
+      _sandErosionIntensity =
+          math.max(_sandErosionIntensity, (0.86 + 0.04 * tier).clamp(0.0, 1.0));
+      _sandReformFlash = math.max(
+        _sandReformFlash,
+        (0.68 + 0.06 * tier).clamp(0.0, 1.0),
+      );
+      if (shoveDir.distance > 1e-3) {
+        _sandTravelDir = shoveDir / shoveDir.distance;
+      }
+      if (tier > 0) {
+        levelUpTargetGlow = math.max(
+          levelUpTargetGlow,
+          (0.38 + 0.09 * tier).clamp(0.0, 1.0),
+        );
       }
     }
   }
@@ -1118,6 +1185,46 @@ class PieceComponent extends PositionComponent {
     _mergePulsePeakScale = 1.24;
     _mergePulseCurve = visualSettings.mergeSurvivorStaysPulseCurve;
     _mergePulseElapsed = 0.0;
+    _winFractureProgress = 0.0;
+    _winCrumbleProgress = 0.0;
+    _waterSloshVel = 9.5;
+    _sandErosionIntensity = 1.0;
+  }
+
+  /// Step 1b -> Step 2 of Win Sequence (`nước sóng sánh dâng trào & rút cạn khỏi block lên bình`):
+  /// - `fractureProgress` (`0..1`): liquid waves surge and slosh inside the final block.
+  /// - `crumbleProgress` (`0..1`): the water column inside the block drains downward (`fill: 0.78 -> 0.0`)
+  ///   while sloshing as the continuous water stream pours up into the bottle.
+  void setWinCrumbleState({
+    required double fractureProgress,
+    required double crumbleProgress,
+  }) {
+    _winFractureProgress = fractureProgress.clamp(0.0, 1.0);
+    _winCrumbleProgress = crumbleProgress.clamp(0.0, 1.0);
+
+    if (_winFractureProgress > 0.02 && _winCrumbleProgress < 0.96) {
+      final tremorIntensity = (_winCrumbleProgress <= 0.01)
+          ? (_winFractureProgress * 0.85)
+          : ((1.0 - _winCrumbleProgress) * 1.45);
+      final r = cellSize * 0.024 * tremorIntensity;
+      _shakeOffsetPx = Offset(
+        (_rng.nextDouble() * 2.0 - 1.0) * r,
+        (_rng.nextDouble() * 2.0 - 1.0) * r,
+      );
+      _sandErosionIntensity = 1.0;
+      _waterSloshTilt = math.sin(_winFractureProgress * 14.0 + _winCrumbleProgress * 18.0) * 0.55;
+    } else if (_winCrumbleProgress >= 0.96) {
+      _shakeOffsetPx = Offset.zero;
+    }
+
+    if (_winCrumbleProgress > 0.005) {
+      _sandErosionIntensity =
+          (0.65 + (1.0 - _winCrumbleProgress) * 0.35).clamp(0.0, 1.0);
+      final easeScale = Curves.easeInCubic.transform(_winCrumbleProgress);
+      visualScale = (1.0 - easeScale * 0.86).clamp(0.0, 1.0);
+      final fadeU = ((_winCrumbleProgress - 0.14) / 0.86).clamp(0.0, 1.0);
+      visualOpacity = (1.0 - Curves.easeInQuad.transform(fadeU)).clamp(0.0, 1.0);
+    }
   }
 
   // --- IceComponentView `PopThenBreakAsync` (`0.3833s` Pop -> BreakIce -> `1.5x` Shake) ---
@@ -1268,6 +1375,8 @@ class PieceComponent extends PositionComponent {
         _jellyLean = Offset.zero;
         _jellyVel = Offset.zero;
         _jellyDeformWritten = Offset.zero;
+        _waterSloshTilt = 0.0;
+        _waterSloshVel = 0.0;
         _sandSwarmGrains.clear();
         _sandTrailCentersWorld.clear();
         _sandErosionIntensity = 0.0;
@@ -1455,7 +1564,7 @@ class PieceComponent extends PositionComponent {
         (_iceBlocksTex != null ? 2 : 0) |
         (_arrowTopImg != null ? 4 : 0) |
         (_arrowHorizCombinedImg != null ? 8 : 0);
-    return '${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
+    return 'fullBlockV2|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
   }
 
   _BakedStaticPieceSprite? _getOrBakeStaticPieceSprite(
@@ -1555,21 +1664,37 @@ class PieceComponent extends PositionComponent {
     final wallInflateScaleY =
         1.0 + (totalBlockInflate * 0.72) / math.max(1, model.heightRows);
 
-    // Sand Swarm Reform Pulse when sand grains implode back into the block on stop:
+    // Liquid Slosh Reform Pulse, Rotational Rock & Volume-Preserving Squash/Stretch (`anim nước lắc lắc`):
     final sandReformPop = _sandReformFlash > 0.01
-        ? (1.0 + math.sin(_sandReformFlash * math.pi) * 0.035)
+        ? (1.0 + math.sin(_sandReformFlash * math.pi) * 0.042)
         : 1.0;
+    final sizeDamp = 1.0 / math.sqrt(math.max(1, model.localCells.length));
+    final sloshWave = (math.sin(_sandShimmerClock * 15.5) *
+                (_sandErosionIntensity * 0.055 + _sandReformFlash * 0.048) +
+            _waterSloshTilt * 0.068 +
+            (_jellyDeformWritten.dx.abs() - _jellyDeformWritten.dy.abs()) *
+                0.48) *
+        sizeDamp;
+    final clampedSlosh = sloshWave.clamp(-0.095, 0.095);
+    final sloshScaleX = 1.0 + clampedSlosh;
+    final sloshScaleY = 1.0 - clampedSlosh * 0.88;
+    final sloshRotRad = ((_waterSloshTilt * 0.068) +
+            math.sin(_sandShimmerClock * 15.0) *
+                (_sandErosionIntensity * 0.026 + _sandReformFlash * 0.032)) *
+        sizeDamp;
 
     final finalScaleX = visualScale *
         visualScaleXMultiplier *
         _mergePulseScale *
         wallInflateScaleX *
-        sandReformPop;
+        sandReformPop *
+        sloshScaleX;
     final finalScaleY = visualScale *
         visualScaleYMultiplier *
         _mergePulseScale *
         wallInflateScaleY *
-        sandReformPop;
+        sandReformPop *
+        sloshScaleY;
     final finalScaleZ = _mergePulseScale * _candidatePulseScaleZ * _tapScaleZ;
 
     final effectiveLipDepth = (_lipDepth * finalScaleZ).clamp(2.0, _lipDepth * 1.85);
@@ -1577,8 +1702,19 @@ class PieceComponent extends PositionComponent {
 
     final totalLiftCells = _currentZLiftCells + _candidateLiftCells;
     final liftPx = totalLiftCells * cellSize * 1.15 + zHeightGrowPx * 0.55;
-    // Zero jelly wobble: block stays crisp while its edges dissolve into swirling sand!
-    const topJellyShift = Offset.zero;
+    // Full-block 2.5D liquid slosh shift when moving, stepping, or merging:
+    final topJellyShift = _jellyDeformWritten * cellSize * 1.15 +
+        Offset(
+          _waterSloshTilt * cellSize * 0.115 +
+              math.sin(_sandShimmerClock * 15.0) *
+                  _sandErosionIntensity *
+                  cellSize *
+                  0.036,
+          math.cos(_sandShimmerClock * 13.0) *
+              _sandErosionIntensity *
+              cellSize *
+              0.032,
+        );
 
     canvas.save();
     if (visualOpacity < 0.999) {
@@ -1589,16 +1725,14 @@ class PieceComponent extends PositionComponent {
       );
     }
 
-    // Background Sand Swarm Wake & Wind-Swept Sand Ribbons (in world-relative local coords)
-    if (_sandSwarmGrains.isNotEmpty || _sandTrailCentersWorld.length >= 2) {
-      _drawSandSwarmWake(canvas, baseStyle);
-    }
-
-    // Pivot compensation around `_visualPivotLocal` (`PieceFollow.ApplyPose`) + 2D shake jitter
+    // Pivot compensation around `_visualPivotLocal` (`PieceFollow.ApplyPose`) + 2D shake jitter + liquid rock
     canvas.translate(
       _visualPivotLocal.dx + _shakeOffsetPx.dx,
       _visualPivotLocal.dy + _shakeOffsetPx.dy,
     );
+    if (sloshRotRad.abs() > 1e-4) {
+      canvas.rotate(sloshRotRad);
+    }
     canvas.scale(finalScaleX, finalScaleY);
     canvas.translate(-_visualPivotLocal.dx, -_visualPivotLocal.dy);
 
@@ -1692,7 +1826,7 @@ class PieceComponent extends PositionComponent {
     // Shift piece upward by Z-lift (`position.z = -OffsetWhileDragging`)
     canvas.translate(0, -liftPx);
 
-    // 2. Chunky 2.5D Body Surface + Sand Erosion Crust
+    // 2. Chunky 2.5D Full Liquid Block Surface
     _drawBodySurface(
       canvas,
       baseStyle,
@@ -1805,20 +1939,51 @@ class PieceComponent extends PositionComponent {
         if (!model.isDud && model.number != null) {
           _drawBlockNumbersWithPreview(canvas, baseStyle, resolvedLayout);
         }
+
+        // 10. Smooth Full-Block Liquid Surge Glow across the final winning block
+        if (_winFractureProgress > 0.01 && _winCrumbleProgress < 0.85) {
+          _drawWinFractureCracks(canvas, baseStyle);
+        }
       }
 
       canvas.restore();
-    }
-
-    // Foreground Sand Swarm Grains swirling over the block edges and imploding on stop
-    if (_sandSwarmGrains.isNotEmpty) {
-      _drawSandSwarmForeground(canvas, baseStyle, liftPx: liftPx);
     }
 
     if (visualOpacity < 0.999) {
       canvas.restore();
     }
     canvas.restore();
+  }
+
+  void _drawWinFractureCracks(Canvas canvas, BlockColorStyle style) {
+    final reach = _winFractureProgress.clamp(0.0, 1.0);
+    final fade = (1.0 - (_winCrumbleProgress / 0.85)).clamp(0.0, 1.0);
+    final alpha = (reach * fade).clamp(0.0, 1.0);
+    if (alpha <= 0.02) return;
+
+    final diag = math.sqrt(
+      _localBounds.width * _localBounds.width +
+          _localBounds.height * _localBounds.height,
+    );
+    final radius = math.max(16.0, diag * 0.65);
+    final sloshShift = Offset(
+      math.sin(_sandShimmerClock * 14.0) * cellSize * 0.18,
+      math.cos(_sandShimmerClock * 11.5) * cellSize * 0.14,
+    );
+    final glowCenter = _visualPivotLocal + sloshShift;
+    final crestColor = Color.lerp(style.rimHighlight, Colors.white, 0.72)!;
+
+    _sandErosionPaint.shader = ui.Gradient.radial(
+      glowCenter,
+      radius,
+      [
+        Colors.white.withValues(alpha: (0.58 * alpha).clamp(0.0, 1.0)),
+        crestColor.withValues(alpha: (0.36 * alpha).clamp(0.0, 1.0)),
+        style.topBright.withValues(alpha: 0.0),
+      ],
+      const [0.0, 0.52, 1.0],
+    );
+    canvas.drawPath(_innerHighlightPath, _sandErosionPaint);
   }
 
   /// Paints the opaque 3D extruded wall with ZERO per-frame `Path.combine` or `Path.shift` allocations:
@@ -1857,7 +2022,7 @@ class PieceComponent extends PositionComponent {
     if (_cachedBodyStyleKey != nextBodyKey) {
       _cachedBodyStyleKey = nextBodyKey;
       final topCrease = Color.lerp(style.bottomLip, Colors.black, 0.08)!;
-      final baseShade = Color.lerp(style.bottomLip, Colors.black, 0.14)!;
+      final baseShade = Color.lerp(style.bottomLip, Colors.black, 0.16)!;
       _cachedWallPaint.shader = ui.Gradient.linear(
         Offset(_localBounds.left, _localBounds.bottom - cellSize * 0.15),
         Offset(_localBounds.left, _localBounds.bottom + effectiveLipDepth),
@@ -1866,23 +2031,31 @@ class PieceComponent extends PositionComponent {
             : [topCrease, style.bottomLip, baseShade],
         const [0.0, 0.45, 1.0],
       );
-      _cachedBaseStrokePaint.color = baseShade.withValues(alpha: 0.70);
+      _cachedBaseStrokePaint.color = baseShade.withValues(alpha: 0.72);
+      // 100% Full Block (`cho full block`, zero headspace cutout or stripes!):
       _cachedTopPaint.shader = ui.Gradient.linear(
         _localBounds.topLeft,
-        Offset(_localBounds.left + _localBounds.width * 0.78, _localBounds.bottom),
-        [style.topBright, style.topMid],
+        Offset(_localBounds.left + _localBounds.width * 0.75, _localBounds.bottom),
+        [
+          Color.lerp(style.topBright, Colors.white, 0.18)!,
+          style.topBright,
+          style.topMid,
+        ],
+        const [0.0, 0.36, 1.0],
       );
-      final rimStrokeW = (cellSize * 0.044).clamp(1.6, 3.6);
-      final softRimEnd = Color.lerp(style.topBright, style.rimHighlight, 0.50)!;
+      final rimStrokeW = (cellSize * 0.048).clamp(1.8, 3.8);
+      final softRimEnd = Color.lerp(style.topBright, style.rimHighlight, 0.55)!;
       _cachedRimPaint
         ..strokeWidth = rimStrokeW
         ..shader = ui.Gradient.linear(
           _localBounds.topLeft,
           _localBounds.bottomRight,
           [
-            style.rimHighlight.withValues(alpha: _isIceCovered ? 0.88 : 0.68),
-            softRimEnd.withValues(alpha: _isIceCovered ? 0.62 : 0.36),
+            Colors.white.withValues(alpha: _isIceCovered ? 0.90 : 0.84),
+            style.rimHighlight.withValues(alpha: _isIceCovered ? 0.75 : 0.64),
+            softRimEnd.withValues(alpha: _isIceCovered ? 0.62 : 0.44),
           ],
+          const [0.0, 0.42, 1.0],
         );
     }
 
@@ -1901,7 +2074,10 @@ class PieceComponent extends PositionComponent {
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
     canvas.drawPath(_topPath, _cachedTopPaint);
-    if ((_sandErosionIntensity > 0.01 || _sandReformFlash > 0.01) &&
+
+    if ((_sandErosionIntensity > 0.01 ||
+            _sandReformFlash > 0.01 ||
+            _waterSloshTilt.abs() > 0.005) &&
         !_isIceCovered) {
       _drawSandErosionOnBlock(canvas, style);
     }
@@ -1909,10 +2085,10 @@ class PieceComponent extends PositionComponent {
     canvas.restore();
   }
 
-  /// Ticks the Sand Swarm Trail (`Hóa Cát Bay Theo Tay`):
-  /// - Emits swirling colored & golden sand grains along the block's trailing edges while dragging.
-  /// - Records world trail points for wind-swept sand ribbons.
-  /// - When stopping or releasing, rapidly implodes all sand grains back into the block with a golden condense ring!
+  /// Ticks the Sloshing Water Physics (`ANIM_SONG_SANH` / `FakeWater`) inside the block:
+  /// - Drives `_waterSloshTilt` and `_waterSloshVel` with an underdamped spring-damper
+  ///   responding to horizontal/vertical movement, grid steps, merge hold/commit, and stop impulses.
+  /// - Zero external particle/bead spawning (`_sandSwarmGrains` stays empty!).
   void _tickSandSwarmTrail(double clampedDt, Offset lagCells) {
     _sandShimmerClock += clampedDt;
     final prevPos = _prevSandWorldPos ?? position.clone();
@@ -1929,361 +2105,267 @@ class PieceComponent extends PositionComponent {
       _sandTravelDir = Offset(lagCells.dx / lagMag, lagCells.dy / lagMag);
     }
 
-    // Detect grid-cell steps to fire a sand step burst
+    // Detect grid-cell steps to inject a crisp sloshing wave impulse (`lắc lắc`)
     if (_lastSandGridCol == -999) {
       _lastSandGridCol = model.col;
       _lastSandGridRow = model.row;
     } else if (model.col != _lastSandGridCol || model.row != _lastSandGridRow) {
+      final stepDc = (model.col - _lastSandGridCol).toDouble();
+      final stepDr = (model.row - _lastSandGridRow).toDouble();
       _lastSandGridCol = model.col;
       _lastSandGridRow = model.row;
       if (isDragging || _followState == _FollowState.dragging) {
-        _sandReformFlash = math.max(_sandReformFlash, 0.72);
-        _spawnSandSwarmGrains(14, burstSpeedMultiplier: 1.35);
+        _sandReformFlash = math.max(_sandReformFlash, 0.78);
+        _sandErosionIntensity = math.max(_sandErosionIntensity, 0.94);
+        final impulseSign = stepDc.abs() > 0.1
+            ? (stepDc >= 0 ? -1.0 : 1.0)
+            : (stepDr >= 0 ? 1.0 : -1.0);
+        _waterSloshVel += impulseSign * 7.2;
       }
     }
 
     final activelyDragging =
         isDragging || _followState == _FollowState.dragging;
-    final isMoving = frameMoveDist > 0.25 || lagMag > 0.012;
+    final activelyMerging = isSurvivorCandidate ||
+        isPartnerCandidate ||
+        _mergePulseElapsed >= 0 ||
+        _numberPreviewMode == _NumberPreviewMode.settling;
+    final isMoving = frameMoveDist > 0.20 || lagMag > 0.010;
 
-    if (activelyDragging) {
-      final targetErosion = (0.44 +
-              (frameMoveDist / (cellSize * 0.14)) * 0.56 +
-              (lagMag / 0.14) * 0.45)
-          .clamp(0.42, 1.0);
+    // Target slosh tilt driven by drag velocity, lag acceleration, and active sloshing wave excitation
+    double targetTilt = 0.0;
+    if (activelyDragging || activelyMerging) {
+      final vxNorm = (dx / math.max(1.0, cellSize * 0.14)).clamp(-1.0, 1.0);
+      final vyNorm = (dy / math.max(1.0, cellSize * 0.16)).clamp(-1.0, 1.0);
+      final oscWave = math.sin(_sandShimmerClock * 15.0) *
+          (activelyMerging ? 0.48 : (isMoving ? 0.42 : 0.28));
+      targetTilt = (-vxNorm * 0.62 -
+              lagCells.dx * 1.95 +
+              vyNorm * 0.42 -
+              lagCells.dy * 0.85 +
+              oscWave)
+          .clamp(-0.78, 0.78);
+    }
+
+    // Integrate underdamped liquid slosh spring (`k = 280.0`, `zeta = 0.22`)
+    const sloshK = 280.0;
+    final sloshC = 2.0 * 0.22 * math.sqrt(sloshK);
+    final subSteps = (clampedDt / 0.008).ceil().clamp(1, 6);
+    final subDt = clampedDt / subSteps;
+    for (int s = 0; s < subSteps; s++) {
+      final accel = (targetTilt - _waterSloshTilt) * sloshK - _waterSloshVel * sloshC;
+      _waterSloshVel += accel * subDt;
+      _waterSloshTilt += _waterSloshVel * subDt;
+    }
+    if (_waterSloshTilt.abs() < 8e-3 &&
+        _waterSloshVel.abs() < 0.12 &&
+        targetTilt.abs() < 1e-4) {
+      _waterSloshTilt = 0.0;
+      _waterSloshVel = 0.0;
+    }
+
+    if (activelyDragging || activelyMerging) {
+      final targetErosion = activelyMerging
+          ? 0.92
+          : (0.62 +
+                  (frameMoveDist / (cellSize * 0.14)) * 0.45 +
+                  (lagMag / 0.14) * 0.42)
+              .clamp(0.60, 1.0);
       _sandErosionIntensity = ui.lerpDouble(
         _sandErosionIntensity,
         targetErosion,
-        (clampedDt * 14.0).clamp(0.0, 1.0),
+        (clampedDt * 16.0).clamp(0.0, 1.0),
       )!;
-
-      final spawnCount = isMoving
-          ? (3 + (frameMoveDist / (cellSize * 0.055)).round() + (lagMag * 18.0).round())
-              .clamp(3, 12)
-          : 2;
-      _spawnSandSwarmGrains(spawnCount, burstSpeedMultiplier: isMoving ? 1.0 : 0.45);
-
-      if (isMoving) {
-        final worldCenter = Offset(
-          position.x + _visualPivotLocal.dx,
-          position.y + _visualPivotLocal.dy,
-        );
-        if (_sandTrailCentersWorld.isEmpty ||
-            (worldCenter - _sandTrailCentersWorld.last).distance >
-                cellSize * 0.08) {
-          _sandTrailCentersWorld.add(worldCenter);
-          if (_sandTrailCentersWorld.length > 8) {
-            _sandTrailCentersWorld.removeAt(0);
-          }
-        }
-      } else if (_sandTrailCentersWorld.isNotEmpty) {
-        _sandTrailCentersWorld.removeAt(0);
-      }
     } else {
-      // Finger released or piece settling: trigger Sand Implosion Condense Burst!
-      if (_sandErosionIntensity > 0.24 && _sandReformFlash < 0.35) {
-        _sandReformFlash = 1.0;
+      // Finger released or merge settling: trigger a single slosh recoil & decay smoothly over ~0.75s
+      if (_sandErosionIntensity > 0.55 && _sandReformFlash <= 0.01) {
+        _sandReformFlash = 0.85;
+        final recoilSign = _sandTravelDir.dx.abs() > 0.1
+            ? (_sandTravelDir.dx >= 0 ? 1.0 : -1.0)
+            : 1.0;
+        _waterSloshVel += recoilSign * 6.5;
       }
       _sandErosionIntensity =
-          math.max(0.0, _sandErosionIntensity - clampedDt * 5.2);
-      if (_sandTrailCentersWorld.isNotEmpty) {
-        _sandTrailCentersWorld.removeAt(0);
-      }
+          math.max(0.0, _sandErosionIntensity - clampedDt * 1.45);
     }
 
     if (_sandReformFlash > 0.0) {
-      _sandReformFlash = math.max(0.0, _sandReformFlash - clampedDt * 2.85);
+      _sandReformFlash = math.max(0.0, _sandReformFlash - clampedDt * 2.65);
     }
 
-    if (_sandSwarmGrains.isEmpty) return;
-
-    final perpX = -_sandTravelDir.dy;
-    final perpY = _sandTravelDir.dx;
-    final imploding = !activelyDragging || !isMoving;
-
-    for (int i = _sandSwarmGrains.length - 1; i >= 0; i--) {
-      final g = _sandSwarmGrains[i];
-      g.life += clampedDt * (imploding ? 2.35 : 1.0);
-      if (g.life >= g.maxLife) {
-        _sandSwarmGrains.removeAt(i);
-        continue;
-      }
-
-      g.swirlPhase += g.swirlFreq * clampedDt;
-      final homeWorldX = position.x + g.homeLocalX;
-      final homeWorldY = position.y + g.homeLocalY;
-
-      if (imploding) {
-        // Magnetic Sand Implosion: rapidly suck all trailing grains back into their block cell!
-        final homingAlpha =
-            (1.0 - math.exp(-24.0 * clampedDt)).clamp(0.0, 1.0);
-        g.worldX = ui.lerpDouble(g.worldX, homeWorldX, homingAlpha)!;
-        g.worldY = ui.lerpDouble(g.worldY, homeWorldY, homingAlpha)!;
-        g.velX *= 0.80;
-        g.velY *= 0.80;
-        final distSq = (g.worldX - homeWorldX) * (g.worldX - homeWorldX) +
-            (g.worldY - homeWorldY) * (g.worldY - homeWorldY);
-        if (distSq < 9.0 && g.life > g.maxLife * 0.35) {
-          _sandSwarmGrains.removeAt(i);
-        }
-      } else {
-        // Swirling Vortex Trail following behind the dragged block
-        final swirlForce = math.sin(g.swirlPhase) * cellSize * 2.4;
-        g.worldX += (g.velX + perpX * swirlForce) * clampedDt;
-        g.worldY += (g.velY + perpY * swirlForce) * clampedDt;
-
-        // Soft elastic leash toward trailing wake behind home position
-        final trailTargetX =
-            homeWorldX - _sandTravelDir.dx * cellSize * 0.42;
-        final trailTargetY =
-            homeWorldY - _sandTravelDir.dy * cellSize * 0.42;
-        final leashAlpha =
-            (1.0 - math.exp(-6.5 * clampedDt)).clamp(0.0, 1.0);
-        g.worldX = ui.lerpDouble(g.worldX, trailTargetX, leashAlpha)!;
-        g.worldY = ui.lerpDouble(g.worldY, trailTargetY, leashAlpha)!;
-      }
+    if (_sandSwarmGrains.isNotEmpty) {
+      _sandSwarmGrains.clear();
+    }
+    if (_sandTrailCentersWorld.isNotEmpty) {
+      _sandTrailCentersWorld.clear();
     }
   }
 
-  void _spawnSandSwarmGrains(
-    int count, {
-    required double burstSpeedMultiplier,
-  }) {
-    if (model.localCells.isEmpty) return;
-    const maxGrains = 76;
-    final available = maxGrains - _sandSwarmGrains.length;
-    final toSpawn = math.min(count, available);
-    if (toSpawn <= 0) return;
-
-    final perpX = -_sandTravelDir.dy;
-    final perpY = _sandTravelDir.dx;
-
-    for (int i = 0; i < toSpawn; i++) {
-      final cell = model.localCells[_rng.nextInt(model.localCells.length)];
-      // Bias spawn toward the trailing edge of the cell while keeping home inside the cell
-      final homeLocalX = (cell.$1 + 0.14 + _rng.nextDouble() * 0.72) * cellSize;
-      final homeLocalY = (cell.$2 + 0.14 + _rng.nextDouble() * 0.72) * cellSize;
-
-      final edgeScatter = (_rng.nextDouble() - 0.5) * cellSize * 0.65;
-      final trailOffset = (0.06 + _rng.nextDouble() * 0.34) * cellSize;
-      final spawnWorldX = position.x +
-          homeLocalX -
-          _sandTravelDir.dx * trailOffset +
-          perpX * edgeScatter * 0.35;
-      final spawnWorldY = position.y +
-          homeLocalY -
-          _sandTravelDir.dy * trailOffset +
-          perpY * edgeScatter * 0.35;
-
-      final backwardSpeed =
-          (0.65 + _rng.nextDouble() * 1.45) * cellSize * burstSpeedMultiplier;
-      final sideSpeed =
-          (_rng.nextDouble() - 0.5) * 1.85 * cellSize * burstSpeedMultiplier;
-
-      _sandSwarmGrains.add(
-        _SandSwarmGrain(
-          worldX: spawnWorldX,
-          worldY: spawnWorldY,
-          velX: -_sandTravelDir.dx * backwardSpeed + perpX * sideSpeed,
-          velY: -_sandTravelDir.dy * backwardSpeed + perpY * sideSpeed,
-          homeLocalX: homeLocalX,
-          homeLocalY: homeLocalY,
-          size: (cellSize * (0.036 + _rng.nextDouble() * 0.052)).clamp(2.2, 6.2),
-          life: 0.0,
-          maxLife: 0.28 + _rng.nextDouble() * 0.18,
-          swirlPhase: _rng.nextDouble() * math.pi * 2.0,
-          swirlFreq: 10.0 + _rng.nextDouble() * 10.0,
-          colorKind: _rng.nextInt(4),
-          isDiamond: _rng.nextBool(),
-          isForeground: _rng.nextDouble() < 0.48,
-        ),
-      );
-    }
-  }
-
-  Color _sandGrainColor(BlockColorStyle style, int colorKind, double alpha) {
-    switch (colorKind) {
-      case 0:
-        return style.topBright.withValues(alpha: alpha);
-      case 1:
-        return style.rimHighlight.withValues(alpha: alpha);
-      case 2:
-        return Color.lerp(style.topMid, const Color(0xFFFFE082), 0.45)!
-            .withValues(alpha: alpha);
-      default:
-        return const Color(0xFFFFF6D6).withValues(alpha: alpha);
-    }
-  }
-
-  /// Renders wind-swept sand ribbons and background sand grains trailing behind the block.
-  void _drawSandSwarmWake(Canvas canvas, BlockColorStyle style) {
-    // 1. Translucent swirling sand-stream ribbons connecting `_sandTrailCentersWorld`
-    if (_sandTrailCentersWorld.length >= 2 && _sandErosionIntensity > 0.05) {
-      final perp = Offset(-_sandTravelDir.dy, _sandTravelDir.dx);
-      final maxHalfW =
-          math.min(_localBounds.width, _localBounds.height) * 0.36;
-      for (final ribbonSign in const [-0.55, 0.0, 0.55]) {
-        final ribbonPath = Path();
-        final n = _sandTrailCentersWorld.length;
-        for (int i = 0; i < n; i++) {
-          final frac = i / math.max(1, n - 1);
-          final worldPt = _sandTrailCentersWorld[i];
-          final wave =
-              math.sin(_sandShimmerClock * 14.0 + i * 0.9 + ribbonSign * 2.0) *
-                  cellSize *
-                  0.08 *
-                  (1.0 - frac);
-          final offsetSide =
-              perp * (ribbonSign * maxHalfW * frac + wave) -
-                  _sandTravelDir * (cellSize * 0.18 * (1.0 - frac));
-          final localPt = Offset(
-                worldPt.dx - position.x,
-                worldPt.dy - position.y,
-              ) +
-              offsetSide;
-          if (i == 0) {
-            ribbonPath.moveTo(localPt.dx, localPt.dy);
-          } else {
-            ribbonPath.lineTo(localPt.dx, localPt.dy);
-          }
-        }
-        _sandRibbonPaint
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = (cellSize * (ribbonSign == 0.0 ? 0.22 : 0.13))
-              .clamp(4.0, 22.0)
-          ..color = (ribbonSign == 0.0
-                  ? style.topBright
-                  : const Color(0xFFFFEFA8))
-              .withValues(
-            alpha: (0.22 * _sandErosionIntensity).clamp(0.0, 0.28),
-          );
-        canvas.drawPath(ribbonPath, _sandRibbonPaint);
-      }
-    }
-
-    // 2. Background Sand Swarm Grains
-    for (final g in _sandSwarmGrains) {
-      if (g.isForeground) continue;
-      _drawSingleSandGrain(canvas, style, g, liftOffsetY: 0.0);
-    }
-  }
-
-  /// Renders foreground sand grains swirling over the block edges and imploding into the top face.
-  void _drawSandSwarmForeground(
+  /// Renders the active sloshing water animation (`anim nước lắc lắc`, `FakeWater` + `ANIM_SONG_SANH`)
+  /// across the unified block ONLY while moving or merging (`energy > 0.01`):
+  /// - Stationary blocks (`energy == 0`) remain 100% full with zero water lines or stripes!
+  /// - While moving or merging (`energy > 0`), two overlapping liquid wave layers (`surfaceWater2`
+  ///   back wave + `mainWaterSingle` front wave) slosh back and forth across `_innerHighlightPath`
+  ///   with zero thin stroke lines (`ko cần vân`) and rise smoothly back to 100% full when stopping!
+  void _drawSandErosionOnBlock(
     Canvas canvas,
     BlockColorStyle style, {
-    required double liftPx,
+    double alphaMultiplier = 1.0,
   }) {
-    for (final g in _sandSwarmGrains) {
-      if (!g.isForeground) continue;
-      _drawSingleSandGrain(canvas, style, g, liftOffsetY: liftPx * 0.35);
-    }
-  }
+    final rawEnergy = math
+        .max(
+          _sandErosionIntensity,
+          math.max(
+            _sandReformFlash * 0.92,
+            math.max(_waterSloshTilt.abs() * 1.35, _winFractureProgress * 0.95),
+          ),
+        )
+        .clamp(0.0, 1.0);
+    final energy = (rawEnergy * alphaMultiplier).clamp(0.0, 1.0);
+    if (energy <= 0.01) return;
 
-  void _drawSingleSandGrain(
-    Canvas canvas,
-    BlockColorStyle style,
-    _SandSwarmGrain g, {
-    required double liftOffsetY,
-  }) {
-    final progress = (g.life / g.maxLife).clamp(0.0, 1.0);
-    final env = math.sin(progress * math.pi).clamp(0.0, 1.0);
-    final alpha = (env * 0.92).clamp(0.0, 1.0);
-    if (alpha <= 0.02) return;
+    canvas.save();
+    canvas.clipPath(_innerHighlightPath);
 
-    final lx = g.worldX - position.x;
-    final ly = g.worldY - position.y + liftOffsetY;
-    final r = g.size * (0.65 + 0.45 * env);
+    final x0 = _localBounds.left;
+    final y0 = _localBounds.top;
+    final x1 = _localBounds.right;
+    final y1 = _localBounds.bottom;
+    final w = _localBounds.width;
 
-    // Outer soft golden/colored sand glow
-    _sandGrainPaint.color = _sandGrainColor(style, g.colorKind, alpha * 0.38);
-    canvas.drawCircle(Offset(lx, ly), r * 1.45, _sandGrainPaint);
+    // 1. Trough backdrop at the top of the block (only visible while sloshing; rises to 0 when stationary!)
+    final troughColor =
+        Color.lerp(style.bottomLip, const Color(0xFF0A1936), 0.36)!
+            .withValues(alpha: (0.64 * energy).clamp(0.0, 1.0));
+    canvas.drawRect(_localBounds, Paint()..color = troughColor);
 
-    // Crisp sand crystal core (diamond or round grain)
-    _sandGrainPaint.color = _sandGrainColor(style, g.colorKind, alpha);
-    if (g.isDiamond) {
-      final dPath = Path()
-        ..moveTo(lx, ly - r * 1.15)
-        ..lineTo(lx + r * 0.95, ly)
-        ..lineTo(lx, ly + r * 1.15)
-        ..lineTo(lx - r * 0.95, ly)
-        ..close();
-      canvas.drawPath(dPath, _sandGrainPaint);
-    } else {
-      canvas.drawCircle(Offset(lx, ly), r, _sandGrainPaint);
-    }
-  }
+    // Base wave level drops slightly from the top ONLY while `energy > 0`, returning to `y0` (100% full) at rest!
+    final baseWaveY =
+        y0 + cellSize * (0.21 * energy + 0.52 * _winCrumbleProgress);
+    final tilt = _waterSloshTilt.clamp(-0.78, 0.78);
+    final tiltSpanDy = (tilt * w * 0.22).clamp(-cellSize * 0.24, cellSize * 0.24);
+    final waveAmp = cellSize * (0.045 + 0.095 * energy);
+    final phase = _sandShimmerClock * 15.0;
 
-  /// Renders the trailing-edge Sand Erosion crust while swiping and the
-  /// Golden Sand Implosion Condense Ring when stopping at a grid cell.
-  void _drawSandErosionOnBlock(Canvas canvas, BlockColorStyle style) {
-    final diag =
-        math.sqrt(_localBounds.width * _localBounds.width + _localBounds.height * _localBounds.height);
-    final halfSpan = math.max(16.0, diag * 0.52);
+    // 2. Back Sloshing Wave Layer (`surfaceWater2`, oscillating out of phase for unmistakable `nước lắc lắc`)
+    final backPhase = -phase * 1.22 + 1.35;
+    final backAmp = waveAmp * 1.15;
+    final bLeftY = (baseWaveY -
+            cellSize * 0.025 * energy -
+            tiltSpanDy * 0.80 +
+            math.sin(backPhase) * backAmp)
+        .clamp(y0 - cellSize * 0.04, y1 - cellSize * 0.08);
+    final bRightY = (baseWaveY -
+            cellSize * 0.025 * energy +
+            tiltSpanDy * 0.80 -
+            math.sin(backPhase) * backAmp)
+        .clamp(y0 - cellSize * 0.04, y1 - cellSize * 0.08);
+    final bCtrl1Y = baseWaveY -
+        cellSize * 0.025 * energy -
+        tiltSpanDy * 0.28 +
+        math.cos(backPhase + 0.7) * backAmp * 1.45;
+    final bCtrl2Y = baseWaveY -
+        cellSize * 0.025 * energy +
+        tiltSpanDy * 0.28 -
+        math.cos(backPhase - 0.5) * backAmp * 1.45;
 
-    // 1. Trailing-edge sand dissolve shimmer gradient
-    if (_sandErosionIntensity > 0.01) {
-      final intensity = _sandErosionIntensity.clamp(0.0, 1.0);
-      final leadPt = _visualPivotLocal + _sandTravelDir * halfSpan;
-      final trailPt = _visualPivotLocal - _sandTravelDir * halfSpan;
-      final sandGold =
-          Color.lerp(style.rimHighlight, const Color(0xFFFFEDA6), 0.62)!;
+    final backWavePath = Path()
+      ..moveTo(x0, bLeftY)
+      ..cubicTo(
+        x0 + w * 0.33,
+        bCtrl1Y,
+        x0 + w * 0.67,
+        bCtrl2Y,
+        x1,
+        bRightY,
+      )
+      ..lineTo(x1, y1)
+      ..lineTo(x0, y1)
+      ..close();
 
-      _sandErosionPaint.shader = ui.Gradient.linear(
-        leadPt,
-        trailPt,
-        [
-          Colors.white.withValues(alpha: 0.0),
-          style.rimHighlight.withValues(alpha: 0.18 * intensity),
-          sandGold.withValues(alpha: 0.52 * intensity),
-          const Color(0xFFFFF8DC).withValues(alpha: 0.72 * intensity),
-        ],
-        const [0.0, 0.42, 0.78, 1.0],
-      );
-      canvas.drawPath(_topPath, _sandErosionPaint);
+    final backWaveColor = Color.lerp(style.topBright, Colors.white, 0.52)!
+        .withValues(alpha: (0.76 * alphaMultiplier).clamp(0.0, 1.0));
+    canvas.drawPath(backWavePath, Paint()..color = backWaveColor);
 
-      // Animated surface sand specks peeling off along the trailing half of the block
-      final perp = Offset(-_sandTravelDir.dy, _sandTravelDir.dx);
-      for (int i = 0; i < 24; i++) {
-        final phase = (_sandShimmerClock * 3.8 + i * 0.37) % 1.0;
-        final hash1 = ((i * 73 + 19) % 97) / 97.0;
-        final hash2 = ((i * 41 + 53) % 89) / 89.0;
-        final cell = model.localCells[i % model.localCells.length];
-        final baseLocal = Offset(
-          (cell.$1 + 0.12 + hash1 * 0.76) * cellSize,
-          (cell.$2 + 0.12 + hash2 * 0.76) * cellSize,
-        );
-        final drift = -_sandTravelDir * (phase * cellSize * 0.24) +
-            perp * (math.sin(phase * math.pi * 2.0 + i) * cellSize * 0.06);
-        final pt = baseLocal + drift;
-        final speckAlpha =
-            (math.sin(phase * math.pi) * intensity * 0.85).clamp(0.0, 1.0);
-        if (speckAlpha <= 0.03) continue;
-        final sr = (cellSize * (0.024 + (i % 3) * 0.011)).clamp(1.6, 4.2);
-        _sandGrainPaint.color = (i.isEven
-                ? const Color(0xFFFFF7D6)
-                : style.rimHighlight)
-            .withValues(alpha: speckAlpha);
-        canvas.drawCircle(pt, sr, _sandGrainPaint);
-      }
-    }
+    // 3. Front Sloshing Liquid Body (`mainWaterSingle`)
+    final fLeftY = (baseWaveY + tiltSpanDy + math.sin(phase) * waveAmp)
+        .clamp(y0 - cellSize * 0.02, y1 - cellSize * 0.06);
+    final fRightY = (baseWaveY - tiltSpanDy - math.sin(phase) * waveAmp)
+        .clamp(y0 - cellSize * 0.02, y1 - cellSize * 0.06);
+    final fCtrl1Y = baseWaveY +
+        tiltSpanDy * 0.35 +
+        cellSize * 0.032 * energy +
+        math.cos(phase + 0.5) * waveAmp * 1.48;
+    final fCtrl2Y = baseWaveY -
+        tiltSpanDy * 0.35 -
+        cellSize * 0.028 * energy -
+        math.sin(phase + 0.9) * waveAmp * 1.48;
 
-    // 2. Sand Implosion Condense Ring when stopping or stepping across a grid cell
-    if (_sandReformFlash > 0.01) {
-      final f = _sandReformFlash.clamp(0.0, 1.0);
-      final progress = 1.0 - f; // 0 -> 1 as ring expands and condenses
-      final ringRadius =
-          math.max(_localBounds.width, _localBounds.height) *
-              (0.18 + 0.52 * Curves.easeOutCubic.transform(progress));
-      _sandRingPaint
-        ..strokeWidth = (cellSize * 0.065 * f).clamp(1.5, 5.5)
-        ..color = const Color(0xFFFFF3C4).withValues(alpha: (f * 0.75).clamp(0.0, 1.0));
-      canvas.save();
-      canvas.clipPath(_topPath);
-      canvas.drawCircle(_visualPivotLocal, ringRadius, _sandRingPaint);
-      canvas.restore();
-    }
+    final frontWaterPath = Path()
+      ..moveTo(x0, fLeftY)
+      ..cubicTo(
+        x0 + w * 0.34,
+        fCtrl1Y,
+        x0 + w * 0.66,
+        fCtrl2Y,
+        x1,
+        fRightY,
+      )
+      ..lineTo(x1, y1)
+      ..lineTo(x0, y1)
+      ..close();
+
+    final liquidBright = Color.lerp(style.topBright, Colors.white, 0.24)!;
+    _sandErosionPaint.shader = ui.Gradient.linear(
+      Offset(x0, baseWaveY - cellSize * 0.04),
+      Offset(x0 + w * 0.65, y1),
+      [
+        liquidBright.withValues(alpha: alphaMultiplier),
+        style.topBright.withValues(alpha: alphaMultiplier),
+        style.topMid.withValues(alpha: alphaMultiplier),
+      ],
+      const [0.0, 0.36, 1.0],
+    );
+    canvas.drawPath(frontWaterPath, _sandErosionPaint);
+
+    // 4. Soft luminous wave-crest fill glow (ZERO hard stroke lines or stripes `ko cần vân`!)
+    final crestBandH = cellSize * (0.075 * energy);
+    final crestGlowPath = Path()
+      ..moveTo(x0, fLeftY)
+      ..cubicTo(
+        x0 + w * 0.34,
+        fCtrl1Y,
+        x0 + w * 0.66,
+        fCtrl2Y,
+        x1,
+        fRightY,
+      )
+      ..lineTo(x1, fRightY + crestBandH)
+      ..cubicTo(
+        x0 + w * 0.66,
+        fCtrl2Y + crestBandH * 1.15,
+        x0 + w * 0.34,
+        fCtrl1Y + crestBandH * 1.15,
+        x0,
+        fLeftY + crestBandH,
+      )
+      ..close();
+    canvas.drawPath(
+      crestGlowPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(x0, baseWaveY - crestBandH * 0.4),
+          Offset(x0, baseWaveY + crestBandH * 1.4),
+          [
+            Colors.white.withValues(alpha: (0.58 * energy).clamp(0.0, 1.0)),
+            liquidBright.withValues(alpha: (0.28 * energy).clamp(0.0, 1.0)),
+            style.topBright.withValues(alpha: 0.0),
+          ],
+          const [0.0, 0.50, 1.0],
+        ),
+    );
+
+    canvas.restore();
   }
 
   /// Exact port of `PieceBlock` GLSL fragment shader `_MergeCylinder` rendered with
@@ -2382,6 +2464,17 @@ class PieceComponent extends PositionComponent {
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
     canvas.drawPath(_topPath, _cylinderTopPaint);
+    if ((_sandErosionIntensity > 0.01 ||
+            _sandReformFlash > 0.01 ||
+            _waterSloshTilt.abs() > 0.005) &&
+        !_isIceCovered) {
+      final cylAlpha = (r / math.max(1.0, cellSize * 0.85)).clamp(0.0, 1.0);
+      _drawSandErosionOnBlock(
+        canvas,
+        targetStyle,
+        alphaMultiplier: cylAlpha,
+      );
+    }
     canvas.drawPath(_innerHighlightPath, _cylinderRimPaint);
     canvas.restore();
   }

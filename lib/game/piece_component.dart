@@ -61,8 +61,8 @@ class _SharedPieceGeometry {
   final String key;
   final Path topPath;
   final Path wallPath;
-  final Path wallFrontStripPath;
   final Path innerHighlightPath;
+  final Path liquidCavityPath;
   final Path inflatedLocalPath010;
   final Path iceSheenPath;
   final Rect localBounds;
@@ -77,8 +77,8 @@ class _SharedPieceGeometry {
     required this.key,
     required this.topPath,
     required this.wallPath,
-    required this.wallFrontStripPath,
     required this.innerHighlightPath,
+    required this.liquidCavityPath,
     required this.inflatedLocalPath010,
     required this.iceSheenPath,
     required this.localBounds,
@@ -191,8 +191,8 @@ class PieceComponent extends PositionComponent {
   late _SharedPieceGeometry _sharedGeom;
   late Path _topPath;
   late Path _wallPath;
-  late Path _wallFrontStripPath;
   late Path _innerHighlightPath;
+  late Path _liquidCavityPath;
   late Path _inflatedLocalPath010;
   late Rect _localBounds;
   late Offset _visualPivotLocal; // PieceBlockGeometry.FootprintCenterLocal
@@ -203,6 +203,9 @@ class PieceComponent extends PositionComponent {
   ui.Image? _bakedShadowImage;
   double _shadowBakePad = 0.0;
   bool _usedStaticSpriteLastRender = false;
+  bool _isBakingGlassShellOnly = false;
+  Path? _lastLiquidWaveClipPath;
+  Offset _slideStreakVel = Offset.zero;
 
   _ResolvedPieceLabelLayout? _cachedBaseLabelLayout;
   int? _cachedBaseLayoutNumber;
@@ -260,6 +263,8 @@ class PieceComponent extends PositionComponent {
   double _sandErosionIntensity = 0.0;
   double _sandReformFlash = 0.0;
   double _sandShimmerClock = 0.0;
+  double _liquidWavePhase = 0.0;
+  double _smoothedWaveEnergy = 0.0;
   int _lastSandGridCol = -999;
   int _lastSandGridRow = -999;
   final Paint _sandErosionPaint = Paint();
@@ -369,11 +374,7 @@ class PieceComponent extends PositionComponent {
   final Paint _opacityLayerPaint = Paint();
   final Paint _fallbackShadowPaint = Paint();
   final Paint _mergeOverlapPaint = Paint();
-  final Paint _cylinderWallPaint = Paint();
   final Paint _cylinderTopPaint = Paint();
-  final Paint _cylinderRimPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeJoin = StrokeJoin.round;
   final Paint _screwShadowPaint = Paint();
   final Paint _arrowShadowPaint = Paint()..filterQuality = FilterQuality.medium;
   final Paint _arrowStrokePaint = Paint()..filterQuality = FilterQuality.medium;
@@ -409,6 +410,7 @@ class PieceComponent extends PositionComponent {
       isFrozen: _isIceCovered,
     );
     _railWorldPos = position.clone();
+    _liquidWavePhase = (model.id * 1.93) % (math.pi * 2.0);
     _rebuildCachedGeometry();
     _cacheSprites();
   }
@@ -602,11 +604,6 @@ class PieceComponent extends PositionComponent {
       );
     }
     final wallPath = extruded;
-    final wallFrontStripPath = Path.combine(
-      PathOperation.difference,
-      wallPath,
-      topPath.shift(const Offset(0, -1.5)),
-    );
 
     final bevelInset = gapInset + (cellSize * 0.052).clamp(1.8, 5.2);
     final innerHighlightPath = PolyominoPathBuilder.buildRoundedPath(
@@ -615,6 +612,15 @@ class PieceComponent extends PositionComponent {
       inset: bevelInset,
       cornerRadius: cellSize * 0.115,
       concaveRadius: cellSize * 0.078,
+    );
+
+    final glassWallInset = gapInset + (cellSize * 0.028).clamp(1.4, 3.0);
+    final liquidCavityPath = PolyominoPathBuilder.buildRoundedPath(
+      cells: localSet,
+      cellSize: cellSize,
+      inset: glassWallInset,
+      cornerRadius: cellSize * 0.132,
+      concaveRadius: cellSize * 0.084,
     );
 
     final inflatedLocalPath010 = PolyominoPathBuilder.buildRoundedPath(
@@ -676,8 +682,8 @@ class PieceComponent extends PositionComponent {
       key: key,
       topPath: topPath,
       wallPath: wallPath,
-      wallFrontStripPath: wallFrontStripPath,
       innerHighlightPath: innerHighlightPath,
+      liquidCavityPath: liquidCavityPath,
       inflatedLocalPath010: inflatedLocalPath010,
       iceSheenPath: iceSheenPath,
       localBounds: localBounds,
@@ -703,8 +709,8 @@ class PieceComponent extends PositionComponent {
     _sharedGeom = geom;
     _topPath = geom.topPath;
     _wallPath = geom.wallPath;
-    _wallFrontStripPath = geom.wallFrontStripPath;
     _innerHighlightPath = geom.innerHighlightPath;
+    _liquidCavityPath = geom.liquidCavityPath;
     _inflatedLocalPath010 = geom.inflatedLocalPath010;
     _localBounds = geom.localBounds;
     _visualPivotLocal = geom.visualPivotLocal;
@@ -793,6 +799,10 @@ class PieceComponent extends PositionComponent {
     _allowsDragV = model.movement.allowsVertical;
     _railWorldPos = targetWorldOriginForGrid(model.col, model.row);
     _dragTargetPos = _railWorldPos.clone();
+    if (!model.isDud) {
+      _sandErosionIntensity = math.max(_sandErosionIntensity, 0.96);
+      _waterSloshVel += (_waterSloshTilt >= 0 ? -1.0 : 1.0) * 5.5;
+    }
   }
 
   void setDragTargetWorld(Vector2 worldOrigin) {
@@ -847,7 +857,7 @@ class PieceComponent extends PositionComponent {
     if (model.isDud) return;
     _tapElapsed = 0.0;
     _waterSloshVel += (_waterSloshTilt >= 0 ? -1.0 : 1.0) * 6.5;
-    _sandErosionIntensity = math.max(_sandErosionIntensity, 0.72);
+    _sandErosionIntensity = math.max(_sandErosionIntensity, 0.94);
   }
 
   /// Exact match of `PieceFollow.ShakeAsync(rangeMultiplier)`:
@@ -1192,38 +1202,31 @@ class PieceComponent extends PositionComponent {
   }
 
   /// Step 1b -> Step 2 of Win Sequence (`nước sóng sánh dâng trào & rút cạn khỏi block lên bình`):
-  /// - `fractureProgress` (`0..1`): liquid waves surge and slosh inside the final block.
-  /// - `crumbleProgress` (`0..1`): the water column inside the block drains downward (`fill: 0.78 -> 0.0`)
-  ///   while sloshing as the continuous water stream pours up into the bottle.
+  /// - `fractureProgress` (`0..1`): liquid morphs into crystal-aqua & waves surge smoothly inside the final block.
+  /// - `crumbleProgress` (`0..1`): the water column inside the block drains downward smoothly (`fill: 0.72 -> 0.0`)
+  ///   inside the clear glass container as the continuous water stream lifts up into the bottle.
   void setWinCrumbleState({
     required double fractureProgress,
     required double crumbleProgress,
   }) {
     _winFractureProgress = fractureProgress.clamp(0.0, 1.0);
     _winCrumbleProgress = crumbleProgress.clamp(0.0, 1.0);
+    _shakeOffsetPx = Offset.zero;
 
-    if (_winFractureProgress > 0.02 && _winCrumbleProgress < 0.96) {
-      final tremorIntensity = (_winCrumbleProgress <= 0.01)
-          ? (_winFractureProgress * 0.85)
-          : ((1.0 - _winCrumbleProgress) * 1.45);
-      final r = cellSize * 0.024 * tremorIntensity;
-      _shakeOffsetPx = Offset(
-        (_rng.nextDouble() * 2.0 - 1.0) * r,
-        (_rng.nextDouble() * 2.0 - 1.0) * r,
-      );
-      _sandErosionIntensity = 1.0;
-      _waterSloshTilt = math.sin(_winFractureProgress * 14.0 + _winCrumbleProgress * 18.0) * 0.55;
-    } else if (_winCrumbleProgress >= 0.96) {
-      _shakeOffsetPx = Offset.zero;
+    if (_winFractureProgress > 0.01 && _winCrumbleProgress < 0.98) {
+      _sandErosionIntensity = (1.0 - _winCrumbleProgress * 0.30).clamp(0.0, 1.0);
+      _waterSloshTilt =
+          math.sin(_winFractureProgress * 7.5 + _winCrumbleProgress * 11.0) *
+              0.40 *
+              (1.0 - _winCrumbleProgress * 0.65);
     }
 
     if (_winCrumbleProgress > 0.005) {
-      _sandErosionIntensity =
-          (0.65 + (1.0 - _winCrumbleProgress) * 0.35).clamp(0.0, 1.0);
-      final easeScale = Curves.easeInCubic.transform(_winCrumbleProgress);
-      visualScale = (1.0 - easeScale * 0.86).clamp(0.0, 1.0);
-      final fadeU = ((_winCrumbleProgress - 0.14) / 0.86).clamp(0.0, 1.0);
-      visualOpacity = (1.0 - Curves.easeInQuad.transform(fadeU)).clamp(0.0, 1.0);
+      final easeScale = Curves.easeInOutCubic.transform(_winCrumbleProgress);
+      visualScale = (1.0 - easeScale * 0.14).clamp(0.84, 1.0);
+      final fadeU = ((_winCrumbleProgress - 0.24) / 0.76).clamp(0.0, 1.0);
+      visualOpacity =
+          (1.0 - Curves.easeInOutQuad.transform(fadeU)).clamp(0.0, 1.0);
     }
   }
 
@@ -1271,6 +1274,16 @@ class PieceComponent extends PositionComponent {
 
     // Fast-path for completely settled idle pieces: zero spring sub-steps or Vector2 allocations!
     if (isVisuallyAtRest) {
+      final idleDt = dt.clamp(0.0, 0.05);
+      _sandShimmerClock += idleDt;
+      if (_smoothedWaveEnergy > 1e-4) {
+        _smoothedWaveEnergy *= math.exp(-3.8 * idleDt);
+        if (_smoothedWaveEnergy < 1e-4) _smoothedWaveEnergy = 0.0;
+      }
+      _liquidWavePhase = (_liquidWavePhase +
+              idleDt * (2.55 + 6.4 * _smoothedWaveEnergy)) %
+          (math.pi * 200.0);
+      _slideStreakVel = Offset.zero;
       final gx = boardOrigin.x + model.col * cellSize;
       final gy = boardOrigin.y + model.row * cellSize;
       if (position.x != gx || position.y != gy) {
@@ -1555,6 +1568,8 @@ class PieceComponent extends PositionComponent {
     }
   }
 
+  bool get _isLiquidGlassBlock => !_isIceCovered && !model.isDud;
+
   String _computeStaticPieceCacheKey(BlockColorStyle baseStyle) {
     final numKey = model.isDud ? -1 : (model.number ?? -2);
     final iceKey = _isIceCovered ? (_displayIceTarget ?? model.iceTarget ?? 4) : 0;
@@ -1564,7 +1579,7 @@ class PieceComponent extends PositionComponent {
         (_iceBlocksTex != null ? 2 : 0) |
         (_arrowTopImg != null ? 4 : 0) |
         (_arrowHorizCombinedImg != null ? 8 : 0);
-    return 'fullBlockV2|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
+    return 'glassHalfLiquidV3|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
   }
 
   _BakedStaticPieceSprite? _getOrBakeStaticPieceSprite(
@@ -1577,8 +1592,6 @@ class PieceComponent extends PositionComponent {
       return existing;
     }
 
-    // Respect per-frame GPU texture bake budget so large boards warm progressively
-    // across 2-3 frames with zero single-frame spike.
     if (_frameBakeBudget <= 0) return null;
     _frameBakeBudget--;
 
@@ -1599,6 +1612,8 @@ class PieceComponent extends PositionComponent {
     final imgW = (logicalW * ss).ceil().clamp(4, 2048);
     final imgH = (logicalH * ss).ceil().clamp(4, 2048);
 
+    final bakeShellOnly = _isLiquidGlassBlock;
+    _isBakingGlassShellOnly = bakeShellOnly;
     try {
       final recorder = ui.PictureRecorder();
       final recCanvas = Canvas(recorder);
@@ -1624,6 +1639,8 @@ class PieceComponent extends PositionComponent {
       return sprite;
     } catch (_) {
       return null;
+    } finally {
+      _isBakingGlassShellOnly = false;
     }
   }
 
@@ -1642,12 +1659,25 @@ class PieceComponent extends PositionComponent {
       final staticSprite = _getOrBakeStaticPieceSprite(baseStyle);
       if (staticSprite != null) {
         _usedStaticSpriteLastRender = true;
+        // 1. Pre-baked drop shadow + clear crystal-glass container shell
         canvas.drawImageRect(
           staticSprite.image,
           staticSprite.srcRect,
           staticSprite.dstRect,
           _staticPiecePaint,
         );
+        if (_isLiquidGlassBlock) {
+          // 2. Live ~75% "lưng lửng" liquid + gentle 3D meniscus wave ("sóng sánh nhẹ") + bubbles
+          _drawGlassHalfFullLiquidAndWave(
+            canvas,
+            baseStyle,
+            isIdleAtRest: true,
+          );
+          // 3. Glossy crystal-glass top shoulder, inner vertical wall streaks & rim
+          _drawCrystalGlassForeground(canvas, baseStyle);
+          // 4. Crisp pre-baked number / arrows / pins submerged cleanly inside the liquid
+          _drawPieceTopFaceRiders(canvas, baseStyle, Offset.zero);
+        }
         return;
       }
     }
@@ -1657,31 +1687,35 @@ class PieceComponent extends PositionComponent {
   }
 
   void _renderDynamicPieceContents(Canvas canvas, BlockColorStyle baseStyle) {
-    // `PieceView.ApplyBlockInflate`: `_BlockInflate = candidateInflate + tapInflate`
+    final isGlassLiquid = _isLiquidGlassBlock;
+
     final totalBlockInflate = _candidateInflate + _tapInflate;
     final wallInflateScaleX =
         1.0 + (totalBlockInflate * 0.72) / math.max(1, model.widthCols);
     final wallInflateScaleY =
         1.0 + (totalBlockInflate * 0.72) / math.max(1, model.heightRows);
 
-    // Liquid Slosh Reform Pulse, Rotational Rock & Volume-Preserving Squash/Stretch (`anim nước lắc lắc`):
     final sandReformPop = _sandReformFlash > 0.01
-        ? (1.0 + math.sin(_sandReformFlash * math.pi) * 0.042)
+        ? (1.0 + math.sin(_sandReformFlash * math.pi) * 0.036)
         : 1.0;
     final sizeDamp = 1.0 / math.sqrt(math.max(1, model.localCells.length));
     final sloshWave = (math.sin(_sandShimmerClock * 15.5) *
-                (_sandErosionIntensity * 0.055 + _sandReformFlash * 0.048) +
-            _waterSloshTilt * 0.068 +
+                (_sandErosionIntensity * 0.042 + _sandReformFlash * 0.038) +
+            _waterSloshTilt * 0.052 +
             (_jellyDeformWritten.dx.abs() - _jellyDeformWritten.dy.abs()) *
-                0.48) *
+                0.40) *
         sizeDamp;
-    final clampedSlosh = sloshWave.clamp(-0.095, 0.095);
+    final clampedSlosh =
+        _isBakingGlassShellOnly ? 0.0 : sloshWave.clamp(-0.075, 0.075);
     final sloshScaleX = 1.0 + clampedSlosh;
     final sloshScaleY = 1.0 - clampedSlosh * 0.88;
-    final sloshRotRad = ((_waterSloshTilt * 0.068) +
-            math.sin(_sandShimmerClock * 15.0) *
-                (_sandErosionIntensity * 0.026 + _sandReformFlash * 0.032)) *
-        sizeDamp;
+    final sloshRotRad = _isBakingGlassShellOnly
+        ? 0.0
+        : (((_waterSloshTilt * 0.048) +
+                math.sin(_sandShimmerClock * 15.0) *
+                    (_sandErosionIntensity * 0.020 +
+                        _sandReformFlash * 0.024)) *
+            sizeDamp);
 
     final finalScaleX = visualScale *
         visualScaleXMultiplier *
@@ -1697,24 +1731,26 @@ class PieceComponent extends PositionComponent {
         sloshScaleY;
     final finalScaleZ = _mergePulseScale * _candidatePulseScaleZ * _tapScaleZ;
 
-    final effectiveLipDepth = (_lipDepth * finalScaleZ).clamp(2.0, _lipDepth * 1.85);
+    final effectiveLipDepth =
+        (_lipDepth * finalScaleZ).clamp(2.0, _lipDepth * 1.85);
     final zHeightGrowPx = effectiveLipDepth - _lipDepth;
 
     final totalLiftCells = _currentZLiftCells + _candidateLiftCells;
     final liftPx = totalLiftCells * cellSize * 1.15 + zHeightGrowPx * 0.55;
-    // Full-block 2.5D liquid slosh shift when moving, stepping, or merging:
-    final topJellyShift = _jellyDeformWritten * cellSize * 1.15 +
-        Offset(
-          _waterSloshTilt * cellSize * 0.115 +
-              math.sin(_sandShimmerClock * 15.0) *
+    final topJellyShift = _isBakingGlassShellOnly
+        ? Offset.zero
+        : (_jellyDeformWritten * cellSize * 1.05 +
+            Offset(
+              _waterSloshTilt * cellSize * 0.085 +
+                  math.sin(_sandShimmerClock * 15.0) *
+                      _sandErosionIntensity *
+                      cellSize *
+                      0.028,
+              math.cos(_sandShimmerClock * 13.0) *
                   _sandErosionIntensity *
                   cellSize *
-                  0.036,
-          math.cos(_sandShimmerClock * 13.0) *
-              _sandErosionIntensity *
-              cellSize *
-              0.032,
-        );
+                  0.024,
+            ));
 
     canvas.save();
     if (visualOpacity < 0.999) {
@@ -1725,7 +1761,6 @@ class PieceComponent extends PositionComponent {
       );
     }
 
-    // Pivot compensation around `_visualPivotLocal` (`PieceFollow.ApplyPose`) + 2D shake jitter + liquid rock
     canvas.translate(
       _visualPivotLocal.dx + _shakeOffsetPx.dx,
       _visualPivotLocal.dy + _shakeOffsetPx.dy,
@@ -1736,7 +1771,7 @@ class PieceComponent extends PositionComponent {
     canvas.scale(finalScaleX, finalScaleY);
     canvas.translate(-_visualPivotLocal.dx, -_visualPivotLocal.dy);
 
-    // 0. Cyan `LevelUpVisualConfig` Target Aura (`GlowColor: #00BFFF`)
+    // 0a. Cyan `LevelUpVisualConfig` Target Aura
     if (levelUpTargetGlow > 0.01 && _glowImg != null) {
       final glowProgress = (1.0 - levelUpTargetGlow).clamp(0.0, 1.0);
       final curveVal =
@@ -1762,13 +1797,24 @@ class PieceComponent extends PositionComponent {
       }
     }
 
-    // 1. Pre-Baked Drop Shadow & Glossy Floor Reflection (`ReflectionAlpha: 0.197`, zero per-frame blur!)
+    // 0b. Subtle Glass Motion-Streak Trail when sliding fast (matches block `64` in `media_1794051081001.png`!)
+    if (isGlassLiquid &&
+        !_isBakingGlassShellOnly &&
+        _slideStreakVel.distance > cellSize * 2.0) {
+      _drawGlassSlideMotionStreaks(canvas, baseStyle, liftPx);
+    }
+
+    // 1. Pre-Baked Drop Shadow (compact offset for sleek glass containers so rows never overlap!)
     final clampedLiftCells = math.max(0.0, totalLiftCells);
+    final shadowBaseDy =
+        isGlassLiquid ? (cellSize * 0.055) : (_lipDepth + cellSize * 0.055);
     final shadowShift = Offset(
-      -0.22 * clampedLiftCells * cellSize,
-      _lipDepth + cellSize * 0.055 + 0.45 * clampedLiftCells * cellSize,
+      -0.20 * clampedLiftCells * cellSize,
+      shadowBaseDy + 0.42 * clampedLiftCells * cellSize,
     );
-    final shadowAlpha = (0.36 + clampedLiftCells * 1.4).clamp(0.0, 0.54);
+    final shadowAlpha = isGlassLiquid
+        ? (0.30 + clampedLiftCells * 1.35).clamp(0.0, 0.50)
+        : (0.36 + clampedLiftCells * 1.4).clamp(0.0, 0.54);
     final shadowImg = _bakedShadowImage;
     if (shadowImg != null) {
       final liftSpread = clampedLiftCells * 0.14 * cellSize;
@@ -1798,7 +1844,9 @@ class PieceComponent extends PositionComponent {
       canvas.restore();
     }
 
-    if (clampedLiftCells < 0.05 && !_areComponentsRemovedForAbsorb) {
+    if (!isGlassLiquid &&
+        clampedLiftCells < 0.05 &&
+        !_areComponentsRemovedForAbsorb) {
       final reflFade = (1.0 - clampedLiftCells / 0.05).clamp(0.0, 1.0);
       final reflAlpha =
           (visualSettings.reflectionAlpha * 1.08 * reflFade).clamp(0.0, 0.28);
@@ -1826,132 +1874,711 @@ class PieceComponent extends PositionComponent {
     // Shift piece upward by Z-lift (`position.z = -OffsetWhileDragging`)
     canvas.translate(0, -liftPx);
 
-    // 2. Chunky 2.5D Full Liquid Block Surface
-    _drawBodySurface(
-      canvas,
-      baseStyle,
-      topJellyShift: topJellyShift,
-      effectiveLipDepth: effectiveLipDepth,
-    );
+    if (isGlassLiquid) {
+      // --- CLEAR CRYSTAL-GLASS CONTAINER + ~70% "LƯNG LỬNG" LIQUID PIPELINE ---
+      BlockColorStyle renderLiquidStyle = baseStyle;
+      if (_winFractureProgress > 0.005 && !_isBakingGlassShellOnly) {
+        final winAquaT =
+            Curves.easeOutCubic.transform(_winFractureProgress.clamp(0.0, 1.0));
+        renderLiquidStyle = BlockColorStyle(
+          number: baseStyle.number,
+          topBright:
+              Color.lerp(baseStyle.topBright, const Color(0xFF42F2FF), winAquaT)!,
+          topMid:
+              Color.lerp(baseStyle.topMid, const Color(0xFF08BFE8), winAquaT)!,
+          bottomLip:
+              Color.lerp(baseStyle.bottomLip, const Color(0xFF027BA8), winAquaT)!,
+          rimHighlight: Color.lerp(
+            baseStyle.rimHighlight,
+            const Color(0xFFB8FFFF),
+            winAquaT,
+          )!,
+          accent:
+              Color.lerp(baseStyle.accent, const Color(0xFF2CEBFF), winAquaT)!,
+          numberStrokeOuter: Color.lerp(
+            baseStyle.numberStrokeOuter,
+            const Color(0xFF03385E),
+            winAquaT,
+          )!,
+          numberStrokeMid: Color.lerp(
+            baseStyle.numberStrokeMid,
+            const Color(0xFF027BA8),
+            winAquaT,
+          )!,
+          numberStrokeInner: Color.lerp(
+            baseStyle.numberStrokeInner,
+            const Color(0xFF2CEBFF),
+            winAquaT,
+          )!,
+          screwBright: baseStyle.screwBright,
+          screwDark: baseStyle.screwDark,
+          arrowStroke: baseStyle.arrowStroke,
+          arrowShadow: baseStyle.arrowShadow,
+        );
 
-    // 3. Exact `PieceBlock` GLSL `_MergeCylinder` Smoothstep Color Wipe (zero `saveLayer`!)
-    if (_mergeCylinderRadius > 0.2 &&
-        _mergeCylinderTargetStyle != null &&
-        !_isIceCovered) {
-      _drawMergeCylinderShaderOverlay(
-        canvas,
-        targetStyle: _mergeCylinderTargetStyle!,
-        topJellyShift: topJellyShift,
-        effectiveLipDepth: effectiveLipDepth,
-        liftPx: liftPx,
-        finalScaleX: finalScaleX,
-        finalScaleY: finalScaleY,
-      );
-    }
-
-    // 4. Exact `_MergeOverlap` (`RenderMergeOverlapMaskPass` + `MergeJoinStrength`) Seam Fusion
-    if (_mergeOverlapStrength > 0.01 &&
-        (_mergeOverlapPartnerLocalPath != null ||
-            _mergeOverlapPartnerWorldPath != null) &&
-        _mergeOverlapTopTargetColor != null &&
-        !_isIceCovered) {
-      _drawMergeOverlapSeamFusion(
-        canvas,
-        topJellyShift: topJellyShift,
-        liftPx: liftPx,
-      );
-    }
-
-    // 5. Frosted `IceBlocks.png` R8 Mask Texture & Specular Diagonal Sheen while Ice-Covered
-    if (_isIceCovered) {
-      _drawIceFrostAndSheen(canvas, topJellyShift);
-    }
-
-    // 6. Crisp 1.15px outer edge contour on the top face
-    final activeContourStyle = (_mergeCylinderRadius > cellSize * 0.85 &&
-            _mergeCylinderTargetStyle != null &&
-            !_isIceCovered)
-        ? _mergeCylinderTargetStyle!
-        : baseStyle;
-    final outerContourColor = _isIceCovered
-        ? const Color(0xFF2882ED)
-        : Color.lerp(
-            activeContourStyle.topMid,
-            activeContourStyle.bottomLip,
-            0.58,
-          )!;
-    _outerContourPaint.color = outerContourColor.withValues(alpha: 0.88);
-    canvas.save();
-    canvas.translate(topJellyShift.dx, topJellyShift.dy);
-    canvas.drawPath(_topPath, _outerContourPaint);
-    canvas.restore();
-
-    // 7, 8, 9. Top-Face Riders
-    if (!_areComponentsRemovedForAbsorb) {
-      canvas.save();
-      canvas.translate(topJellyShift.dx, topJellyShift.dy);
-
-      if (_isIceCovered) {
-        // `PieceFaceCover.IsCovered == true`: hides underlying number, arrows, and pins!
-        _drawFrozenLockBadge(canvas, _displayIceTarget ?? model.iceTarget ?? 4);
-      } else {
-        final layoutStyle = (_mergeCylinderTargetStyle != null &&
-                _mergeCylinderRadius > cellSize * 0.65)
-            ? _mergeCylinderTargetStyle!
-            : baseStyle;
-        final resolvedLayout = _getBaseLabelAndArrowLayout();
-
-        // Stationary Corner Pins (`StationaryBlocksParts`) OR `1.0 - curve` Shrinking Pins!
-        if (model.movement.isPinned) {
-          _drawPinnedScrews(
-            canvas,
-            layoutStyle,
-            _screwAnchors,
-            pinPushPx: resolvedLayout.arrowOrPinPushPx,
-            extraScaleMultiplier: 1.0,
-          );
-        } else if (_screwShrinkTimer >= 0 &&
-            _shrinkingScrewAnchors != null &&
-            _shrinkingScrewStyle != null) {
-          final shrinkScale = debugShrinkingScrewScale;
-          if (shrinkScale > 0.01) {
-            _drawPinnedScrews(
-              canvas,
-              _shrinkingScrewStyle!,
-              _shrinkingScrewAnchors!,
-              pinPushPx: _shrinkingScrewPinPushPx,
-              extraScaleMultiplier: shrinkScale,
-            );
+        // Luminous crystal-aqua outer silhouette halo hugging the winning glass block (`media_1794007349252.png` Panel 2)
+        final haloAlpha =
+            (winAquaT * (1.0 - _winCrumbleProgress * 0.72) * 0.68).clamp(0.0, 0.75);
+        if (haloAlpha > 0.01) {
+          canvas.save();
+          if (topJellyShift != Offset.zero) {
+            canvas.translate(topJellyShift.dx, topJellyShift.dy);
           }
-        }
-
-        // Directional Movement Arrows (`MovementComponentView`, compact vs normal + `ArrowPush`)
-        if (resolvedLayout.arrowLayout != null) {
-          _drawMovementArrows(
-            canvas,
-            layoutStyle,
-            resolvedLayout.arrowLayout!,
-            arrowPushPx: resolvedLayout.arrowOrPinPushPx,
+          canvas.drawPath(
+            _topPath,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = (cellSize * 0.16).clamp(5.0, 16.0)
+              ..color = const Color(0xFF38EEFF).withValues(alpha: haloAlpha)
+              ..maskFilter = MaskFilter.blur(
+                BlurStyle.normal,
+                (cellSize * 0.14).clamp(4.0, 14.0),
+              ),
           );
-        }
-
-        // 4-Layer `NumberComponentView` + `MergeNumberPreview`
-        if (!model.isDud && model.number != null) {
-          _drawBlockNumbersWithPreview(canvas, baseStyle, resolvedLayout);
-        }
-
-        // 10. Smooth Full-Block Liquid Surge Glow across the final winning block
-        if (_winFractureProgress > 0.01 && _winCrumbleProgress < 0.85) {
-          _drawWinFractureCracks(canvas, baseStyle);
+          canvas.restore();
         }
       }
 
+      // 2a. Translucent clear-glass container back wall (allows dark board grid to show through top ~30%!)
+      _drawCrystalGlassBackShell(canvas, renderLiquidStyle, topJellyShift);
+
+      if (_isBakingGlassShellOnly) {
+        if (visualOpacity < 0.999) {
+          canvas.restore();
+        }
+        canvas.restore();
+        return;
+      }
+
+      // 2b. ~70% "Lưng Lửng" Colored Liquid + 3D Glowing Meniscus Wave + Effervescent Bubbles
+      _drawGlassHalfFullLiquidAndWave(
+        canvas,
+        renderLiquidStyle,
+        isIdleAtRest: isVisuallyAtRest,
+        topJellyShift: topJellyShift,
+      );
+
+      // 3. `_MergeCylinder` Smoothstep Color Wipe clipped to the ~70% liquid region (top glass stays clear!)
+      if (_mergeCylinderRadius > 0.2 && _mergeCylinderTargetStyle != null) {
+        _drawMergeCylinderShaderOverlay(
+          canvas,
+          targetStyle: _mergeCylinderTargetStyle!,
+          topJellyShift: topJellyShift,
+          effectiveLipDepth: effectiveLipDepth,
+          liftPx: liftPx,
+          finalScaleX: finalScaleX,
+          finalScaleY: finalScaleY,
+        );
+      }
+
+      // 4. `_MergeOverlap` Seam Fusion clipped to the liquid region
+      if (_mergeOverlapStrength > 0.01 &&
+          (_mergeOverlapPartnerLocalPath != null ||
+              _mergeOverlapPartnerWorldPath != null) &&
+          _mergeOverlapTopTargetColor != null) {
+        _drawMergeOverlapSeamFusion(
+          canvas,
+          topJellyShift: topJellyShift,
+          liftPx: liftPx,
+        );
+      }
+
+      // 5. Glossy 3D Crystal-Glass Foreground Rim, Top Shoulder Gleam & Vertical Wall Streaks
+      final activeGlassStyle = (_mergeCylinderRadius > cellSize * 0.85 &&
+              _mergeCylinderTargetStyle != null)
+          ? _mergeCylinderTargetStyle!
+          : renderLiquidStyle;
+      _drawCrystalGlassForeground(
+        canvas,
+        activeGlassStyle,
+        topJellyShift: topJellyShift,
+      );
+
+      // 6. Top-Face Riders (Pins, Arrows, 4-Layer Number submerged inside the ~70% liquid)
+      if (!_areComponentsRemovedForAbsorb) {
+        _drawPieceTopFaceRiders(canvas, renderLiquidStyle, topJellyShift);
+      }
+    } else {
+      // --- SOLID OBSTACLE PIPELINE (Dud & Ice-Covered Pieces) ---
+      _drawBodySurface(
+        canvas,
+        baseStyle,
+        topJellyShift: topJellyShift,
+        effectiveLipDepth: effectiveLipDepth,
+      );
+
+      if (_isIceCovered) {
+        _drawIceFrostAndSheen(canvas, topJellyShift);
+      }
+
+      final outerContourColor = _isIceCovered
+          ? const Color(0xFF2882ED)
+          : Color.lerp(baseStyle.topMid, baseStyle.bottomLip, 0.58)!;
+      _outerContourPaint.color = outerContourColor.withValues(alpha: 0.88);
+      canvas.save();
+      canvas.translate(topJellyShift.dx, topJellyShift.dy);
+      canvas.drawPath(_topPath, _outerContourPaint);
       canvas.restore();
+
+      if (!_areComponentsRemovedForAbsorb) {
+        _drawPieceTopFaceRiders(canvas, baseStyle, topJellyShift);
+      }
     }
 
     if (visualOpacity < 0.999) {
       canvas.restore();
     }
+    canvas.restore();
+  }
+
+  /// Draws pins, directional movement arrows, and 4-layer number on the piece.
+  /// For half-full liquid glass blocks, gently shifts the number/horizontal-arrows downward so they
+  /// sit squarely inside the ~75% colored liquid body below the meniscus (`media_1794051081001.png`).
+  void _drawPieceTopFaceRiders(
+    Canvas canvas,
+    BlockColorStyle baseStyle,
+    Offset topJellyShift,
+  ) {
+    canvas.save();
+    canvas.translate(topJellyShift.dx, topJellyShift.dy);
+
+    if (_isIceCovered) {
+      _drawFrozenLockBadge(canvas, _displayIceTarget ?? model.iceTarget ?? 4);
+      canvas.restore();
+      return;
+    }
+
+    final layoutStyle = (_mergeCylinderTargetStyle != null &&
+            _mergeCylinderRadius > cellSize * 0.65)
+        ? _mergeCylinderTargetStyle!
+        : baseStyle;
+    final resolvedLayout = _getBaseLabelAndArrowLayout();
+
+    // Stationary Corner Pins stay anchored at the 4 corners of the glass container
+    if (model.movement.isPinned) {
+      _drawPinnedScrews(
+        canvas,
+        layoutStyle,
+        _screwAnchors,
+        pinPushPx: resolvedLayout.arrowOrPinPushPx,
+        extraScaleMultiplier: 1.0,
+      );
+    } else if (_screwShrinkTimer >= 0 &&
+        _shrinkingScrewAnchors != null &&
+        _shrinkingScrewStyle != null) {
+      final shrinkScale = debugShrinkingScrewScale;
+      if (shrinkScale > 0.01) {
+        _drawPinnedScrews(
+          canvas,
+          _shrinkingScrewStyle!,
+          _shrinkingScrewAnchors!,
+          pinPushPx: _shrinkingScrewPinPushPx,
+          extraScaleMultiplier: shrinkScale,
+        );
+      }
+    }
+
+    // Compute vertical liquid-submersion offset so numbers & arrows sit comfortably inside the ~70% liquid!
+    double liquidSubmergeDy = 0.0;
+    if (_isLiquidGlassBlock) {
+      final arrowLayout = resolvedLayout.arrowLayout;
+      final isSingleCellPinned = model.movement.isPinned &&
+          model.heightRows == 1 &&
+          model.widthCols == 1;
+      if (isSingleCellPinned) {
+        liquidSubmergeDy = cellSize * 0.045;
+      } else if (model.heightRows == 1) {
+        liquidSubmergeDy = (arrowLayout != null && !arrowLayout.isHorizontal)
+            ? cellSize * 0.065
+            : cellSize * 0.098;
+      } else {
+        // Multi-row pieces: if label is in top row (`dy < 0.75 * cellSize`), nudge below meniscus;
+        // otherwise keep right in the heart of the liquid (`+0.030 * cellSize`).
+        liquidSubmergeDy = resolvedLayout.labelCenterLocal.dy < cellSize * 0.75
+            ? cellSize * 0.105
+            : cellSize * 0.030;
+      }
+    }
+
+    canvas.save();
+    if (liquidSubmergeDy != 0.0) {
+      canvas.translate(0.0, liquidSubmergeDy);
+    }
+
+    if (resolvedLayout.arrowLayout != null) {
+      _drawMovementArrows(
+        canvas,
+        layoutStyle,
+        resolvedLayout.arrowLayout!,
+        arrowPushPx: resolvedLayout.arrowOrPinPushPx,
+      );
+    }
+
+    if (!model.isDud && model.number != null) {
+      _drawBlockNumbersWithPreview(canvas, baseStyle, resolvedLayout);
+    }
+    canvas.restore();
+
+    if (_winFractureProgress > 0.01 && _winCrumbleProgress < 0.85) {
+      _drawWinFractureCracks(canvas, baseStyle);
+    }
+
+    canvas.restore();
+  }
+
+  /// Soft translucent glass motion-streak trail behind fast-sliding pieces (`64` in `media_1794051081001.png`).
+  void _drawGlassSlideMotionStreaks(
+    Canvas canvas,
+    BlockColorStyle style,
+    double liftPx,
+  ) {
+    final speed = _slideStreakVel.distance;
+    final strength =
+        ((speed - cellSize * 2.0) / (cellSize * 9.0)).clamp(0.0, 1.0);
+    if (strength <= 0.02) return;
+
+    final dir = _slideStreakVel / speed;
+    final trailUnit = -dir;
+    final streakLen = cellSize * (0.22 + 0.42 * strength);
+
+    canvas.save();
+    canvas.translate(0, -liftPx);
+    for (int i = 1; i <= 3; i++) {
+      final frac = i / 3.0;
+      final shift = trailUnit * (streakLen * frac);
+      final alpha = (0.14 * (1.0 - frac * 0.72) * strength).clamp(0.0, 0.16);
+      canvas.save();
+      canvas.translate(shift.dx, shift.dy);
+      canvas.drawPath(
+        _topPath,
+        Paint()
+          ..color =
+              Color.lerp(style.rimHighlight, const Color(0xFFA8E4FF), 0.55)!
+                  .withValues(alpha: alpha),
+      );
+      canvas.restore();
+    }
+    canvas.restore();
+  }
+
+  /// Clear Crystal-Glass Container Back Shell:
+  /// Keeps the top ~25% of the block genuinely transparent so the dark navy board grid shows through
+  /// as rich crystal-tinted glass (`#204088` in `media_1794051081001.png`), with subtle glass sheen.
+  void _drawCrystalGlassBackShell(
+    Canvas canvas,
+    BlockColorStyle style,
+    Offset topJellyShift,
+  ) {
+    canvas.save();
+    if (topJellyShift != Offset.zero) {
+      canvas.translate(topJellyShift.dx, topJellyShift.dy);
+    }
+
+    canvas.drawPath(
+      _topPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          _localBounds.topLeft,
+          _localBounds.bottomLeft,
+          [
+            Colors.white.withValues(alpha: 0.17),
+            const Color(0xFF9AD4FF).withValues(alpha: 0.09),
+            const Color(0xFF4A8EE8).withValues(alpha: 0.06),
+            style.bottomLip.withValues(alpha: 0.16),
+          ],
+          const [0.0, 0.16, 0.38, 1.0],
+        ),
+    );
+
+    canvas.restore();
+  }
+
+  /// Renders the ~75% "Lưng Lửng" Colored Liquid + 3D Elliptical/S-Wave Meniscus + Internal Bounce Glow + Bubbles:
+  /// - At rest (`isIdleAtRest == true`): gentle calm 3D meniscus wave ("sóng sánh nhẹ khi chưa di chuyển hoặc click").
+  /// - Clicked / Dragged / Moving (`isIdleAtRest == false`): strong surging S-wave ("khi di chuyển hoặc click thì sóng mạnh hơn")!
+  void _drawGlassHalfFullLiquidAndWave(
+    Canvas canvas,
+    BlockColorStyle style, {
+    required bool isIdleAtRest,
+    Offset topJellyShift = Offset.zero,
+    double alphaMultiplier = 1.0,
+  }) {
+    final x0 = _localBounds.left;
+    final y0 = _localBounds.top;
+    final x1 = _localBounds.right;
+    final y1 = _localBounds.bottom;
+    final w = _localBounds.width;
+
+    // Empty crystal-glass headspace at top: front meniscus sits at ~31% of 1 cell on 1-row pieces
+    // and ~34% of 1 cell on 2+-row pieces (`back meniscus` sits `meniscusDepth` higher around ~22%–25%),
+    // matching `16`, `256`, `2048`, `128`, `1024`, `512`, `8`, `64`, `32`, `4` in `media_1794051081001.png`!
+    final headspacePx =
+        cellSize * (model.heightRows == 1 ? 0.308 : 0.338);
+    final restSurfaceY = y0 + headspacePx;
+    final drainT =
+        Curves.easeInOutCubic.transform(_winCrumbleProgress.clamp(0.0, 1.0));
+    final baseWaveY = ui.lerpDouble(
+      restSurfaceY,
+      y1 + 2.0,
+      drainT,
+    )!;
+
+    // Deterministic per-piece phase offset so resting blocks breathe organically out-of-sync
+    final pieceSeed = (model.id * 1.93) % (math.pi * 2.0);
+    final isWideBlock = model.widthCols >= 2;
+    final idleTiltDy = math.sin(_sandShimmerClock * 1.95 + pieceSeed) *
+        cellSize *
+        (isWideBlock ? 0.030 : 0.014);
+
+    final energy = _smoothedWaveEnergy.clamp(0.0, 1.0);
+    final restAmp = isWideBlock ? 0.034 : 0.016;
+    final waveAmp =
+        cellSize * (restAmp + 0.095 * energy) * (1.0 - 0.65 * drainT);
+    final phase = _liquidWavePhase;
+    final activeTiltDy = isIdleAtRest
+        ? idleTiltDy
+        : (_waterSloshTilt * w * 0.27).clamp(-cellSize * 0.23, cellSize * 0.23);
+    final tiltSpanDy = ui.lerpDouble(idleTiltDy, activeTiltDy, energy)!;
+
+    // 3D Elliptical Meniscus Geometry (`media_1794051081001.png`):
+    // Back rim sits higher (`meniscusDepth`) and arches UPWARD (`-backLensArch`),
+    // while Front rim arches DOWNWARD (`+frontLensArch`), creating the unmistakable
+    // plump 3D glowing oval liquid cap on `1x2` blocks (`16`, `256`, `1024`, `4`) AND
+    // lush 3D undulating S-wave water surface on `2x1` blocks (`2048`, `128`, `512`, `8`, `64`)!
+    final meniscusDepth =
+        cellSize * (0.078 + 0.020 * energy) * (1.0 - 0.75 * drainT);
+    final lensRoundness = (isWideBlock ? 0.65 : 1.0) * (1.0 - 0.45 * energy);
+    final backLensArch = cellSize * 0.034 * lensRoundness;
+    final frontLensArch = cellSize * 0.028 * lensRoundness;
+
+    final minClampY = y0 + cellSize * 0.085;
+    final minCtrlY = y0 - cellSize * 0.14;
+    final maxClampY = ui.lerpDouble(y1 - cellSize * 0.08, y1 + 3.0, drainT)!;
+
+    // Cubic Bezier control points attenuate peak S-wave height by ~0.42x (`27/64`),
+    // so scale `sWaveFront`/`sWaveBack` accordingly for lush gentle waves at rest & bold waves on click/drag!
+    final sWaveScale = isWideBlock ? 3.45 : 1.75;
+    final sWaveFront = math.sin(phase) * waveAmp * sWaveScale;
+    final sWaveBack = math.sin(phase + 0.35) * waveAmp * (sWaveScale * 0.88);
+
+    final bLeftY = (baseWaveY -
+            meniscusDepth * 0.72 +
+            tiltSpanDy * 0.65 +
+            sWaveBack * 0.25)
+        .clamp(minClampY, maxClampY);
+    final bRightY = (baseWaveY -
+            meniscusDepth * 0.72 -
+            tiltSpanDy * 0.65 -
+            sWaveBack * 0.25)
+        .clamp(minClampY, maxClampY);
+    final bCtrl1Y = (baseWaveY -
+            meniscusDepth -
+            backLensArch +
+            tiltSpanDy * 0.42 -
+            sWaveBack)
+        .clamp(minCtrlY, maxClampY);
+    final bCtrl2Y = (baseWaveY -
+            meniscusDepth -
+            backLensArch -
+            tiltSpanDy * 0.42 +
+            sWaveBack)
+        .clamp(minCtrlY, maxClampY);
+
+    final fLeftY =
+        (baseWaveY + tiltSpanDy * 0.72 + sWaveFront * 0.28)
+            .clamp(minClampY + cellSize * 0.025, maxClampY);
+    final fRightY =
+        (baseWaveY - tiltSpanDy * 0.72 - sWaveFront * 0.28)
+            .clamp(minClampY + cellSize * 0.025, maxClampY);
+    final fCtrl1Y = (baseWaveY +
+            frontLensArch +
+            tiltSpanDy * 0.45 -
+            sWaveFront)
+        .clamp(minCtrlY + cellSize * 0.02, maxClampY);
+    final fCtrl2Y = (baseWaveY +
+            frontLensArch -
+            tiltSpanDy * 0.45 +
+            sWaveFront)
+        .clamp(minCtrlY + cellSize * 0.02, maxClampY);
+
+    final backWavePath = Path()
+      ..moveTo(x0 - 2.0, bLeftY)
+      ..cubicTo(
+        x0 + w * 0.32,
+        bCtrl1Y,
+        x0 + w * 0.68,
+        bCtrl2Y,
+        x1 + 2.0,
+        bRightY,
+      )
+      ..lineTo(x1 + 2.0, y1 + 2.0)
+      ..lineTo(x0 - 2.0, y1 + 2.0)
+      ..close();
+
+    final frontWaterPath = Path()
+      ..moveTo(x0 - 2.0, fLeftY)
+      ..cubicTo(
+        x0 + w * 0.33,
+        fCtrl1Y,
+        x0 + w * 0.67,
+        fCtrl2Y,
+        x1 + 2.0,
+        fRightY,
+      )
+      ..lineTo(x1 + 2.0, y1 + 2.0)
+      ..lineTo(x0 - 2.0, y1 + 2.0)
+      ..close();
+
+    // Cache union of meniscus + liquid body for `_MergeCylinder` & `_MergeOverlap` clipping
+    _lastLiquidWaveClipPath = backWavePath;
+
+    canvas.save();
+    if (topJellyShift != Offset.zero) {
+      canvas.translate(topJellyShift.dx, topJellyShift.dy);
+    }
+    canvas.clipPath(_liquidCavityPath);
+
+    // 1. Bright Glowing 3D Top Meniscus Surface (`backWavePath`)
+    final meniscusBright = Color.lerp(style.topBright, Colors.white, 0.50)!;
+    final meniscusMid = Color.lerp(style.topBright, Colors.white, 0.28)!;
+    canvas.drawPath(
+      backWavePath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(x0, baseWaveY - meniscusDepth),
+          Offset(x1, baseWaveY + cellSize * 0.04),
+          [
+            meniscusBright.withValues(alpha: 0.95 * alphaMultiplier),
+            meniscusMid.withValues(alpha: 0.94 * alphaMultiplier),
+          ],
+        ),
+    );
+
+    // 2. Rich Jewel-Tone Liquid Body + Glowing Bottom Glass Floor Refraction (`media_1794051081001.png`)
+    final upperBodyCol = Color.lerp(style.topMid, style.bottomLip, 0.30)!;
+    final deepCoreCol = Color.lerp(style.topMid, style.bottomLip, 0.45)!;
+    final floorGlowCol = Color.lerp(style.topBright, Colors.white, 0.24)!;
+
+    _sandErosionPaint.shader = ui.Gradient.linear(
+      Offset(x0 + w * 0.5, baseWaveY),
+      Offset(x0 + w * 0.5, y1),
+      [
+        upperBodyCol.withValues(alpha: 0.93 * alphaMultiplier),
+        deepCoreCol.withValues(alpha: 0.95 * alphaMultiplier),
+        style.topMid.withValues(alpha: 0.95 * alphaMultiplier),
+        style.topBright.withValues(alpha: 0.96 * alphaMultiplier),
+        floorGlowCol.withValues(alpha: 0.97 * alphaMultiplier),
+      ],
+      const [0.0, 0.46, 0.76, 0.91, 1.0],
+    );
+    canvas.drawPath(frontWaterPath, _sandErosionPaint);
+
+    // Subtle internal side-wall bounce glow inside the liquid along left & right glass edges
+    canvas.drawPath(
+      frontWaterPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(x0, baseWaveY),
+          Offset(x1, baseWaveY),
+          [
+            style.topBright.withValues(alpha: 0.42 * alphaMultiplier),
+            style.topBright.withValues(alpha: 0.0),
+            style.topBright.withValues(alpha: 0.0),
+            style.topBright.withValues(alpha: 0.38 * alphaMultiplier),
+          ],
+          const [0.0, 0.14, 0.86, 1.0],
+        ),
+    );
+
+    // 3. Crisp Specular Front Meniscus Rim Curve (`#FFFFFF` / pastel gleam)
+    final frontRimCurve = Path()
+      ..moveTo(x0, fLeftY)
+      ..cubicTo(
+        x0 + w * 0.34,
+        fCtrl1Y,
+        x0 + w * 0.66,
+        fCtrl2Y,
+        x1,
+        fRightY,
+      );
+    canvas.drawPath(
+      frontRimCurve,
+      Paint()
+        ..style = ui.PaintingStyle.stroke
+        ..strokeCap = ui.StrokeCap.round
+        ..strokeWidth = (cellSize * 0.025).clamp(1.3, 2.4)
+        ..color = Color.lerp(style.topBright, Colors.white, 0.78)!
+            .withValues(alpha: (0.86 + 0.10 * energy).clamp(0.0, 1.0) * alphaMultiplier),
+    );
+
+    // Active wave frothy crest highlight when clicked / dragged (`energy > 0.18`, like block `64`)
+    if (energy > 0.18) {
+      final crestBandH = cellSize * (0.055 * energy);
+      final crestGlowPath = Path()
+        ..moveTo(x0, fLeftY)
+        ..cubicTo(x0 + w * 0.34, fCtrl1Y, x0 + w * 0.66, fCtrl2Y, x1, fRightY)
+        ..lineTo(x1, fRightY + crestBandH)
+        ..cubicTo(
+          x0 + w * 0.66,
+          fCtrl2Y + crestBandH * 1.15,
+          x0 + w * 0.34,
+          fCtrl1Y + crestBandH * 1.15,
+          x0,
+          fLeftY + crestBandH,
+        )
+        ..close();
+      canvas.drawPath(
+        crestGlowPath,
+        Paint()
+          ..color = Colors.white
+              .withValues(alpha: (0.34 * energy * alphaMultiplier).clamp(0.0, 0.45)),
+      );
+    }
+
+    // 4. Delicate Rising Effervescent Glass Bubbles in the lower half of the liquid (`media_1794051081001.png`)
+    final bubbleCount = energy > 0.25 ? 7 : 5;
+    final bubbleSpeed = 0.22 + 0.55 * energy;
+    final liquidSpanH = math.max(cellSize * 0.25, y1 - baseWaveY);
+    for (int k = 0; k < bubbleCount; k++) {
+      final bPhase =
+          (_sandShimmerClock * bubbleSpeed + k * 0.29 + pieceSeed * 0.15) % 1.0;
+      // Cluster bubbles naturally toward lower-left & lower-right glass corners like `media_1794051081001.png`
+      final xSlot = (k.isEven)
+          ? (0.12 + 0.18 * ((k * 0.37) % 1.0))
+          : (0.70 + 0.18 * ((k * 0.43) % 1.0));
+      final bx = x0 +
+          w * xSlot +
+          math.sin(_sandShimmerClock * 2.4 + k * 1.7) * cellSize * 0.015;
+      final by = y1 -
+          cellSize * 0.075 -
+          bPhase * (liquidSpanH * (0.48 + 0.28 * energy));
+      if (by <= baseWaveY + cellSize * 0.05) continue;
+
+      final br =
+          (cellSize * (0.022 + 0.010 * (k % 3)) * (1.0 - 0.20 * bPhase))
+              .clamp(1.1, 3.2);
+      final bAlpha =
+          ((1.0 - bPhase * 0.75) * (0.42 + 0.28 * energy) * alphaMultiplier)
+              .clamp(0.0, 0.80);
+      if (bAlpha <= 0.02) continue;
+
+      canvas.drawCircle(
+        Offset(bx, by),
+        br,
+        Paint()
+          ..style = ui.PaintingStyle.stroke
+          ..strokeWidth = 0.95
+          ..color = Colors.white.withValues(alpha: bAlpha),
+      );
+      canvas.drawCircle(
+        Offset(bx - br * 0.32, by - br * 0.32),
+        br * 0.35,
+        Paint()..color = Colors.white.withValues(alpha: (bAlpha * 1.35).clamp(0.0, 0.92)),
+      );
+    }
+
+    canvas.restore();
+  }
+
+  /// Glossy 3D Crystal-Glass Container Rim, Top Shoulder Specular Gleam & Thin Vertical Inner Wall Streaks:
+  /// Drawn OVER the liquid so the colored liquid clearly sits inside a clear glass vial (`media_1794051081001.png`).
+  void _drawCrystalGlassForeground(
+    Canvas canvas,
+    BlockColorStyle style, {
+    Offset topJellyShift = Offset.zero,
+  }) {
+    final x0 = _localBounds.left;
+    final y0 = _localBounds.top;
+    final x1 = _localBounds.right;
+    final y1 = _localBounds.bottom;
+
+    canvas.save();
+    if (topJellyShift != Offset.zero) {
+      canvas.translate(topJellyShift.dx, topJellyShift.dy);
+    }
+
+    // 1. Inner Glass Specular Reflections (clipped to `_topPath`)
+    canvas.save();
+    canvas.clipPath(_topPath);
+
+    // 1a. Bright glossy white top glass shoulder rim (`y0 .. y0 + 0.16 * cellSize`)
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(x0, y0, x1, y0 + cellSize * 0.17));
+    canvas.drawPath(
+      _liquidCavityPath,
+      Paint()
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.036).clamp(1.6, 3.2)
+        ..shader = ui.Gradient.linear(
+          Offset(x0, y0),
+          Offset(x0, y0 + cellSize * 0.17),
+          [
+            Colors.white.withValues(alpha: 0.86),
+            const Color(0xFFD8F2FF).withValues(alpha: 0.35),
+            Colors.white.withValues(alpha: 0.0),
+          ],
+          const [0.0, 0.52, 1.0],
+        ),
+    );
+    canvas.restore();
+
+    // 1b. Thin vertical inner glass wall specular streaks along left & right walls
+    canvas.drawPath(
+      _innerHighlightPath,
+      Paint()
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.022).clamp(1.0, 2.0)
+        ..shader = ui.Gradient.linear(
+          Offset(x0, y0),
+          Offset(x0, y1),
+          [
+            Colors.white.withValues(alpha: 0.55),
+            Colors.white.withValues(alpha: 0.24),
+            Color.lerp(style.topBright, Colors.white, 0.55)!
+                .withValues(alpha: 0.45),
+          ],
+          const [0.0, 0.38, 1.0],
+        ),
+    );
+
+    // 1c. Thick rounded glass base refraction highlight along the bottom floor (`y1 - 0.12 * cellSize .. y1`)
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(x0, y1 - cellSize * 0.12, x1, y1));
+    canvas.drawPath(
+      _liquidCavityPath,
+      Paint()
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.038).clamp(1.6, 3.4)
+        ..color = Color.lerp(style.topBright, Colors.white, 0.65)!
+            .withValues(alpha: 0.72),
+    );
+    canvas.restore();
+
+    canvas.restore();
+
+    // 2. Crisp Outer Crystal-Glass Contour (`_topPath`) — icy blue-white around empty top, jewel-tinted around liquid!
+    final outerGlassStrokeW = (cellSize * 0.026).clamp(1.3, 2.3);
+    canvas.drawPath(
+      _topPath,
+      Paint()
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = outerGlassStrokeW
+        ..strokeJoin = ui.StrokeJoin.round
+        ..shader = ui.Gradient.linear(
+          Offset(x0, y0),
+          Offset(x0, y1),
+          [
+            const Color(0xFFD8EEFF).withValues(alpha: 0.82),
+            const Color(0xFF90C8FF).withValues(alpha: 0.62),
+            Color.lerp(style.rimHighlight, Colors.white, 0.38)!
+                .withValues(alpha: 0.86),
+            Color.lerp(style.topBright, Colors.white, 0.48)!
+                .withValues(alpha: 0.90),
+          ],
+          const [0.0, 0.26, 0.68, 1.0],
+        ),
+    );
+
     canvas.restore();
   }
 
@@ -1983,12 +2610,14 @@ class PieceComponent extends PositionComponent {
       ],
       const [0.0, 0.52, 1.0],
     );
-    canvas.drawPath(_innerHighlightPath, _sandErosionPaint);
+    canvas.save();
+    if (_lastLiquidWaveClipPath != null) {
+      canvas.clipPath(_lastLiquidWaveClipPath!);
+    }
+    canvas.drawPath(_liquidCavityPath, _sandErosionPaint);
+    canvas.restore();
   }
 
-  /// Paints the opaque 3D extruded wall with ZERO per-frame `Path.combine` or `Path.shift` allocations:
-  /// - Stationary pieces draw the pre-unioned `_wallPath` in a single GPU call.
-  /// - Jelly-leaning pieces paint 8 sub-pixel translated `_topPath` slices on the GPU.
   void _drawExtrudedOpaqueWall(
     Canvas canvas,
     Paint opaqueWallPaint,
@@ -2011,6 +2640,7 @@ class PieceComponent extends PositionComponent {
     }
   }
 
+  /// Solid surface renderer used ONLY for Dud (`model.isDud`) and Ice-Covered (`_isIceCovered`) obstacles.
   void _drawBodySurface(
     Canvas canvas,
     BlockColorStyle style, {
@@ -2032,7 +2662,6 @@ class PieceComponent extends PositionComponent {
         const [0.0, 0.45, 1.0],
       );
       _cachedBaseStrokePaint.color = baseShade.withValues(alpha: 0.72);
-      // 100% Full Block (`cho full block`, zero headspace cutout or stripes!):
       _cachedTopPaint.shader = ui.Gradient.linear(
         _localBounds.topLeft,
         Offset(_localBounds.left + _localBounds.width * 0.75, _localBounds.bottom),
@@ -2074,21 +2703,11 @@ class PieceComponent extends PositionComponent {
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
     canvas.drawPath(_topPath, _cachedTopPaint);
-
-    if ((_sandErosionIntensity > 0.01 ||
-            _sandReformFlash > 0.01 ||
-            _waterSloshTilt.abs() > 0.005) &&
-        !_isIceCovered) {
-      _drawSandErosionOnBlock(canvas, style);
-    }
     canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
     canvas.restore();
   }
 
-  /// Ticks the Sloshing Water Physics (`ANIM_SONG_SANH` / `FakeWater`) inside the block:
-  /// - Drives `_waterSloshTilt` and `_waterSloshVel` with an underdamped spring-damper
-  ///   responding to horizontal/vertical movement, grid steps, merge hold/commit, and stop impulses.
-  /// - Zero external particle/bead spawning (`_sandSwarmGrains` stays empty!).
+  /// Ticks the Sloshing Water Physics (`ANIM_SONG_SANH` / `FakeWater`) inside the glass block.
   void _tickSandSwarmTrail(double clampedDt, Offset lagCells) {
     _sandShimmerClock += clampedDt;
     final prevPos = _prevSandWorldPos ?? position.clone();
@@ -2099,13 +2718,19 @@ class PieceComponent extends PositionComponent {
     final frameMoveDist = math.sqrt(dx * dx + dy * dy);
     final lagMag = lagCells.distance;
 
+    // Smooth slide velocity for horizontal/vertical glass motion streak (`64` in `media_1794051081001.png`)
+    final instVel = clampedDt > 1e-4
+        ? Offset(dx / clampedDt, dy / clampedDt)
+        : Offset.zero;
+    final velBlend = (clampedDt * 18.0).clamp(0.0, 1.0);
+    _slideStreakVel = Offset.lerp(_slideStreakVel, instVel, velBlend)!;
+
     if (frameMoveDist > 0.35) {
       _sandTravelDir = Offset(dx / frameMoveDist, dy / frameMoveDist);
     } else if (lagMag > 0.012) {
       _sandTravelDir = Offset(lagCells.dx / lagMag, lagCells.dy / lagMag);
     }
 
-    // Detect grid-cell steps to inject a crisp sloshing wave impulse (`lắc lắc`)
     if (_lastSandGridCol == -999) {
       _lastSandGridCol = model.col;
       _lastSandGridRow = model.row;
@@ -2132,7 +2757,6 @@ class PieceComponent extends PositionComponent {
         _numberPreviewMode == _NumberPreviewMode.settling;
     final isMoving = frameMoveDist > 0.20 || lagMag > 0.010;
 
-    // Target slosh tilt driven by drag velocity, lag acceleration, and active sloshing wave excitation
     double targetTilt = 0.0;
     if (activelyDragging || activelyMerging) {
       final vxNorm = (dx / math.max(1.0, cellSize * 0.14)).clamp(-1.0, 1.0);
@@ -2147,13 +2771,13 @@ class PieceComponent extends PositionComponent {
           .clamp(-0.78, 0.78);
     }
 
-    // Integrate underdamped liquid slosh spring (`k = 280.0`, `zeta = 0.22`)
     const sloshK = 280.0;
     final sloshC = 2.0 * 0.22 * math.sqrt(sloshK);
     final subSteps = (clampedDt / 0.008).ceil().clamp(1, 6);
     final subDt = clampedDt / subSteps;
     for (int s = 0; s < subSteps; s++) {
-      final accel = (targetTilt - _waterSloshTilt) * sloshK - _waterSloshVel * sloshC;
+      final accel =
+          (targetTilt - _waterSloshTilt) * sloshK - _waterSloshVel * sloshC;
       _waterSloshVel += accel * subDt;
       _waterSloshTilt += _waterSloshVel * subDt;
     }
@@ -2177,7 +2801,6 @@ class PieceComponent extends PositionComponent {
         (clampedDt * 16.0).clamp(0.0, 1.0),
       )!;
     } else {
-      // Finger released or merge settling: trigger a single slosh recoil & decay smoothly over ~0.75s
       if (_sandErosionIntensity > 0.55 && _sandReformFlash <= 0.01) {
         _sandReformFlash = 0.85;
         final recoilSign = _sandTravelDir.dx.abs() > 0.1
@@ -2193,6 +2816,40 @@ class PieceComponent extends PositionComponent {
       _sandReformFlash = math.max(0.0, _sandReformFlash - clampedDt * 2.65);
     }
 
+    // Smooth C1-continuous wave energy & phase integration (zero phase jumps on click/drag!)
+    final tapBoost = _tapElapsed >= 0
+        ? (1.0 -
+                (_tapElapsed / math.max(0.05, visualSettings.tapDuration))
+                    .clamp(0.0, 1.0)) *
+            0.94
+        : 0.0;
+    final shakeBoost = _shakeElapsed >= 0 ? 0.88 : 0.0;
+    final targetWaveEnergy = math
+        .max(
+          _sandErosionIntensity,
+          math.max(
+            _sandReformFlash * 0.92,
+            math.max(
+              _waterSloshTilt.abs() * 1.38,
+              math.max(
+                tapBoost,
+                math.max(shakeBoost, _winFractureProgress * 0.92),
+              ),
+            ),
+          ),
+        )
+        .clamp(0.0, 1.0);
+    final energyRate = targetWaveEnergy > _smoothedWaveEnergy ? 18.0 : 3.8;
+    final energyAlpha = 1.0 - math.exp(-clampedDt * energyRate);
+    _smoothedWaveEnergy =
+        ui.lerpDouble(_smoothedWaveEnergy, targetWaveEnergy, energyAlpha)!;
+    if (_smoothedWaveEnergy < 4e-3 && targetWaveEnergy <= 1e-4) {
+      _smoothedWaveEnergy = 0.0;
+    }
+    _liquidWavePhase = (_liquidWavePhase +
+            clampedDt * (2.55 + 6.4 * _smoothedWaveEnergy)) %
+        (math.pi * 200.0);
+
     if (_sandSwarmGrains.isNotEmpty) {
       _sandSwarmGrains.clear();
     }
@@ -2201,176 +2858,8 @@ class PieceComponent extends PositionComponent {
     }
   }
 
-  /// Renders the active sloshing water animation (`anim nước lắc lắc`, `FakeWater` + `ANIM_SONG_SANH`)
-  /// across the unified block ONLY while moving or merging (`energy > 0.01`):
-  /// - Stationary blocks (`energy == 0`) remain 100% full with zero water lines or stripes!
-  /// - While moving or merging (`energy > 0`), two overlapping liquid wave layers (`surfaceWater2`
-  ///   back wave + `mainWaterSingle` front wave) slosh back and forth across `_innerHighlightPath`
-  ///   with zero thin stroke lines (`ko cần vân`) and rise smoothly back to 100% full when stopping!
-  void _drawSandErosionOnBlock(
-    Canvas canvas,
-    BlockColorStyle style, {
-    double alphaMultiplier = 1.0,
-  }) {
-    final rawEnergy = math
-        .max(
-          _sandErosionIntensity,
-          math.max(
-            _sandReformFlash * 0.92,
-            math.max(_waterSloshTilt.abs() * 1.35, _winFractureProgress * 0.95),
-          ),
-        )
-        .clamp(0.0, 1.0);
-    final energy = (rawEnergy * alphaMultiplier).clamp(0.0, 1.0);
-    if (energy <= 0.01) return;
-
-    canvas.save();
-    canvas.clipPath(_innerHighlightPath);
-
-    final x0 = _localBounds.left;
-    final y0 = _localBounds.top;
-    final x1 = _localBounds.right;
-    final y1 = _localBounds.bottom;
-    final w = _localBounds.width;
-
-    // 1. Trough backdrop at the top of the block (only visible while sloshing; rises to 0 when stationary!)
-    final troughColor =
-        Color.lerp(style.bottomLip, const Color(0xFF0A1936), 0.36)!
-            .withValues(alpha: (0.64 * energy).clamp(0.0, 1.0));
-    canvas.drawRect(_localBounds, Paint()..color = troughColor);
-
-    // Base wave level drops slightly from the top ONLY while `energy > 0`, returning to `y0` (100% full) at rest!
-    final baseWaveY =
-        y0 + cellSize * (0.21 * energy + 0.52 * _winCrumbleProgress);
-    final tilt = _waterSloshTilt.clamp(-0.78, 0.78);
-    final tiltSpanDy = (tilt * w * 0.22).clamp(-cellSize * 0.24, cellSize * 0.24);
-    final waveAmp = cellSize * (0.045 + 0.095 * energy);
-    final phase = _sandShimmerClock * 15.0;
-
-    // 2. Back Sloshing Wave Layer (`surfaceWater2`, oscillating out of phase for unmistakable `nước lắc lắc`)
-    final backPhase = -phase * 1.22 + 1.35;
-    final backAmp = waveAmp * 1.15;
-    final bLeftY = (baseWaveY -
-            cellSize * 0.025 * energy -
-            tiltSpanDy * 0.80 +
-            math.sin(backPhase) * backAmp)
-        .clamp(y0 - cellSize * 0.04, y1 - cellSize * 0.08);
-    final bRightY = (baseWaveY -
-            cellSize * 0.025 * energy +
-            tiltSpanDy * 0.80 -
-            math.sin(backPhase) * backAmp)
-        .clamp(y0 - cellSize * 0.04, y1 - cellSize * 0.08);
-    final bCtrl1Y = baseWaveY -
-        cellSize * 0.025 * energy -
-        tiltSpanDy * 0.28 +
-        math.cos(backPhase + 0.7) * backAmp * 1.45;
-    final bCtrl2Y = baseWaveY -
-        cellSize * 0.025 * energy +
-        tiltSpanDy * 0.28 -
-        math.cos(backPhase - 0.5) * backAmp * 1.45;
-
-    final backWavePath = Path()
-      ..moveTo(x0, bLeftY)
-      ..cubicTo(
-        x0 + w * 0.33,
-        bCtrl1Y,
-        x0 + w * 0.67,
-        bCtrl2Y,
-        x1,
-        bRightY,
-      )
-      ..lineTo(x1, y1)
-      ..lineTo(x0, y1)
-      ..close();
-
-    final backWaveColor = Color.lerp(style.topBright, Colors.white, 0.52)!
-        .withValues(alpha: (0.76 * alphaMultiplier).clamp(0.0, 1.0));
-    canvas.drawPath(backWavePath, Paint()..color = backWaveColor);
-
-    // 3. Front Sloshing Liquid Body (`mainWaterSingle`)
-    final fLeftY = (baseWaveY + tiltSpanDy + math.sin(phase) * waveAmp)
-        .clamp(y0 - cellSize * 0.02, y1 - cellSize * 0.06);
-    final fRightY = (baseWaveY - tiltSpanDy - math.sin(phase) * waveAmp)
-        .clamp(y0 - cellSize * 0.02, y1 - cellSize * 0.06);
-    final fCtrl1Y = baseWaveY +
-        tiltSpanDy * 0.35 +
-        cellSize * 0.032 * energy +
-        math.cos(phase + 0.5) * waveAmp * 1.48;
-    final fCtrl2Y = baseWaveY -
-        tiltSpanDy * 0.35 -
-        cellSize * 0.028 * energy -
-        math.sin(phase + 0.9) * waveAmp * 1.48;
-
-    final frontWaterPath = Path()
-      ..moveTo(x0, fLeftY)
-      ..cubicTo(
-        x0 + w * 0.34,
-        fCtrl1Y,
-        x0 + w * 0.66,
-        fCtrl2Y,
-        x1,
-        fRightY,
-      )
-      ..lineTo(x1, y1)
-      ..lineTo(x0, y1)
-      ..close();
-
-    final liquidBright = Color.lerp(style.topBright, Colors.white, 0.24)!;
-    _sandErosionPaint.shader = ui.Gradient.linear(
-      Offset(x0, baseWaveY - cellSize * 0.04),
-      Offset(x0 + w * 0.65, y1),
-      [
-        liquidBright.withValues(alpha: alphaMultiplier),
-        style.topBright.withValues(alpha: alphaMultiplier),
-        style.topMid.withValues(alpha: alphaMultiplier),
-      ],
-      const [0.0, 0.36, 1.0],
-    );
-    canvas.drawPath(frontWaterPath, _sandErosionPaint);
-
-    // 4. Soft luminous wave-crest fill glow (ZERO hard stroke lines or stripes `ko cần vân`!)
-    final crestBandH = cellSize * (0.075 * energy);
-    final crestGlowPath = Path()
-      ..moveTo(x0, fLeftY)
-      ..cubicTo(
-        x0 + w * 0.34,
-        fCtrl1Y,
-        x0 + w * 0.66,
-        fCtrl2Y,
-        x1,
-        fRightY,
-      )
-      ..lineTo(x1, fRightY + crestBandH)
-      ..cubicTo(
-        x0 + w * 0.66,
-        fCtrl2Y + crestBandH * 1.15,
-        x0 + w * 0.34,
-        fCtrl1Y + crestBandH * 1.15,
-        x0,
-        fLeftY + crestBandH,
-      )
-      ..close();
-    canvas.drawPath(
-      crestGlowPath,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(x0, baseWaveY - crestBandH * 0.4),
-          Offset(x0, baseWaveY + crestBandH * 1.4),
-          [
-            Colors.white.withValues(alpha: (0.58 * energy).clamp(0.0, 1.0)),
-            liquidBright.withValues(alpha: (0.28 * energy).clamp(0.0, 1.0)),
-            style.topBright.withValues(alpha: 0.0),
-          ],
-          const [0.0, 0.50, 1.0],
-        ),
-    );
-
-    canvas.restore();
-  }
-
-  /// Exact port of `PieceBlock` GLSL fragment shader `_MergeCylinder` rendered with
-  /// direct smoothstep-alpha radial gradients (ZERO `canvas.saveLayer` and ZERO `Path.shift`!).
-  /// `innerEdge = radius - softness; u = clamp((dist - innerEdge) / softness, 0, 1); blend = 1 - u^2(3 - 2u)`.
+  /// `_MergeCylinder` Smoothstep Color Wipe clipped strictly to the ~75% liquid & meniscus region
+  /// so the top ~25% crystal-glass headspace remains 100% transparent during hold-to-merge & commit!
   void _drawMergeCylinderShaderOverlay(
     Canvas canvas, {
     required BlockColorStyle targetStyle,
@@ -2416,7 +2905,6 @@ class PieceComponent extends PositionComponent {
         stops.add(stop);
       }
     } else {
-      // `0 < r < s`: at `dist = 0`, `u0 = 1 - r / s`, smoothly blooming from 0% up to 100%!
       final u0 = (1.0 - r / s).clamp(0.0, 1.0);
       for (final f in const [0.0, 0.25, 0.50, 0.75, 1.0]) {
         final u = u0 + (1.0 - u0) * f;
@@ -2427,61 +2915,38 @@ class PieceComponent extends PositionComponent {
 
     if (alphas.length < 2) return;
 
-    final wallBaseCol = Color.lerp(targetStyle.bottomLip, Colors.black, 0.06)!;
-    final wallColors = <Color>[
-      for (int i = 0; i < alphas.length; i++)
-        wallBaseCol.withValues(alpha: alphas[i]),
-    ];
     final topColors = <Color>[
       for (int i = 0; i < alphas.length; i++)
-        Color.lerp(targetStyle.topBright, targetStyle.topMid, stops[i] * 0.65)!
-            .withValues(alpha: alphas[i]),
+        Color.lerp(targetStyle.topMid, targetStyle.topBright, 1.0 - stops[i] * 0.55)!
+            .withValues(alpha: 0.94 * alphas[i]),
     ];
-    final rimColors = <Color>[
-      for (int i = 0; i < alphas.length; i++)
-        targetStyle.rimHighlight.withValues(alpha: 0.64 * alphas[i]),
-    ];
-
-    final wallShift = Offset(
-      topJellyShift.dx * 0.45,
-      (effectiveLipDepth - _lipDepth) + math.max(0.0, topJellyShift.dy * 0.45),
-    );
-    final wallCenter = localCenter - wallShift;
-    _cylinderWallPaint.shader =
-        ui.Gradient.radial(wallCenter, r, wallColors, stops);
-    canvas.save();
-    canvas.translate(wallShift.dx, wallShift.dy);
-    canvas.drawPath(_wallFrontStripPath, _cylinderWallPaint);
-    canvas.restore();
 
     final topCenter = localCenter - topJellyShift;
-    final rimStrokeW = (cellSize * 0.044).clamp(1.6, 3.6);
     _cylinderTopPaint.shader =
         ui.Gradient.radial(topCenter, r, topColors, stops);
-    _cylinderRimPaint
-      ..strokeWidth = rimStrokeW
-      ..shader = ui.Gradient.radial(topCenter, r, rimColors, stops);
+
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
-    canvas.drawPath(_topPath, _cylinderTopPaint);
-    if ((_sandErosionIntensity > 0.01 ||
-            _sandReformFlash > 0.01 ||
-            _waterSloshTilt.abs() > 0.005) &&
-        !_isIceCovered) {
-      final cylAlpha = (r / math.max(1.0, cellSize * 0.85)).clamp(0.0, 1.0);
-      _drawSandErosionOnBlock(
+    canvas.clipPath(_liquidCavityPath);
+    if (_lastLiquidWaveClipPath != null) {
+      canvas.clipPath(_lastLiquidWaveClipPath!);
+    }
+    canvas.drawRect(_localBounds, _cylinderTopPaint);
+    canvas.restore();
+
+    final cylAlpha = (r / math.max(1.0, cellSize * 0.90)).clamp(0.0, 1.0);
+    if (cylAlpha > 0.05) {
+      _drawGlassHalfFullLiquidAndWave(
         canvas,
         targetStyle,
+        isIdleAtRest: false,
+        topJellyShift: topJellyShift,
         alphaMultiplier: cylAlpha,
       );
     }
-    canvas.drawPath(_innerHighlightPath, _cylinderRimPaint);
-    canvas.restore();
   }
 
-  /// Exact port of `RenderMergeOverlapMaskPass` + `_MergeOverlap` (zero `MaskFilter.blur` & zero `Path.shift`!):
-  /// Where inflated (`0.10 * cellSize`) silhouettes of survivor & partner overlap,
-  /// blends toward `targetStyle.topBright` (`mask * MergeJoinStrength`) to fuse the seam!
+  /// `_MergeOverlap` Seam Fusion clipped to the ~75% liquid region so the empty top glass stays clear!
   void _drawMergeOverlapSeamFusion(
     Canvas canvas, {
     required Offset topJellyShift,
@@ -2499,7 +2964,10 @@ class PieceComponent extends PositionComponent {
     if (partnerLocal != null && partnerOrigin != null) {
       canvas.save();
       canvas.translate(topJellyShift.dx, topJellyShift.dy);
-      canvas.clipPath(_topPath);
+      canvas.clipPath(_liquidCavityPath);
+      if (_lastLiquidWaveClipPath != null) {
+        canvas.clipPath(_lastLiquidWaveClipPath!);
+      }
       canvas.translate(
         partnerOrigin.x - position.x - topJellyShift.dx,
         partnerOrigin.y - position.y + liftPx - topJellyShift.dy,
@@ -2513,7 +2981,10 @@ class PieceComponent extends PositionComponent {
     if (partnerWorld == null) return;
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
-    canvas.clipPath(_topPath);
+    canvas.clipPath(_liquidCavityPath);
+    if (_lastLiquidWaveClipPath != null) {
+      canvas.clipPath(_lastLiquidWaveClipPath!);
+    }
     canvas.translate(
       -position.x - topJellyShift.dx,
       -position.y + liftPx - topJellyShift.dy,
@@ -3347,15 +3818,16 @@ class PieceComponent extends PositionComponent {
     required BlockColorStyle style,
   }) {
     final key =
-        '$numberValue|${(baseFontPx * 10).round()}|${(cellSize * 4).round()}|${style.numberStrokeOuter.toARGB32().toRadixString(16)}|${style.numberStrokeMid.toARGB32().toRadixString(16)}';
+        'glassv2|$numberValue|${(baseFontPx * 10).round()}|${(cellSize * 4).round()}|${style.numberStrokeOuter.toARGB32().toRadixString(16)}|${style.numberStrokeMid.toARGB32().toRadixString(16)}';
     final cached = _fourLayerNumberSpriteCache[key];
     if (cached != null) return cached;
 
     try {
       final textStr = '$numberValue';
-      final thickStrokeW = (baseFontPx * 0.215).clamp(2.2, 7.2);
-      final softStroke3W = (baseFontPx * 0.245).clamp(2.5, 8.0);
-      final blurSigma = (cellSize * 0.018).clamp(0.6, 2.2);
+      final crispStroke1W = (baseFontPx * 0.088).clamp(1.2, 3.2);
+      final dropStroke2W = (baseFontPx * 0.135).clamp(1.8, 4.6);
+      final softStroke3W = (baseFontPx * 0.185).clamp(2.2, 6.2);
+      final blurSigma = (cellSize * 0.024).clamp(0.9, 2.8);
 
       final stroke3Tp = TextPainter(
         text: TextSpan(
@@ -3369,7 +3841,7 @@ class PieceComponent extends PositionComponent {
               ..style = PaintingStyle.stroke
               ..strokeWidth = softStroke3W
               ..strokeJoin = StrokeJoin.round
-              ..color = style.numberStrokeInner.withValues(alpha: 0.72)
+              ..color = style.numberStrokeOuter.withValues(alpha: 0.44)
               ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma),
           ),
         ),
@@ -3386,9 +3858,10 @@ class PieceComponent extends PositionComponent {
             height: 1.0,
             foreground: Paint()
               ..style = PaintingStyle.stroke
-              ..strokeWidth = thickStrokeW
+              ..strokeWidth = dropStroke2W
               ..strokeJoin = StrokeJoin.round
-              ..color = style.numberStrokeMid,
+              ..color = style.numberStrokeMid.withValues(alpha: 0.56)
+              ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma * 0.45),
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -3404,9 +3877,9 @@ class PieceComponent extends PositionComponent {
             height: 1.0,
             foreground: Paint()
               ..style = PaintingStyle.stroke
-              ..strokeWidth = thickStrokeW
+              ..strokeWidth = crispStroke1W
               ..strokeJoin = StrokeJoin.round
-              ..color = style.numberStrokeOuter,
+              ..color = style.numberStrokeOuter.withValues(alpha: 0.68),
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -3448,15 +3921,15 @@ class PieceComponent extends PositionComponent {
       final baseOffset = Offset(-stroke3Tp.width * 0.5, -stroke3Tp.height * 0.5);
       stroke3Tp.paint(
         recCanvas,
-        baseOffset + Offset(0, 0.0743 * cellSize * yDropScale),
+        baseOffset + Offset(0, 0.064 * cellSize * yDropScale),
       );
       stroke2Tp.paint(
         recCanvas,
-        baseOffset + Offset(0, 0.0406 * cellSize * yDropScale),
+        baseOffset + Offset(0, 0.036 * cellSize * yDropScale),
       );
       stroke1Tp.paint(
         recCanvas,
-        baseOffset + Offset(0, 0.0111 * cellSize * yDropScale),
+        baseOffset + Offset(0, 0.010 * cellSize * yDropScale),
       );
       fillTp.paint(recCanvas, baseOffset);
 
@@ -3489,8 +3962,9 @@ class PieceComponent extends PositionComponent {
     required double yDropScale,
     required BlockColorStyle style,
   }) {
-    final thickStrokeW = (baseFontPx * 0.215).clamp(2.2, 7.2);
-    final softStroke3W = (baseFontPx * 0.245).clamp(2.5, 8.0);
+    final crispStroke1W = (baseFontPx * 0.088).clamp(1.2, 3.2);
+    final dropStroke2W = (baseFontPx * 0.135).clamp(1.8, 4.6);
+    final softStroke3W = (baseFontPx * 0.185).clamp(2.2, 6.2);
 
     final stroke3Tp = TextPainter(
       text: TextSpan(
@@ -3504,7 +3978,7 @@ class PieceComponent extends PositionComponent {
             ..style = PaintingStyle.stroke
             ..strokeWidth = softStroke3W
             ..strokeJoin = StrokeJoin.round
-            ..color = style.numberStrokeInner.withValues(alpha: 0.72),
+            ..color = style.numberStrokeOuter.withValues(alpha: 0.44),
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -3513,7 +3987,7 @@ class PieceComponent extends PositionComponent {
     final baseOffset = Offset(-stroke3Tp.width * 0.5, -stroke3Tp.height * 0.5);
     stroke3Tp.paint(
       canvas,
-      baseOffset + Offset(0, 0.0743 * cellSize * yDropScale),
+      baseOffset + Offset(0, 0.064 * cellSize * yDropScale),
     );
 
     final stroke2Tp = TextPainter(
@@ -3526,16 +4000,16 @@ class PieceComponent extends PositionComponent {
           height: 1.0,
           foreground: Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = thickStrokeW
+            ..strokeWidth = dropStroke2W
             ..strokeJoin = StrokeJoin.round
-            ..color = style.numberStrokeMid,
+            ..color = style.numberStrokeMid.withValues(alpha: 0.56),
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
     stroke2Tp.paint(
       canvas,
-      baseOffset + Offset(0, 0.0406 * cellSize * yDropScale),
+      baseOffset + Offset(0, 0.036 * cellSize * yDropScale),
     );
 
     final stroke1Tp = TextPainter(
@@ -3548,9 +4022,9 @@ class PieceComponent extends PositionComponent {
           height: 1.0,
           foreground: Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = thickStrokeW
+            ..strokeWidth = crispStroke1W
             ..strokeJoin = StrokeJoin.round
-            ..color = style.numberStrokeOuter,
+            ..color = style.numberStrokeOuter.withValues(alpha: 0.68),
         ),
       ),
       textDirection: TextDirection.ltr,

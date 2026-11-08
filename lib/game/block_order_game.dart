@@ -627,6 +627,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   bool _winCallbackFired = false;
   PieceComponent? _finalWinningPiece;
   double _elapsedGameTime = 0.0;
+  int movesCount = 0;
+  int highestCombo = 0;
+
+  String get elapsedTimeFormatted {
+    final totalSecs = _elapsedGameTime.floor();
+    final mins = totalSecs ~/ 60;
+    final secs = totalSecs % 60;
+    final mm = mins.toString().padLeft(2, '0');
+    final ss = secs.toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
 
   // Countdown timer & merge combo accumulators
   double _countdownFrac = 0.0;
@@ -641,6 +652,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   final List<(PieceComponent, int)> _pendingNumberPrewarms = [];
   _TutorialHandComponent? _tutorialHand;
   MagicSandJarComponent? _sandJar;
+  BoardSandStreamToJarVfx? _activeWinWaterStream;
   JarOpenAndFullscreenLightWaveVfx? _jarOpenWaveVfx;
   ComboPraiseCalloutVfx? _activeComboCallout;
 
@@ -962,11 +974,15 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _winJarOpened = false;
     _winCallbackFired = false;
     _finalWinningPiece = null;
+    _activeWinWaterStream = null;
     _jarOpenWaveVfx = null;
     _mergeImpactShakeElapsed = -1.0;
     winScreenFlashNotifier.value = 0.0;
     isWinSequenceActiveNotifier.value = false;
     _resetComboState();
+    movesCount = 0;
+    highestCombo = 0;
+    _elapsedGameTime = 0.0;
     _firstActionTriggered = false;
     isTimerStartedNotifier.value = false;
     isTimeFreezeIntroInFlight = false;
@@ -1020,6 +1036,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _pendingNumberPrewarms.clear();
     _tutorialHand = null;
     _sandJar = null;
+    _activeWinWaterStream = null;
     _jarOpenWaveVfx = null;
     _activeComboCallout = null;
     _mergeImpactShakeElapsed = -1.0;
@@ -1078,13 +1095,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     // The Magic Sand Jar is ALWAYS visible from the start of every level (`initialAppearProgress = 1.0`),
     // sitting right above the board!
     final jarHeight =
-        math.min(_cellSize * 2.10, size.y * 0.185).clamp(115.0, 210.0);
-    final jarWidth = jarHeight * 0.72;
+        math.min(_cellSize * 2.08, size.y * 0.182).clamp(115.0, 208.0);
+    final jarWidth = jarHeight * 1.12;
     final topBoardRimY = _boardOrigin.y - _cellSize * 0.24;
-    final jarCenterY = topBoardRimY - jarHeight * 0.50 - _cellSize * 0.05;
+    final jarCenterY = topBoardRimY - jarHeight * 0.455;
 
     double stageCenterY = centerY;
-    final jarTopStageY = jarCenterY - jarHeight * 0.52;
+    final jarTopStageY = jarCenterY - jarHeight * 0.48;
     if (stageCenterY + jarTopStageY < minJarTopScreenY) {
       final bottomBoardRimY = _boardOrigin.y + boardH + _cellSize * 0.34;
       final maxCenterY = maxBoardBottomScreenY - bottomBoardRimY;
@@ -1118,6 +1135,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _sandJar = MagicSandJarComponent(
       style: jarStyle,
       levelNumber: _level.number,
+      targetNumber: targetJarNumber,
       centerPosition: Vector2(0.0, jarCenterY),
       jarWidth: jarWidth,
       jarHeight: jarHeight,
@@ -1395,6 +1413,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
           dragged.model.row != _dragStartRow;
       dragged.snapDragTargetToModelGrid();
       if (moved) {
+        movesCount++;
         _notifyFirstAction();
         audio.playPut();
       } else if (wasTap) {
@@ -2272,6 +2291,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     required PieceComponent target,
     required GridCell pushDir,
   }) {
+    movesCount++;
     _notifyFirstAction();
 
     final seamGeom = _findMergeSeamGeometry(
@@ -2436,6 +2456,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _comboRemainingSeconds = comboWindowSeconds;
     comboCountNotifier.value = nextCombo;
     comboCountdownFractionNotifier.value = 1.0;
+    highestCombo = math.max(highestCombo, nextCombo);
 
     final prevCallout = _activeComboCallout;
     if (prevCallout != null && prevCallout.isMounted) {
@@ -2657,6 +2678,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         isFrozen: false,
       );
       _sandJar?.updateStyle(winStyle);
+      _sandJar?.updateTargetNumber(winNumber);
       winScreenFlashColorNotifier.value = winStyle.rimHighlight;
 
       // Step 1 (`merge thành công số cuối cùng. Tile cuối phát sáng, scale lớn nhẹ và tạo hiệu ứng nổ ánh sáng`):
@@ -2744,20 +2766,18 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
 
-    // 2. 4-Step Magic Sand Jar Win Choreography (with comfortable breathing room before popup):
-    // - Step 1 (`0.00s .. 0.42s`): Timer hides (`isWinSequenceActiveNotifier`), Jar materializes (`appearProgress: 0 -> 1`),
-    //   and final tile glows, scales up gently (`1.24x`), and bursts light.
-    // - Step 2 (`0.42s .. 1.85s`): Colored sand streams upward from board & final tile into the jar.
-    // - Step 3 (`0.55s .. 2.58s`): Jar shakes & glows while swirling sand fills (`0.55s .. 1.85s`)
-    //   and reveals the hidden crystal emblem & filigree texture, holds briefly (`1.85s .. 2.10s`)
-    //   to admire the filled jar, then pops open with a light fountain (`2.10s .. 2.58s`).
-    // - Step 4 (`2.30s .. 3.15s`): Radial light wave expands across the full screen and
-    //   presents the Next Level pop-up at peak bloom (`2.62s`).
+    // 2. 4-Step Potion Pouch Water Jar Win Choreography (`media_1794007349252.png` & `media_1794051150239.png`):
+    // - Step 1 (`0.00s .. 0.34s`): Final block gleams with crystal-aqua halo & morphs its liquid into potion water.
+    // - Step 2 (`0.32s .. 1.76s`): Cream curtains sweep open (`0.26s .. 0.60s`) as ONE unbroken C-arch water stream
+    //   lifts from the smoothly draining glass block (`0.34s .. 1.02s`), arches into the mouth, and plunges to the floor (`0.62s`).
+    // - Step 3 (`0.62s .. 2.58s`): Crystal-aqua water rises inside the jar (`0.62s .. 1.84s`), holds calm & gleaming
+    //   (`1.84s .. 2.10s`), then blooms with crystal-aqua water sparkles & bubbles (`2.10s .. 2.58s`).
+    // - Step 4 (`2.30s .. 3.15s`): Radial crystal-aqua light wave transitions into the `WinOverlay` at `2.62s`.
     if (_winSequenceElapsed >= 0) {
       _winSequenceElapsed += clampedDt;
 
-      // Step 1b -> Step 2: Final winning tile glows, fractures (`0.10s .. 0.40s`),
-      // and crumbles/dissolves into sand (`0.38s .. 1.05s`) as the sand stream erupts upward!
+      // Step 1b -> Step 2: Final winning block morphs to crystal-aqua (`0.04s .. 0.34s`)
+      // and smoothly drains its water downward (`0.34s .. 1.02s`) as the unbroken water stream lifts off!
       if (_finalWinningPiece != null && _finalWinningPiece!.isMounted) {
         if (_winSequenceElapsed < 1.15) {
           final glowKeep =
@@ -2767,17 +2787,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
           }
         }
         final fractureP =
-            ((_winSequenceElapsed - 0.10) / 0.30).clamp(0.0, 1.0);
+            ((_winSequenceElapsed - 0.04) / 0.30).clamp(0.0, 1.0);
         final crumbleP =
-            ((_winSequenceElapsed - 0.38) / 0.66).clamp(0.0, 1.0);
+            ((_winSequenceElapsed - 0.34) / 0.68).clamp(0.0, 1.0);
         _finalWinningPiece!.setWinCrumbleState(
           fractureProgress: fractureP,
           crumbleProgress: crumbleP,
         );
       }
 
-      // Step 2: Spawn upward sand stream from the crumbling final tile into the jar (`0.38s`)
-      if (!_winSandStreamSpawned && _winSequenceElapsed >= 0.38) {
+      // Step 2: Spawn unbroken C-arch crystal-aqua water stream into the Potion Jar (`0.32s`)
+      if (!_winSandStreamSpawned && _winSequenceElapsed >= 0.32) {
         _winSandStreamSpawned = true;
         final winPiece = _finalWinningPiece;
         final winStyle = _sandJar?.style ??
@@ -2793,21 +2813,30 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
                 winPiece.worldCellCenters.isNotEmpty)
             ? winPiece.worldCellCenters
             : <Vector2>[primaryOrigin];
-        _boardStage.add(
-          BoardSandStreamToJarVfx(
-            finalTileCenter: primaryOrigin,
-            boardOrigins: tileOrigins,
-            targetMouthProvider: () =>
-                _sandJar?.mouthWorldPos ?? Vector2(0.0, _boardOrigin.y - _cellSize),
-            style: winStyle,
-            cellSize: _cellSize,
-          ),
+        final waterStream = BoardSandStreamToJarVfx(
+          finalTileCenter: primaryOrigin,
+          boardOrigins: tileOrigins,
+          targetMouthProvider: () =>
+              _sandJar?.mouthWorldPos ?? Vector2(0.0, _boardOrigin.y - _cellSize),
+          style: winStyle,
+          cellSize: _cellSize,
+          jar: _sandJar,
         );
+        _activeWinWaterStream = waterStream;
+        _boardStage.add(waterStream);
         audio.hapticMergeImpact();
       }
 
-      // Step 1 -> Step 3: Jar shake, glow, swirling sand fill & hidden object reveal, then jar opening
-      final fillP = ((_winSequenceElapsed - 0.55) / 1.30).clamp(0.0, 1.0);
+      if (_activeWinWaterStream != null &&
+          (_activeWinWaterStream!.isRemoved || _winSequenceElapsed >= 1.78)) {
+        _activeWinWaterStream = null;
+      }
+
+      // Step 1 -> Step 3: Curtain parting (`0.26s..0.60s`), lockstep rising water (`0.62s..1.84s` right as stream touches floor!),
+      // crystal-aqua glow, and completion bloom (`2.10s..2.58s`).
+      final curtainOpenP =
+          ((_winSequenceElapsed - 0.26) / 0.34).clamp(0.0, 1.0);
+      final fillP = ((_winSequenceElapsed - 0.62) / 1.22).clamp(0.0, 1.0);
       final glowP = ((_winSequenceElapsed - 0.46) / 1.15).clamp(0.0, 1.0);
       final shakeP =
           (_winSequenceElapsed >= 0.50 && _winSequenceElapsed < 2.08)
@@ -2816,12 +2845,16 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
                   .clamp(0.0, 1.0)
               : 0.0;
       final openP = ((_winSequenceElapsed - 2.10) / 0.48).clamp(0.0, 1.0);
+      final streamActive = _activeWinWaterStream != null;
       _sandJar?.setWinSequenceState(
         appearProgress: 1.0,
         fillProgress: fillP,
         glowIntensity: glowP,
         shakeIntensity: shakeP,
         openProgress: openP,
+        curtainOpenProgress: curtainOpenP,
+        externalStreamActive: streamActive,
+        externalStreamSideSign: _activeWinWaterStream?.archSideSign ?? 1.0,
       );
 
       if (!_winJarOpened && _winSequenceElapsed >= 2.10) {

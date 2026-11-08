@@ -647,7 +647,7 @@ class MergeSplashVfx extends PositionComponent {
       }
     }
 
-    // 5. Expanding Sloshing Liquid Wave Rings (`nước sóng sánh` — ZERO circular beads/particles!)
+    // 5. Expanding Sloshing Liquid Wave Rings & Glossy Water Teardrop Splashes (`media_1794007349252.png` Panel 1)
     final waveDur = 0.42 + 0.03 * _tier;
     final waveT = (_elapsed / waveDur).clamp(0.0, 1.0);
     if (waveT < 1.0) {
@@ -681,6 +681,46 @@ class MergeSplashVfx extends PositionComponent {
           ..color = (wIdx == 0 ? brightWave : Colors.white)
               .withValues(alpha: (0.82 * fade).clamp(0.0, 1.0));
         canvas.drawPath(_scratchPath, _liquidWavePaint);
+      }
+
+      // Glossy 3D liquid teardrops splashing radially outward
+      final dropCount = 8 + _tier * 2;
+      final dropFillPaint = ui.Paint()..style = PaintingStyle.fill;
+      final specPaint = ui.Paint()
+        ..style = PaintingStyle.fill
+        ..color = Colors.white.withValues(alpha: (0.90 * fade).clamp(0.0, 1.0));
+
+      for (int d = 0; d < dropCount; d++) {
+        final ang = (d / dropCount) * math.pi * 2.0 + (d.isEven ? 0.18 : -0.14);
+        final dist =
+            cellSize * (0.30 + easeOut * (0.92 + 0.18 * (d % 3) + 0.16 * _tier));
+        final r = (cellSize * (0.048 + 0.014 * (d % 2)) * (0.55 + 0.45 * fade))
+            .clamp(1.4, 5.8);
+        final dx = math.cos(ang) * dist;
+        final dy = math.sin(ang) * dist + cellSize * 0.10 * waveT * waveT;
+
+        canvas.save();
+        canvas.translate(dx, dy);
+        canvas.rotate(ang);
+        dropFillPaint.color = (d % 3 == 0 ? brightWave : accentColor)
+            .withValues(alpha: (0.88 * fade).clamp(0.0, 1.0));
+        canvas.drawOval(
+          ui.Rect.fromCenter(
+            center: ui.Offset.zero,
+            width: r * 2.4,
+            height: r * 1.55,
+          ),
+          dropFillPaint,
+        );
+        canvas.drawOval(
+          ui.Rect.fromCenter(
+            center: ui.Offset(r * 0.28, -r * 0.24),
+            width: r * 0.92,
+            height: r * 0.48,
+          ),
+          specPaint,
+        );
+        canvas.restore();
       }
     }
   }

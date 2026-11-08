@@ -52,8 +52,8 @@ class BlockOrderPalette {
     512: [Color(0xFF047C48), Color(0xFF08B86B), Color(0xFF1CE08A)], // Emerald Mint Lagoon
     1024: [Color(0xFF780854), Color(0xFFB81280), Color(0xFFE028A2)], // Berry Wine / Ruby Punch
     2048: [Color(0xFFD46A00), Color(0xFFFFA804), Color(0xFFFFD214)], // Golden Mango Nectar
-    4096: [Color(0xFF2812B8), Color(0xFF462EF2), Color(0xFF6852FF)], // Cosmic Blueberry Indigo
-    8192: [Color(0xFF00889E), Color(0xFF08C6DF), Color(0xFF34EAFF)], // Glacier Turquoise Fizz
+    4096: [Color(0xFF027BA8), Color(0xFF08BFE6), Color(0xFF3CF0FF)], // Crystal Aqua Potion
+    8192: [Color(0xFF2812B8), Color(0xFF462EF2), Color(0xFF6852FF)], // Cosmic Blueberry Indigo
     0: [Color(0xFF743508), Color(0xFFA85C24), Color(0xFFBF6F34)], // Dud
     -1: [Color(0xFF197AF0), Color(0xFF63A2FA), Color(0xFF82BEFF)], // Ice
   };

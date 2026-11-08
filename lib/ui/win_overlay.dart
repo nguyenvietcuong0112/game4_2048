@@ -23,6 +23,9 @@ import 'unity_ui_kit.dart';
 class WinOverlay extends StatefulWidget {
   final String levelLabel;
   final int rewardCoins;
+  final String timeFormatted;
+  final int movesCount;
+  final int comboCount;
   final VoidCallback? onStage2Shown;
   final ValueChanged<int>? onCoinChunkArrived;
   final VoidCallback onNextLevel;
@@ -31,6 +34,9 @@ class WinOverlay extends StatefulWidget {
     super.key,
     required this.levelLabel,
     required this.rewardCoins,
+    this.timeFormatted = '01:55',
+    this.movesCount = 0,
+    this.comboCount = 0,
     this.onStage2Shown,
     this.onCoinChunkArrived,
     required this.onNextLevel,
@@ -266,6 +272,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
           final nextBtnH = ux(context, 206);
           final nextBtnCenterY =
               centerY + math.min(ux(context, 685), safeH * 0.375);
+          final statsCenterY = centerY + ux(context, 415);
 
           final coinPopScale = (0.68 + 0.32 * stage2Pop) *
               (_collecting ? (1.0 - _coinFlyCtrl.value * 0.25) : 1.0);
@@ -388,6 +395,23 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                 ),
               ),
 
+              // 3b. 3-Stat Card (Time | Moves | Combo) matching media_1794007597111.png
+              Positioned(
+                left: 0,
+                right: 0,
+                top: statsCenterY - ux(context, 54),
+                child: Center(
+                  child: Transform.scale(
+                    scale: 0.74 + 0.26 * stage2Pop,
+                    child: wrapBoundaryFade(
+                      RepaintBoundary(
+                        child: _buildWinStatsRow(context),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
               // 4. `NextLevelButton` (`(718.9+20)x(233.2+20) * 0.82 = 606x206`, `sliceScale: 0.82`, `sz: 74`)
               Positioned(
                 left: (safeW - nextBtnW) * 0.5,
@@ -411,6 +435,141 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildWinStatsRow(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ux(context, 36),
+        vertical: ux(context, 14),
+      ),
+      decoration: BoxDecoration(
+        color: const Color.fromRGBO(10, 32, 74, 0.60),
+        borderRadius: BorderRadius.circular(ux(context, 32)),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.22),
+          width: ux(context, 2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // 1. Time (Clock icon + Time + timeFormatted in neon green)
+          _buildStatItem(
+            context,
+            icon: _buildClockIcon(context),
+            label: 'Time',
+            value: widget.timeFormatted,
+          ),
+          _buildStatDivider(context),
+
+          // 2. Moves (Arrow in circle + Moves + movesCount in neon green)
+          _buildStatItem(
+            context,
+            icon: _buildMovesIcon(context),
+            label: 'Moves',
+            value: '${widget.movesCount}',
+          ),
+          _buildStatDivider(context),
+
+          // 3. Combo (Star outline + Combo + comboCount in neon green)
+          _buildStatItem(
+            context,
+            icon: _buildComboStarIcon(context),
+            label: 'Combo',
+            value: '${widget.comboCount}',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(
+    BuildContext context, {
+    required Widget icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        icon,
+        SizedBox(width: ux(context, 14)),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Baloo2',
+                fontSize: ux(context, 30),
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                height: 1.05,
+              ),
+            ),
+            Text(
+              value,
+              style: TextStyle(
+                fontFamily: 'Baloo2',
+                fontSize: ux(context, 34),
+                fontWeight: FontWeight.w900,
+                color: const Color(0xFF69F0AE),
+                height: 1.1,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatDivider(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: ux(context, 26)),
+      child: Container(
+        width: 1.5,
+        height: ux(context, 52),
+        color: Colors.white.withValues(alpha: 0.35),
+      ),
+    );
+  }
+
+  Widget _buildClockIcon(BuildContext context) {
+    final size = ux(context, 50);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _ClockIconPainter(scale: uxScale(context)),
+      ),
+    );
+  }
+
+  Widget _buildMovesIcon(BuildContext context) {
+    final size = ux(context, 50);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _MovesArrowIconPainter(scale: uxScale(context)),
+      ),
+    );
+  }
+
+  Widget _buildComboStarIcon(BuildContext context) {
+    final size = ux(context, 50);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _ComboStarIconPainter(scale: uxScale(context)),
       ),
     );
   }
@@ -657,4 +816,131 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
         old.showCrossFlare != showCrossFlare ||
         old.intensity != intensity;
   }
+}
+
+class _ClockIconPainter extends CustomPainter {
+  final double scale;
+  _ClockIconPainter({required this.scale});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final c = Offset(w * 0.5, h * 0.5);
+    final r = w * 0.44;
+
+    final circlePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.8, 2.4 * scale)
+      ..color = Colors.white;
+    canvas.drawCircle(c, r, circlePaint);
+
+    final handPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.6, 2.2 * scale)
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.white;
+
+    // Hour hand at 12
+    canvas.drawLine(c, Offset(c.dx, c.dy - r * 0.54), handPaint);
+    // Minute hand at ~4
+    canvas.drawLine(c, Offset(c.dx + r * 0.56, c.dy + r * 0.24), handPaint);
+
+    // Center pivot dot
+    canvas.drawCircle(c, math.max(1.5, 2.0 * scale), Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ClockIconPainter oldDelegate) =>
+      oldDelegate.scale != scale;
+}
+
+class _MovesArrowIconPainter extends CustomPainter {
+  final double scale;
+  _MovesArrowIconPainter({required this.scale});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final c = Offset(w * 0.5, h * 0.5);
+    final r = w * 0.44;
+
+    final circlePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.8, 2.4 * scale)
+      ..color = Colors.white;
+    canvas.drawCircle(c, r, circlePaint);
+
+    final arrowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.8, 2.4 * scale)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = Colors.white;
+
+    // Horizontal arrow shaft
+    canvas.drawLine(
+      Offset(c.dx - r * 0.44, c.dy),
+      Offset(c.dx + r * 0.46, c.dy),
+      arrowPaint,
+    );
+
+    // Arrowhead
+    final headPath = Path()
+      ..moveTo(c.dx + r * 0.16, c.dy - r * 0.36)
+      ..lineTo(c.dx + r * 0.48, c.dy)
+      ..lineTo(c.dx + r * 0.16, c.dy + r * 0.36);
+    canvas.drawPath(headPath, arrowPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MovesArrowIconPainter oldDelegate) =>
+      oldDelegate.scale != scale;
+}
+
+class _ComboStarIconPainter extends CustomPainter {
+  final double scale;
+  _ComboStarIconPainter({required this.scale});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final cx = w * 0.5;
+    final cy = h * 0.5;
+    final outerR = w * 0.44;
+    final innerR = w * 0.21;
+
+    final starPath = Path();
+    for (int i = 0; i < 5; i++) {
+      final outerAngle = -math.pi / 2.0 + i * (2.0 * math.pi / 5.0);
+      final innerAngle = outerAngle + math.pi / 5.0;
+
+      final ox = cx + math.cos(outerAngle) * outerR;
+      final oy = cy + math.sin(outerAngle) * outerR;
+      if (i == 0) {
+        starPath.moveTo(ox, oy);
+      } else {
+        starPath.lineTo(ox, oy);
+      }
+
+      final ix = cx + math.cos(innerAngle) * innerR;
+      final iy = cy + math.sin(innerAngle) * innerR;
+      starPath.lineTo(ix, iy);
+    }
+    starPath.close();
+
+    final starPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.8, 2.4 * scale)
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.white;
+    canvas.drawPath(starPath, starPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ComboStarIconPainter oldDelegate) =>
+      oldDelegate.scale != scale;
 }

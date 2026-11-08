@@ -897,6 +897,9 @@ class _GameplayScreenState extends State<GameplayScreen>
             WinOverlay(
               levelLabel: _activeLevel.title,
               rewardCoins: _activeLevel.coinReward,
+              timeFormatted: _game.elapsedTimeFormatted,
+              movesCount: _game.movesCount,
+              comboCount: _game.highestCombo,
               onStage2Shown: widget.audio.playWinAmazing,
               onCoinChunkArrived: (chunk) {
                 widget.progress.collectPendingWinCoinChunk(chunk);

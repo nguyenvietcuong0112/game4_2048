@@ -68,33 +68,34 @@ class UnityChannelMaskFilters {
   }
 }
 
-/// Pre-bakes a `128x64` 2-tile RGBA sprite (`[0..64] = hot white star`, `[64..128] = white-cored tinted star`)
-/// from Unity's `RG8` `Sparkle_01.png` once per palette accent color so all sparkle particle systems
-/// render in a SINGLE `Canvas.drawAtlas` GPU batch with zero per-particle `ColorFilter.matrix` allocations!
-class _SparkleDualAtlasCache {
-  _SparkleDualAtlasCache._();
+/// Pre-bakes a clean `64x64` RGBA white star sprite from Unity's `RG8` `Sparkle_01.png`
+/// once at startup so all sparkle particle systems render in a SINGLE `Canvas.drawAtlas`
+/// GPU batch with zero per-frame `toImageSync` or `ColorFilter.matrix` allocations!
+class SparkleAtlas {
+  SparkleAtlas._();
 
   static const double tileSize = 64.0;
-  static const ui.Rect whiteTileRect = ui.Rect.fromLTWH(0, 0, tileSize, tileSize);
-  static const ui.Rect tintedTileRect =
-      ui.Rect.fromLTWH(tileSize, 0, tileSize, tileSize);
+  static const ui.Rect tileRect = ui.Rect.fromLTWH(0, 0, tileSize, tileSize);
+  static const ui.Rect whiteTileRect = tileRect;
+  static const ui.Rect tintedTileRect = tileRect;
 
-  static ui.Image? _lastSource;
-  static final Map<int, ui.Image> _cache = <int, ui.Image>{};
+  static ui.Image? _starImage;
 
-  static ui.Image? getOrBake(ui.Image? rawSparkle, Color accentColor) {
-    if (rawSparkle == null) return null;
-    if (!identical(_lastSource, rawSparkle)) {
-      for (final img in _cache.values) {
-        img.dispose();
-      }
-      _cache.clear();
-      _lastSource = rawSparkle;
-    }
-    final key = accentColor.toARGB32();
-    final existing = _cache[key];
-    if (existing != null) return existing;
+  static ui.Image? get starImage {
+    if (_starImage != null) return _starImage;
+    final raw = _safeFlameImage('Sparkle_01.png');
+    if (raw == null) return null;
+    return _bakeWhiteStar(raw);
+  }
 
+  static Future<void> ensureLoaded() async {
+    if (_starImage != null) return;
+    final raw = _safeFlameImage('Sparkle_01.png');
+    if (raw == null) return;
+    _starImage = _bakeWhiteStar(raw);
+  }
+
+  static ui.Image? _bakeWhiteStar(ui.Image rawSparkle) {
     try {
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
@@ -107,7 +108,7 @@ class _SparkleDualAtlasCache {
       canvas.drawImageRect(
         rawSparkle,
         src,
-        whiteTileRect,
+        tileRect,
         ui.Paint()
           ..filterQuality = FilterQuality.medium
           ..colorFilter = UnityChannelMaskFilters.rgDualChannelStar(
@@ -115,29 +116,22 @@ class _SparkleDualAtlasCache {
             opacity: 1.0,
           ),
       );
-      canvas.drawImageRect(
-        rawSparkle,
-        src,
-        tintedTileRect,
-        ui.Paint()
-          ..filterQuality = FilterQuality.medium
-          ..colorFilter = UnityChannelMaskFilters.rgDualChannelStar(
-            accentColor,
-            opacity: 1.0,
-          ),
-      );
       final pic = recorder.endRecording();
-      final baked = pic.toImageSync((tileSize * 2).toInt(), tileSize.toInt());
+      final baked = pic.toImageSync(tileSize.toInt(), tileSize.toInt());
       pic.dispose();
-      if (_cache.length >= 32) {
-        final oldest = _cache.remove(_cache.keys.first);
-        oldest?.dispose();
-      }
-      _cache[key] = baked;
+      _starImage = baked;
       return baked;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Backward-compatible access that returns the pre-baked white star texture immediately
+  /// with ZERO synchronous GPU stalls during gameplay!
+  static ui.Image? getOrBake(ui.Image? rawSparkle, [Color? _]) {
+    if (_starImage != null) return _starImage;
+    if (rawSparkle == null) return null;
+    return _bakeWhiteStar(rawSparkle);
   }
 }
 
@@ -322,7 +316,6 @@ class MergeSplashVfx extends PositionComponent {
   ui.Image? _ringImg;
   ui.Image? _haloImg;
   ui.Image? _flareImg;
-  ui.Image? _sparkleImg;
 
   MergeSplashVfx({
     required Vector2 centerPos,
@@ -341,7 +334,6 @@ class MergeSplashVfx extends PositionComponent {
     _ringImg = _safeFlameImage('Glow_Ring.png');
     _haloImg = _safeFlameImage('Explosion_Halo.png');
     _flareImg = _safeFlameImage('ParticleFlare.png');
-    _sparkleImg = _safeFlameImage('Sparkle_01.png');
 
     final speedScale = 1.0 + 0.16 * _tier;
     final sizeScale = 1.0 + 0.11 * _tier;
@@ -362,7 +354,7 @@ class MergeSplashVfx extends PositionComponent {
         );
         final spanLength = math.max(1, edge.cells) * cellSize * 0.78;
         final dropletCount =
-            (5 + rng.nextInt(4) + 3 * _tier) * math.max(1, edge.cells);
+            ((4 + rng.nextInt(3) + _tier) * math.max(1, edge.cells)).clamp(4, 16);
 
         for (int i = 0; i < dropletCount; i++) {
           final alongOffset = (rng.nextDouble() - 0.5) * spanLength;
@@ -390,7 +382,7 @@ class MergeSplashVfx extends PositionComponent {
       final normPush = hasPush ? pushDir / pushDir.distance : ui.Offset.zero;
       final tangent = ui.Offset(-normPush.dy, normPush.dx);
 
-      final count = 20 + 7 * _tier;
+      final count = (14 + 3 * _tier).clamp(14, 22);
       for (int i = 0; i < count; i++) {
         final angle =
             (i / count) * math.pi * 2 + (rng.nextDouble() - 0.5) * 0.34;
@@ -458,26 +450,32 @@ class MergeSplashVfx extends PositionComponent {
       final rayT = (_elapsed / rayDur).clamp(0.0, 1.0);
       if (rayT < 1.0) {
         final rayFade = (1.0 - rayT).clamp(0.0, 1.0);
-        final rayCount = 6 + _tier * 2;
+        final rayCount = (5 + _tier).clamp(5, 8);
         final rayLen =
             cellSize * (0.75 + (0.95 + 0.22 * _tier) * math.sqrt(rayT));
         final rayHalfW = cellSize * (0.055 + 0.008 * _tier) * rayFade;
         _rayPaint.color = ringColor.withValues(
           alpha: (0.42 + 0.05 * _tier).clamp(0.0, 0.78) * rayFade,
         );
-        _scratchPath
-          ..reset()
-          ..moveTo(0, 0)
-          ..lineTo(-rayHalfW, -rayLen)
-          ..lineTo(rayHalfW, -rayLen)
-          ..close();
+        _scratchPath.reset();
         for (int i = 0; i < rayCount; i++) {
-          final ang = _elapsed * 2.6 + (i * math.pi * 2.0 / rayCount);
-          canvas.save();
-          canvas.rotate(ang);
-          canvas.drawPath(_scratchPath, _rayPaint);
-          canvas.restore();
+          final ang = (i * math.pi * 2.0 / rayCount);
+          final cosA = math.cos(ang);
+          final sinA = math.sin(ang);
+          final perpX = -sinA * rayHalfW;
+          final perpY = cosA * rayHalfW;
+          final tipX = cosA * rayLen;
+          final tipY = sinA * rayLen;
+          _scratchPath
+            ..moveTo(perpX, perpY)
+            ..lineTo(tipX, tipY)
+            ..lineTo(-perpX, -perpY)
+            ..close();
         }
+        canvas.save();
+        canvas.rotate(_elapsed * 2.6);
+        canvas.drawPath(_scratchPath, _rayPaint);
+        canvas.restore();
       }
     }
 
@@ -595,12 +593,12 @@ class MergeSplashVfx extends PositionComponent {
     }
 
     // 4. Radial `Sparkle_01.png` RG8 dual-channel particles batched in 1 GPU `drawAtlas` call!
-    final dualAtlas = _SparkleDualAtlasCache.getOrBake(_sparkleImg, accentColor);
-    if (dualAtlas != null) {
+    final starImg = SparkleAtlas.starImage;
+    if (starImg != null) {
       _scratchTransforms.clear();
       _scratchRects.clear();
       _scratchColors.clear();
-      const halfTile = _SparkleDualAtlasCache.tileSize * 0.5;
+      const halfTile = SparkleAtlas.tileSize * 0.5;
       for (int i = 0; i < _particles.length; i++) {
         final p = _particles[i];
         if (p.life <= 0) continue;
@@ -610,24 +608,20 @@ class MergeSplashVfx extends PositionComponent {
         _scratchTransforms.add(
           ui.RSTransform.fromComponents(
             rotation: p.rotation * 0.35,
-            scale: s / _SparkleDualAtlasCache.tileSize,
+            scale: s / SparkleAtlas.tileSize,
             anchorX: halfTile,
             anchorY: halfTile,
             translateX: p.pos.dx,
             translateY: p.pos.dy,
           ),
         );
-        _scratchRects.add(
-          p.color == Colors.white
-              ? _SparkleDualAtlasCache.whiteTileRect
-              : _SparkleDualAtlasCache.tintedTileRect,
-        );
-        _scratchColors.add(Color.fromRGBO(255, 255, 255, t));
+        _scratchRects.add(SparkleAtlas.tileRect);
+        _scratchColors.add(p.color.withValues(alpha: t));
       }
       if (_scratchTransforms.isNotEmpty) {
         _additivePaint.colorFilter = null;
         canvas.drawAtlas(
-          dualAtlas,
+          starImg,
           _scratchTransforms,
           _scratchRects,
           _scratchColors,
@@ -658,33 +652,16 @@ class MergeSplashVfx extends PositionComponent {
       for (int wIdx = 0; wIdx < 2; wIdx++) {
         final rBase =
             cellSize * ((0.22 + wIdx * 0.14) + easeOut * (0.85 + 0.22 * _tier));
-        final wobbleAmp = cellSize * 0.065 * fade;
-        _scratchPath.reset();
-        const int segs = 32;
-        for (int s = 0; s <= segs; s++) {
-          final ang = (s / segs) * math.pi * 2.0;
-          final r = rBase +
-              math.sin(ang * 4.0 + _elapsed * 18.0 + wIdx * 1.6) * wobbleAmp;
-          final px = math.cos(ang) * r;
-          final py = math.sin(ang) * r;
-          if (s == 0) {
-            _scratchPath.moveTo(px, py);
-          } else {
-            _scratchPath.lineTo(px, py);
-          }
-        }
-        _scratchPath.close();
-
         _liquidWavePaint
           ..strokeWidth =
               (cellSize * (wIdx == 0 ? 0.052 : 0.032) * fade).clamp(1.2, 5.2)
           ..color = (wIdx == 0 ? brightWave : Colors.white)
               .withValues(alpha: (0.82 * fade).clamp(0.0, 1.0));
-        canvas.drawPath(_scratchPath, _liquidWavePaint);
+        canvas.drawCircle(ui.Offset.zero, rBase, _liquidWavePaint);
       }
 
-      // Glossy 3D liquid teardrops splashing radially outward
-      final dropCount = 8 + _tier * 2;
+      // Glossy 3D liquid droplets splashing radially outward (zero matrix push/pop)
+      final dropCount = (6 + _tier).clamp(6, 12);
       final dropFillPaint = ui.Paint()..style = PaintingStyle.fill;
       final specPaint = ui.Paint()
         ..style = PaintingStyle.fill
@@ -698,29 +675,12 @@ class MergeSplashVfx extends PositionComponent {
             .clamp(1.4, 5.8);
         final dx = math.cos(ang) * dist;
         final dy = math.sin(ang) * dist + cellSize * 0.10 * waveT * waveT;
+        final center = ui.Offset(dx, dy);
 
-        canvas.save();
-        canvas.translate(dx, dy);
-        canvas.rotate(ang);
         dropFillPaint.color = (d % 3 == 0 ? brightWave : accentColor)
             .withValues(alpha: (0.88 * fade).clamp(0.0, 1.0));
-        canvas.drawOval(
-          ui.Rect.fromCenter(
-            center: ui.Offset.zero,
-            width: r * 2.4,
-            height: r * 1.55,
-          ),
-          dropFillPaint,
-        );
-        canvas.drawOval(
-          ui.Rect.fromCenter(
-            center: ui.Offset(r * 0.28, -r * 0.24),
-            width: r * 0.92,
-            height: r * 0.48,
-          ),
-          specPaint,
-        );
-        canvas.restore();
+        canvas.drawCircle(center, r, dropFillPaint);
+        canvas.drawCircle(center + ui.Offset(r * 0.26, -r * 0.26), r * 0.38, specPaint);
       }
     }
   }
@@ -737,7 +697,6 @@ class IceShatterVfx extends PositionComponent {
 
   ui.Image? _shardsAtlas;
   ui.Image? _haloImg;
-  ui.Image? _sparkleImg;
   final ui.Paint _additivePaint = ui.Paint()..blendMode = BlendMode.plus;
   final ui.Paint _shardPaint = ui.Paint()..filterQuality = FilterQuality.low;
 
@@ -752,7 +711,6 @@ class IceShatterVfx extends PositionComponent {
   }) : super(position: centerPos, priority: 210) {
     _shardsAtlas = _safeFlameImage('Ice_Shards.png');
     _haloImg = _safeFlameImage('Explosion_Halo.png');
-    _sparkleImg = _safeFlameImage('Sparkle_01.png');
 
     final localCenters = (worldCellCenters != null && worldCellCenters.isNotEmpty)
         ? worldCellCenters
@@ -860,13 +818,12 @@ class IceShatterVfx extends PositionComponent {
       }
     }
 
-    final moteAtlas =
-        _SparkleDualAtlasCache.getOrBake(_sparkleImg, const Color(0xFF9BE8FF));
+    final moteAtlas = SparkleAtlas.starImage;
     if (moteAtlas != null) {
       _scratchTransforms.clear();
       _scratchRects.clear();
       _scratchColors.clear();
-      const halfTile = _SparkleDualAtlasCache.tileSize * 0.5;
+      const halfTile = SparkleAtlas.tileSize * 0.5;
       for (int i = 0; i < _frostMotes.length; i++) {
         final m = _frostMotes[i];
         if (m.life <= 0) continue;
@@ -876,15 +833,15 @@ class IceShatterVfx extends PositionComponent {
         _scratchTransforms.add(
           ui.RSTransform.fromComponents(
             rotation: 0.0,
-            scale: sz / _SparkleDualAtlasCache.tileSize,
+            scale: sz / SparkleAtlas.tileSize,
             anchorX: halfTile,
             anchorY: halfTile,
             translateX: m.pos.dx,
             translateY: m.pos.dy,
           ),
         );
-        _scratchRects.add(_SparkleDualAtlasCache.tintedTileRect);
-        _scratchColors.add(Color.fromRGBO(255, 255, 255, t * 0.9));
+        _scratchRects.add(SparkleAtlas.tileRect);
+        _scratchColors.add(m.color.withValues(alpha: t * 0.9));
       }
       if (_scratchTransforms.isNotEmpty) {
         _additivePaint.colorFilter = null;
@@ -1088,7 +1045,6 @@ class LevelUpSparksVfx extends PositionComponent {
   final Color color;
   final double cellSize;
   final List<_VfxParticle> _sparks = [];
-  ui.Image? _sparkleImg;
   final ui.Paint _additivePaint = ui.Paint()..blendMode = BlendMode.plus;
   final List<ui.RSTransform> _scratchTransforms = <ui.RSTransform>[];
   final List<ui.Rect> _scratchRects = <ui.Rect>[];
@@ -1099,7 +1055,6 @@ class LevelUpSparksVfx extends PositionComponent {
     required this.color,
     required this.cellSize,
   }) : super(position: pos, priority: 205) {
-    _sparkleImg = _safeFlameImage('Sparkle_01.png');
     final rng = math.Random();
     for (int i = 0; i < 8; i++) {
       final a = rng.nextDouble() * math.pi * 2;
@@ -1132,12 +1087,12 @@ class LevelUpSparksVfx extends PositionComponent {
 
   @override
   void render(ui.Canvas canvas) {
-    final dualAtlas = _SparkleDualAtlasCache.getOrBake(_sparkleImg, color);
-    if (dualAtlas != null) {
+    final starAtlas = SparkleAtlas.starImage;
+    if (starAtlas != null) {
       _scratchTransforms.clear();
       _scratchRects.clear();
       _scratchColors.clear();
-      const halfTile = _SparkleDualAtlasCache.tileSize * 0.5;
+      const halfTile = SparkleAtlas.tileSize * 0.5;
       for (int i = 0; i < _sparks.length; i++) {
         final s = _sparks[i];
         if (s.life <= 0) continue;
@@ -1147,24 +1102,20 @@ class LevelUpSparksVfx extends PositionComponent {
         _scratchTransforms.add(
           ui.RSTransform.fromComponents(
             rotation: 0.0,
-            scale: sz / _SparkleDualAtlasCache.tileSize,
+            scale: sz / SparkleAtlas.tileSize,
             anchorX: halfTile,
             anchorY: halfTile,
             translateX: s.pos.dx,
             translateY: s.pos.dy,
           ),
         );
-        _scratchRects.add(
-          s.color == Colors.white
-              ? _SparkleDualAtlasCache.whiteTileRect
-              : _SparkleDualAtlasCache.tintedTileRect,
-        );
-        _scratchColors.add(Color.fromRGBO(255, 255, 255, t));
+        _scratchRects.add(SparkleAtlas.tileRect);
+        _scratchColors.add(s.color.withValues(alpha: t));
       }
       if (_scratchTransforms.isNotEmpty) {
         _additivePaint.colorFilter = null;
         canvas.drawAtlas(
-          dualAtlas,
+          starAtlas,
           _scratchTransforms,
           _scratchRects,
           _scratchColors,
@@ -1254,7 +1205,6 @@ class MergeBlockSparksVfx extends PositionComponent {
   double _delayRemaining;
   bool _spawned = false;
   final List<_VfxParticle> _sparks = [];
-  ui.Image? _sparkleImg;
   final ui.Paint _additivePaint = ui.Paint()..blendMode = BlendMode.plus;
   final List<ui.RSTransform> _scratchTransforms = <ui.RSTransform>[];
   final List<ui.Rect> _scratchRects = <ui.Rect>[];
@@ -1270,7 +1220,6 @@ class MergeBlockSparksVfx extends PositionComponent {
     this.mergedNumber = 4,
   })  : _delayRemaining = delaySeconds,
         super(position: Vector2.zero(), priority: 206) {
-    _sparkleImg = _safeFlameImage('Sparkle_01.png');
     if (_delayRemaining <= 0.0) {
       _spawnNow();
     }
@@ -1352,12 +1301,12 @@ class MergeBlockSparksVfx extends PositionComponent {
   @override
   void render(ui.Canvas canvas) {
     if (!_spawned) return;
-    final dualAtlas = _SparkleDualAtlasCache.getOrBake(_sparkleImg, accentColor);
-    if (dualAtlas != null) {
+    final starAtlas = SparkleAtlas.starImage;
+    if (starAtlas != null) {
       _scratchTransforms.clear();
       _scratchRects.clear();
       _scratchColors.clear();
-      const halfTile = _SparkleDualAtlasCache.tileSize * 0.5;
+      const halfTile = SparkleAtlas.tileSize * 0.5;
       for (int i = 0; i < _sparks.length; i++) {
         final s = _sparks[i];
         if (s.life <= 0) continue;
@@ -1371,24 +1320,20 @@ class MergeBlockSparksVfx extends PositionComponent {
         _scratchTransforms.add(
           ui.RSTransform.fromComponents(
             rotation: s.rotation * 0.25,
-            scale: sz / _SparkleDualAtlasCache.tileSize,
+            scale: sz / SparkleAtlas.tileSize,
             anchorX: halfTile,
             anchorY: halfTile,
             translateX: s.pos.dx,
             translateY: s.pos.dy,
           ),
         );
-        _scratchRects.add(
-          s.color == Colors.white
-              ? _SparkleDualAtlasCache.whiteTileRect
-              : _SparkleDualAtlasCache.tintedTileRect,
-        );
-        _scratchColors.add(Color.fromRGBO(255, 255, 255, remFrac));
+        _scratchRects.add(SparkleAtlas.tileRect);
+        _scratchColors.add(s.color.withValues(alpha: remFrac));
       }
       if (_scratchTransforms.isNotEmpty) {
         _additivePaint.colorFilter = null;
         canvas.drawAtlas(
-          dualAtlas,
+          starAtlas,
           _scratchTransforms,
           _scratchRects,
           _scratchColors,
@@ -1473,56 +1418,107 @@ class ComboPraiseTier {
         return const ComboPraiseTier(
           comboCount: 4,
           comboLabel: 'X4',
-          praiseText: 'PERFECT!',
-          primaryColor: Color(0xFFFF6B00),
+          praiseText: 'AWESOME!',
+          primaryColor: Color(0xFFFF7A00),
           secondaryColor: Color(0xFFFFD08A),
           strokeColor: Color(0xFF4A1200),
-          scaleBoost: 1.18,
+          scaleBoost: 1.14,
         );
       case 5:
         return const ComboPraiseTier(
           comboCount: 5,
           comboLabel: 'X5',
-          praiseText: 'WOW!',
+          praiseText: 'AMAZING!',
           primaryColor: Color(0xFFFF2A85),
           secondaryColor: Color(0xFFFFB2D6),
           strokeColor: Color(0xFF480624),
-          scaleBoost: 1.26,
+          scaleBoost: 1.20,
         );
       case 6:
         return const ComboPraiseTier(
           comboCount: 6,
           comboLabel: 'X6',
-          praiseText: 'AMAZING!',
+          praiseText: 'BRILLIANT!',
           primaryColor: Color(0xFFB721FF),
           secondaryColor: Color(0xFFEAC2FF),
           strokeColor: Color(0xFF2B0548),
-          scaleBoost: 1.34,
+          scaleBoost: 1.26,
+        );
+      case 7:
+        return const ComboPraiseTier(
+          comboCount: 7,
+          comboLabel: 'X7',
+          praiseText: 'EXCELLENT!',
+          primaryColor: Color(0xFF00E5FF),
+          secondaryColor: Color(0xFFC4FBFF),
+          strokeColor: Color(0xFF003847),
+          scaleBoost: 1.32,
+        );
+      case 8:
+        return const ComboPraiseTier(
+          comboCount: 8,
+          comboLabel: 'X8',
+          praiseText: 'FLAWLESS!',
+          primaryColor: Color(0xFFFF2B58),
+          secondaryColor: Color(0xFFFFB5C8),
+          strokeColor: Color(0xFF4D0014),
+          scaleBoost: 1.38,
+        );
+      case 9:
+        return const ComboPraiseTier(
+          comboCount: 9,
+          comboLabel: 'X9',
+          praiseText: 'LEGENDARY!',
+          primaryColor: Color(0xFFFFD700),
+          secondaryColor: Color(0xFFFFF8DC),
+          strokeColor: Color(0xFF4A2800),
+          scaleBoost: 1.44,
         );
       default:
         return ComboPraiseTier(
           comboCount: c,
           comboLabel: 'X$c',
-          praiseText: 'UNSTOPPABLE!',
+          praiseText: 'INCREDIBLE!',
           primaryColor: const Color(0xFFFFEE55),
           secondaryColor: const Color(0xFFFFFFFF),
-          strokeColor: const Color(0xFF4D1A00),
-          scaleBoost: (1.38 + (c - 7) * 0.04).clamp(1.38, 1.54),
+          strokeColor: const Color(0xFF4D0A00),
+          scaleBoost: (1.48 + (c - 10) * 0.03).clamp(1.48, 1.62),
         );
     }
   }
 }
 
-/// Pre-bakes the 3D stroked `X1, X2, X3...` pill + `NICE! / PERFECT! / WOW!` callout into a single
-/// RGBA `ui.Image` cached by `(comboCount, cellSizeBucket)` so `ComboPraiseCalloutVfx.render`
-/// executes in 1 GPU `drawImageRect` call with zero `saveLayer` or repeated `TextPainter.layout()`.
-class _ComboBadgeImageCache {
-  _ComboBadgeImageCache._();
+/// Cached CPU vector layout for the 3D stroked `X1, X2, X3...` pill + praise callout.
+/// Layout is computed once in CPU memory per combo count and cell size with ZERO GPU texture
+/// allocation or synchronous `toImageSync` blocking!
+class _ComboBadgeLayout {
+  final TextPainter comboFillTp;
+  final TextPainter comboStrokeTp;
+  final TextPainter? praiseFillTp;
+  final TextPainter? praiseStrokeTp;
+  final ui.RRect pillRRect;
+  final ui.Offset comboOffset;
+  final ui.Offset? praiseOffset;
+  final ui.Rect bounds;
 
-  static final Map<int, (ui.Image, double, double)> _cache =
-      <int, (ui.Image, double, double)>{};
+  const _ComboBadgeLayout({
+    required this.comboFillTp,
+    required this.comboStrokeTp,
+    this.praiseFillTp,
+    this.praiseStrokeTp,
+    required this.pillRRect,
+    required this.comboOffset,
+    this.praiseOffset,
+    required this.bounds,
+  });
+}
 
-  static (ui.Image, double, double)? getOrBake(
+class _ComboBadgeLayoutCache {
+  _ComboBadgeLayoutCache._();
+
+  static final Map<int, _ComboBadgeLayout> _cache = <int, _ComboBadgeLayout>{};
+
+  static _ComboBadgeLayout? getOrCreate(
     ComboPraiseTier tier,
     double cellSize,
   ) {
@@ -1532,7 +1528,6 @@ class _ComboBadgeImageCache {
     if (cached != null) return cached;
 
     try {
-      const double dpr = 2.0;
       final comboFontSize =
           (cellSize * 0.36 * tier.scaleBoost).clamp(18.0, 40.0);
       final comboStrokeTp = _layoutText(
@@ -1577,16 +1572,6 @@ class _ComboBadgeImageCache {
       final maxW = math.max(pillW, praiseFillTp?.width ?? 0.0) + 24.0;
       final totalH = pillH + (hasPraise ? praiseFillTp.height + 16.0 : 12.0);
 
-      final pxW = (maxW * dpr).ceil().clamp(16, 1024);
-      final pxH = (totalH * dpr).ceil().clamp(16, 512);
-      final logicalW = pxW / dpr;
-      final logicalH = pxH / dpr;
-
-      final recorder = ui.PictureRecorder();
-      final canvas = ui.Canvas(recorder);
-      canvas.scale(dpr, dpr);
-      canvas.translate(logicalW * 0.5, logicalH * 0.5);
-
       final topY = hasPraise
           ? -comboFillTp.height * 0.95
           : -comboFillTp.height * 0.5;
@@ -1598,44 +1583,37 @@ class _ComboBadgeImageCache {
         ),
         ui.Radius.circular(pillH * 0.5),
       );
-      canvas.drawRRect(
-        pillRRect,
-        ui.Paint()..color = tier.strokeColor.withValues(alpha: 0.88),
-      );
-      canvas.drawRRect(
-        pillRRect,
-        ui.Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..color = tier.primaryColor,
-      );
 
       final comboOffset = ui.Offset(-comboFillTp.width * 0.5, topY);
-      comboStrokeTp.paint(canvas, comboOffset + const ui.Offset(0.0, 1.5));
-      comboStrokeTp.paint(canvas, comboOffset);
-      comboFillTp.paint(canvas, comboOffset);
+      final praiseOffset = hasPraise
+          ? ui.Offset(
+              -praiseFillTp.width * 0.5,
+              topY + comboFillTp.height * 0.88,
+            )
+          : null;
 
-      if (hasPraise) {
-        final praiseOffset = ui.Offset(
-          -praiseFillTp.width * 0.5,
-          topY + comboFillTp.height * 0.88,
-        );
-        praiseStrokeTp.paint(canvas, praiseOffset + const ui.Offset(0.0, 2.8));
-        praiseStrokeTp.paint(canvas, praiseOffset);
-        praiseFillTp.paint(canvas, praiseOffset);
+      final bounds = ui.Rect.fromCenter(
+        center: ui.Offset(0.0, topY + comboFillTp.height * 0.5),
+        width: maxW,
+        height: totalH,
+      );
+
+      final layout = _ComboBadgeLayout(
+        comboFillTp: comboFillTp,
+        comboStrokeTp: comboStrokeTp,
+        praiseFillTp: praiseFillTp,
+        praiseStrokeTp: praiseStrokeTp,
+        pillRRect: pillRRect,
+        comboOffset: comboOffset,
+        praiseOffset: praiseOffset,
+        bounds: bounds,
+      );
+
+      if (_cache.length >= 32) {
+        _cache.remove(_cache.keys.first);
       }
-
-      final pic = recorder.endRecording();
-      final img = pic.toImageSync(pxW, pxH);
-      pic.dispose();
-
-      if (_cache.length >= 24) {
-        final oldest = _cache.remove(_cache.keys.first);
-        oldest?.$1.dispose();
-      }
-      final entry = (img, logicalW, logicalH);
-      _cache[key] = entry;
-      return entry;
+      _cache[key] = layout;
+      return layout;
     } catch (_) {
       return null;
     }
@@ -1664,23 +1642,27 @@ class _ComboBadgeImageCache {
 }
 
 /// Floating 3D combo badge (`COMBO x2, x3...`) and praise callout (`NICE!`, `GREAT!`,
-/// `PERFECT!`, `WOW!`, `AMAZING!`, `UNSTOPPABLE!`) spawned above the merged piece.
+/// `AWESOME!`, `AMAZING!`, `BRILLIANT!`, `EXCELLENT!`, `FLAWLESS!`, `LEGENDARY!`, `INCREDIBLE!`)
+/// spawned above the merged piece.
 class ComboPraiseCalloutVfx extends PositionComponent {
   final ComboPraiseTier tier;
   final double cellSize;
   final double duration;
   double _elapsed = 0.0;
 
-  (ui.Image, double, double)? _bakedBadge;
+  _ComboBadgeLayout? _badgeLayout;
   final List<_VfxParticle> _burstParticles = <_VfxParticle>[];
   final List<ui.RSTransform> _scratchTransforms = <ui.RSTransform>[];
   final List<ui.Rect> _scratchRects = <ui.Rect>[];
   final List<Color> _scratchColors = <Color>[];
-  ui.Image? _sparkleImg;
   ui.Image? _ringImg;
   final ui.Paint _ringPaint = ui.Paint()..blendMode = BlendMode.plus;
   final ui.Paint _sparkPaint = ui.Paint()..blendMode = BlendMode.plus;
-  final ui.Paint _badgePaint = ui.Paint()..filterQuality = FilterQuality.low;
+  final ui.Paint _pillFillPaint = ui.Paint()..style = PaintingStyle.fill;
+  final ui.Paint _pillBorderPaint = ui.Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2.5;
+  final ui.Paint _fadePaint = ui.Paint();
 
   ComboPraiseCalloutVfx({
     required Vector2 anchorWorld,
@@ -1702,9 +1684,8 @@ class ComboPraiseCalloutVfx extends PositionComponent {
           ),
           priority: 240,
         ) {
-    _sparkleImg = _safeFlameImage('Sparkle_01.png');
     _ringImg = _safeFlameImage('Glow_Ring.png');
-    _bakedBadge = _ComboBadgeImageCache.getOrBake(tier, cellSize);
+    _badgeLayout = _ComboBadgeLayoutCache.getOrCreate(tier, cellSize);
 
     if (tier.comboCount >= 2) {
       final rng = math.Random(tier.comboCount * 997);
@@ -1812,13 +1793,12 @@ class ComboPraiseCalloutVfx extends PositionComponent {
     }
 
     // 2. Burst sparkles batched into a single `Canvas.drawAtlas` GPU call
-    final dualAtlas =
-        _SparkleDualAtlasCache.getOrBake(_sparkleImg, tier.primaryColor);
-    if (dualAtlas != null) {
+    final starAtlas = SparkleAtlas.starImage;
+    if (starAtlas != null) {
       _scratchTransforms.clear();
       _scratchRects.clear();
       _scratchColors.clear();
-      const halfTile = _SparkleDualAtlasCache.tileSize * 0.5;
+      const halfTile = SparkleAtlas.tileSize * 0.5;
       for (int i = 0; i < _burstParticles.length; i++) {
         final p = _burstParticles[i];
         if (p.life <= 0) continue;
@@ -1828,24 +1808,20 @@ class ComboPraiseCalloutVfx extends PositionComponent {
         _scratchTransforms.add(
           ui.RSTransform.fromComponents(
             rotation: p.rotation * 0.35,
-            scale: sz / _SparkleDualAtlasCache.tileSize,
+            scale: sz / SparkleAtlas.tileSize,
             anchorX: halfTile,
             anchorY: halfTile,
             translateX: p.pos.dx,
             translateY: p.pos.dy + riseY * 0.5,
           ),
         );
-        _scratchRects.add(
-          p.color == Colors.white
-              ? _SparkleDualAtlasCache.whiteTileRect
-              : _SparkleDualAtlasCache.tintedTileRect,
-        );
-        _scratchColors.add(Color.fromRGBO(255, 255, 255, rem * alpha));
+        _scratchRects.add(SparkleAtlas.tileRect);
+        _scratchColors.add(p.color.withValues(alpha: rem * alpha));
       }
       if (_scratchTransforms.isNotEmpty) {
         _sparkPaint.colorFilter = null;
         canvas.drawAtlas(
-          dualAtlas,
+          starAtlas,
           _scratchTransforms,
           _scratchRects,
           _scratchColors,
@@ -1867,25 +1843,46 @@ class ComboPraiseCalloutVfx extends PositionComponent {
       }
     }
 
-    // 3. Draw pre-baked 3D stroked `COMBO xN` pill + `NICE! / PERFECT! / WOW!` badge in 1 draw call (zero saveLayer!)
-    final badge = _bakedBadge;
-    if (badge != null) {
-      final (img, logicalW, logicalH) = badge;
-      _badgePaint.color = Color.fromRGBO(255, 255, 255, alpha);
+    // 3. Direct vector rendering of 3D stroked `COMBO xN` pill + praise callout (zero toImageSync stalls!)
+    final layout = _badgeLayout;
+    if (layout != null) {
       canvas.save();
       canvas.translate(0.0, riseY);
       canvas.rotate(tiltRad);
       canvas.scale(scale, scale);
-      canvas.drawImageRect(
-        img,
-        ui.Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-        ui.Rect.fromCenter(
-          center: ui.Offset.zero,
-          width: logicalW,
-          height: logicalH,
-        ),
-        _badgePaint,
+
+      final bool hasFade = alpha < 0.98;
+      if (hasFade) {
+        _fadePaint.color = Color.fromRGBO(255, 255, 255, alpha);
+        canvas.saveLayer(layout.bounds, _fadePaint);
+      }
+
+      _pillFillPaint.color = tier.strokeColor.withValues(alpha: 0.88);
+      canvas.drawRRect(layout.pillRRect, _pillFillPaint);
+
+      _pillBorderPaint.color = tier.primaryColor;
+      canvas.drawRRect(layout.pillRRect, _pillBorderPaint);
+
+      layout.comboStrokeTp.paint(
+        canvas,
+        layout.comboOffset + const ui.Offset(0.0, 1.5),
       );
+      layout.comboStrokeTp.paint(canvas, layout.comboOffset);
+      layout.comboFillTp.paint(canvas, layout.comboOffset);
+
+      if (layout.praiseFillTp != null && layout.praiseStrokeTp != null) {
+        final praiseOffset = layout.praiseOffset!;
+        layout.praiseStrokeTp!.paint(
+          canvas,
+          praiseOffset + const ui.Offset(0.0, 2.8),
+        );
+        layout.praiseStrokeTp!.paint(canvas, praiseOffset);
+        layout.praiseFillTp!.paint(canvas, praiseOffset);
+      }
+
+      if (hasFade) {
+        canvas.restore();
+      }
       canvas.restore();
     }
   }

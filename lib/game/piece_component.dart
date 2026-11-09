@@ -3762,13 +3762,9 @@ class PieceComponent extends PositionComponent {
     );
     canvas.scale(sizeFactor * m.horizontalScale, sizeFactor);
 
-    final baked = _getOrBakeFourLayerNumberSprite(
-      numberValue: numberValue,
-      baseFontPx: baseFontPx,
-      letterSp: letterSp,
-      yDropScale: yDropScale,
-      style: style,
-    );
+    final key =
+        'glassv2|$numberValue|${(baseFontPx * 10).round()}|${(cellSize * 4).round()}|${style.numberStrokeOuter.toARGB32().toRadixString(16)}|${style.numberStrokeMid.toARGB32().toRadixString(16)}';
+    final baked = _fourLayerNumberSpriteCache[key];
     if (baked != null) {
       canvas.drawImageRect(
         baked.image,
@@ -3954,6 +3950,8 @@ class PieceComponent extends PositionComponent {
     }
   }
 
+  static final Map<String, _DirectTextPainters> _directTextPaintersCache = {};
+
   void _paintFourLayerNumberDirect({
     required Canvas canvas,
     required String textStr,
@@ -3962,91 +3960,125 @@ class PieceComponent extends PositionComponent {
     required double yDropScale,
     required BlockColorStyle style,
   }) {
-    final crispStroke1W = (baseFontPx * 0.088).clamp(1.2, 3.2);
-    final dropStroke2W = (baseFontPx * 0.135).clamp(1.8, 4.6);
-    final softStroke3W = (baseFontPx * 0.185).clamp(2.2, 6.2);
+    final key =
+        '$textStr|${(baseFontPx * 10).round()}|${(letterSp * 10).round()}|${style.numberStrokeOuter.toARGB32()}|${style.numberStrokeMid.toARGB32()}';
+    var cached = _directTextPaintersCache[key];
+    if (cached == null) {
+      final crispStroke1W = (baseFontPx * 0.088).clamp(1.2, 3.2);
+      final dropStroke2W = (baseFontPx * 0.135).clamp(1.8, 4.6);
+      final softStroke3W = (baseFontPx * 0.185).clamp(2.2, 6.2);
 
-    final stroke3Tp = TextPainter(
-      text: TextSpan(
-        text: textStr,
-        style: TextStyle(
-          fontFamily: 'PoetsenOne',
-          fontSize: baseFontPx,
-          letterSpacing: letterSp,
-          height: 1.0,
-          foreground: Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = softStroke3W
-            ..strokeJoin = StrokeJoin.round
-            ..color = style.numberStrokeOuter.withValues(alpha: 0.44),
+      final stroke3Tp = TextPainter(
+        text: TextSpan(
+          text: textStr,
+          style: TextStyle(
+            fontFamily: 'PoetsenOne',
+            fontSize: baseFontPx,
+            letterSpacing: letterSp,
+            height: 1.0,
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = softStroke3W
+              ..strokeJoin = StrokeJoin.round
+              ..color = style.numberStrokeOuter.withValues(alpha: 0.44),
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+        textDirection: TextDirection.ltr,
+      )..layout();
 
-    final baseOffset = Offset(-stroke3Tp.width * 0.5, -stroke3Tp.height * 0.5);
-    stroke3Tp.paint(
+      final stroke2Tp = TextPainter(
+        text: TextSpan(
+          text: textStr,
+          style: TextStyle(
+            fontFamily: 'PoetsenOne',
+            fontSize: baseFontPx,
+            letterSpacing: letterSp,
+            height: 1.0,
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = dropStroke2W
+              ..strokeJoin = StrokeJoin.round
+              ..color = style.numberStrokeMid.withValues(alpha: 0.56),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final stroke1Tp = TextPainter(
+        text: TextSpan(
+          text: textStr,
+          style: TextStyle(
+            fontFamily: 'PoetsenOne',
+            fontSize: baseFontPx,
+            letterSpacing: letterSp,
+            height: 1.0,
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = crispStroke1W
+              ..strokeJoin = StrokeJoin.round
+              ..color = style.numberStrokeOuter.withValues(alpha: 0.68),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final fillTp = TextPainter(
+        text: TextSpan(
+          text: textStr,
+          style: TextStyle(
+            fontFamily: 'PoetsenOne',
+            fontSize: baseFontPx,
+            letterSpacing: letterSp,
+            height: 1.0,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final baseOffset = Offset(-stroke3Tp.width * 0.5, -stroke3Tp.height * 0.5);
+      cached = _DirectTextPainters(
+        stroke3Tp: stroke3Tp,
+        stroke2Tp: stroke2Tp,
+        stroke1Tp: stroke1Tp,
+        fillTp: fillTp,
+        baseOffset: baseOffset,
+      );
+      if (_directTextPaintersCache.length >= 64) {
+        _directTextPaintersCache.remove(_directTextPaintersCache.keys.first);
+      }
+      _directTextPaintersCache[key] = cached;
+    }
+
+    final baseOffset = cached.baseOffset;
+    cached.stroke3Tp.paint(
       canvas,
       baseOffset + Offset(0, 0.064 * cellSize * yDropScale),
     );
-
-    final stroke2Tp = TextPainter(
-      text: TextSpan(
-        text: textStr,
-        style: TextStyle(
-          fontFamily: 'PoetsenOne',
-          fontSize: baseFontPx,
-          letterSpacing: letterSp,
-          height: 1.0,
-          foreground: Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = dropStroke2W
-            ..strokeJoin = StrokeJoin.round
-            ..color = style.numberStrokeMid.withValues(alpha: 0.56),
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    stroke2Tp.paint(
+    cached.stroke2Tp.paint(
       canvas,
       baseOffset + Offset(0, 0.036 * cellSize * yDropScale),
     );
-
-    final stroke1Tp = TextPainter(
-      text: TextSpan(
-        text: textStr,
-        style: TextStyle(
-          fontFamily: 'PoetsenOne',
-          fontSize: baseFontPx,
-          letterSpacing: letterSp,
-          height: 1.0,
-          foreground: Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = crispStroke1W
-            ..strokeJoin = StrokeJoin.round
-            ..color = style.numberStrokeOuter.withValues(alpha: 0.68),
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    stroke1Tp.paint(
+    cached.stroke1Tp.paint(
       canvas,
       baseOffset + Offset(0, 0.0111 * cellSize * yDropScale),
     );
-
-    final fillTp = TextPainter(
-      text: TextSpan(
-        text: textStr,
-        style: TextStyle(
-          fontFamily: 'PoetsenOne',
-          fontSize: baseFontPx,
-          letterSpacing: letterSp,
-          height: 1.0,
-          color: Colors.white,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    fillTp.paint(canvas, baseOffset);
+    cached.fillTp.paint(canvas, baseOffset);
   }
+}
+
+class _DirectTextPainters {
+  final TextPainter stroke3Tp;
+  final TextPainter stroke2Tp;
+  final TextPainter stroke1Tp;
+  final TextPainter fillTp;
+  final Offset baseOffset;
+
+  const _DirectTextPainters({
+    required this.stroke3Tp,
+    required this.stroke2Tp,
+    required this.stroke1Tp,
+    required this.fillTp,
+    required this.baseOffset,
+  });
 }

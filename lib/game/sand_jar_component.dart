@@ -18,6 +18,7 @@ import 'package:flutter/material.dart'
         RRect,
         Radius,
         Rect,
+        Shadow,
         TextDirection,
         TextPainter,
         TextSpan,
@@ -383,6 +384,16 @@ class MagicSandJarComponent extends PositionComponent {
       }
     }
 
+    // 4b. Subtle luminous mystery "?" watermark on the transparent glass belly when idle/empty
+    if (_fillProgress < 0.28) {
+      _drawMysteryQuestionMark(
+        canvas,
+        w: w,
+        h: h,
+        bellyPath: glassBodyPath,
+      );
+    }
+
     // 5. 3D Volumetric 8-Lobe Cream-Ivory Accordion Pleated Cloth Skirt
     _drawPleatedClothPouch(
       canvas,
@@ -416,7 +427,7 @@ class MagicSandJarComponent extends PositionComponent {
       _drawTargetGoalTag(canvas, w: w, h: h, openProgress: easedOpen);
     }
 
-    // 8. Subtle luminous crystal-aqua belly glow when filling / full
+    // 8. Subtle luminous belly glow when filling / full matching final block style
     final bellyGlowAlpha =
         (0.22 * easedFill + 0.28 * _glowIntensity).clamp(0.0, 0.52);
     if (bellyGlowAlpha > 0.01 && easedOpen > 0.2) {
@@ -429,12 +440,63 @@ class MagicSandJarComponent extends PositionComponent {
             Offset(cx, h * 0.62),
             w * 0.30,
             [
-              const Color(0xFF88FAFF).withValues(alpha: bellyGlowAlpha),
-              const Color(0xFF1CE0FA).withValues(alpha: 0.0),
+              Color.lerp(_style.topBright, Colors.white, 0.40)!
+                  .withValues(alpha: bellyGlowAlpha),
+              _style.topBright.withValues(alpha: 0.0),
             ],
           ),
       );
     }
+  }
+
+  /// Mysterious frosted "?" watermark on the transparent glass belly when idle/empty
+  void _drawMysteryQuestionMark(
+    Canvas canvas, {
+    required double w,
+    required double h,
+    required Path bellyPath,
+  }) {
+    if (_fillProgress >= 0.28) return;
+    final qAlpha =
+        ((0.28 - _fillProgress) / 0.28).clamp(0.0, 1.0) * _appearProgress;
+    if (qAlpha <= 0.02) return;
+
+    final cx = w * 0.5;
+    final cy = h * 0.59;
+    final fontSize = (h * 0.24).clamp(24.0, 72.0);
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '?',
+        style: TextStyle(
+          fontFamily: 'PoetsenOne',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          color: Colors.white.withValues(alpha: 0.44 * qAlpha),
+          shadows: [
+            Shadow(
+              offset: const Offset(0, 1.8),
+              blurRadius: 3.5,
+              color: const Color(0x3D000000).withValues(alpha: 0.24 * qAlpha),
+            ),
+            Shadow(
+              offset: Offset.zero,
+              blurRadius: 6.0,
+              color: const Color(0x66FFFFFF).withValues(alpha: 0.35 * qAlpha),
+            ),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    canvas.save();
+    canvas.clipPath(bellyPath);
+    textPainter.paint(
+      canvas,
+      Offset(cx - textPainter.width * 0.5, cy - textPainter.height * 0.5),
+    );
+    canvas.restore();
   }
 
   /// Draws the rich crystal-aqua glass neck (`y = 0.078..0.28 * h`), exposed rounded bottom glass bowl
@@ -1541,8 +1603,9 @@ class MagicSandJarComponent extends PositionComponent {
           w * 0.11,
           [
             Colors.white.withValues(alpha: 0.92 * alpha),
-            const Color(0xFFA8FEFF).withValues(alpha: 0.72 * alpha),
-            const Color(0xFF1CE0FA).withValues(alpha: 0.0),
+            Color.lerp(_style.topBright, Colors.white, 0.45)!
+                .withValues(alpha: 0.72 * alpha),
+            _style.topBright.withValues(alpha: 0.0),
           ],
           const [0.0, 0.58, 1.0],
         ),
@@ -1566,9 +1629,9 @@ class MagicSandJarComponent extends PositionComponent {
     );
 
     // 2. Cute glossy crown droplets hopping outward & upward inside the belly
-    const lightWater = Color(0xFFB4FEFF);
-    const midWater = Color(0xFF1CE0FA);
-    const deepWater = Color(0xFF0475B4);
+    final lightWater = Color.lerp(_style.topBright, Colors.white, 0.50)!;
+    final midWater = _style.topBright;
+    final deepWater = _style.bottomLip;
 
     for (int i = 0; i < 4; i++) {
       final isLeft = i < 2;
@@ -1715,17 +1778,12 @@ class MagicSandJarComponent extends PositionComponent {
     final sloshAmp = ui.lerpDouble(calmAmp, activeAmp, pourBlend)!;
     final phase = _surfaceWavePhase;
 
-    // Pure luminous crystal-aqua / turquoise potion water (`media_1794051150239.png`)
-    final lightWater =
-        Color.lerp(const Color(0xFFA8FEFF), _style.topBright, 0.12)!;
-    final meniscusColor =
-        Color.lerp(const Color(0xFFC4FFFF), _style.topBright, 0.10)!;
-    final midWater =
-        Color.lerp(const Color(0xFF1EE4FC), _style.topBright, 0.14)!;
-    final bodyWater =
-        Color.lerp(const Color(0xFF08AEE2), _style.topMid, 0.14)!;
-    final deepWater =
-        Color.lerp(const Color(0xFF046EAE), _style.bottomLip, 0.14)!;
+    // Dynamic liquid pool colors matching final block's exact color palette
+    final lightWater = Color.lerp(_style.topBright, Colors.white, 0.42)!;
+    final meniscusColor = Color.lerp(_style.rimHighlight, Colors.white, 0.55)!;
+    final midWater = _style.topBright;
+    final bodyWater = _style.topMid;
+    final deepWater = _style.bottomLip;
 
     // --- PART A: Rising Liquid Pool + Underwater Plunge Caustic + 3D Meniscus + Bubbles ---
     canvas.save();
@@ -2053,14 +2111,15 @@ class MagicSandJarComponent extends PositionComponent {
           glowR,
           [
             Colors.white.withValues(alpha: 0.78 * env),
-            const Color(0xFF7EFAFF).withValues(alpha: 0.54 * env),
-            const Color(0xFF08BFE6).withValues(alpha: 0.0),
+            Color.lerp(_style.topBright, Colors.white, 0.45)!
+                .withValues(alpha: 0.54 * env),
+            _style.topBright.withValues(alpha: 0.0),
           ],
           const [0.0, 0.48, 1.0],
         ),
     );
 
-    // 2. Effervescent pearlescent aqua-white bubbles floating upward from the filled jar
+    // 2. Effervescent pearlescent bubbles floating upward from the filled jar
     for (int i = 0; i < 7; i++) {
       final seed = (i * 0.6180339) % 1.0;
       final localT = ((eased * 1.15 + seed * 0.35) % 1.0);
@@ -2077,7 +2136,8 @@ class MagicSandJarComponent extends PositionComponent {
         Offset(bx, by),
         br,
         Paint()
-          ..color = const Color(0xFF9EFCFF).withValues(alpha: 0.32 * bAlpha),
+          ..color = Color.lerp(_style.topBright, Colors.white, 0.45)!
+              .withValues(alpha: 0.35 * bAlpha),
       );
       canvas.drawCircle(
         Offset(bx, by),
@@ -2703,14 +2763,11 @@ class BoardSandStreamToJarVfx extends PositionComponent {
     _buildOpenStrokePath(_leftEdgePath, leftCore, edgeStartIdx);
     _buildOpenStrokePath(_rightEdgePath, rightCore, edgeStartIdx);
 
-    // Pure crystal-aqua potion colors (`media_1794051150239.png`)
-    final icyAqua =
-        Color.lerp(const Color(0xFFC4FFFF), style.topBright, 0.10)!;
-    final brightAqua =
-        Color.lerp(const Color(0xFF3AF0FF), style.topBright, 0.14)!;
-    final midAqua = Color.lerp(const Color(0xFF0BBEEB), style.topMid, 0.14)!;
-    final deepAqua =
-        Color.lerp(const Color(0xFF0372B8), style.bottomLip, 0.14)!;
+    // Dynamic water stream colors matching final block's exact color
+    final icyAqua = Color.lerp(style.topBright, Colors.white, 0.50)!;
+    final brightAqua = style.topBright;
+    final midAqua = style.topMid;
+    final deepAqua = style.bottomLip;
 
     final needsTailFeather = tailS > 0.015;
     if (needsTailFeather) {
@@ -2718,7 +2775,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
       canvas.saveLayer(layerBounds, Paint());
     }
 
-    // 1. Soft outer cyan water glow halo
+    // 1. Soft outer water glow halo matching block color
     canvas.drawPath(
       _outerStreamPath,
       Paint()
@@ -2730,7 +2787,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
         ),
     );
 
-    // 2. Rich translucent crystal-aqua cylindrical stream core
+    // 2. Rich translucent cylindrical stream core matching block color
     final streamBounds = _coreStreamPath.getBounds();
     canvas.drawPath(
       _coreStreamPath,
@@ -2749,7 +2806,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
         ),
     );
 
-    // 3. Deeper cerulean-blue refraction along the inner curve (`media_1794051150239.png`)
+    // 3. Deeper refraction band along the inner curve matching block depth
     canvas.drawPath(
       _innerShadowPath,
       Paint()
@@ -2761,17 +2818,17 @@ class BoardSandStreamToJarVfx extends PositionComponent {
         ),
     );
 
-    // 4. Open icy-cyan meniscus side rims (never caps the lifting tail into a sharp white spike!)
+    // 4. Open meniscus side rims matching block highlight
     final rimPaint = Paint()
       ..style = ui.PaintingStyle.stroke
       ..strokeCap = ui.StrokeCap.round
       ..strokeJoin = ui.StrokeJoin.round
       ..strokeWidth = (cellSize * 0.028).clamp(1.2, 2.7)
-      ..color = const Color(0xFFE6FFFF).withValues(alpha: 0.80);
+      ..color = icyAqua.withValues(alpha: 0.85);
     canvas.drawPath(_leftEdgePath, rimPaint);
     canvas.drawPath(_rightEdgePath, rimPaint);
 
-    // 5. Sleek continuous glossy white-aqua highlight ribbon
+    // 5. Sleek continuous glossy highlight ribbon
     canvas.drawPath(
       _specularStripePath,
       Paint()
@@ -2800,7 +2857,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
         Paint()
           ..style = ui.PaintingStyle.stroke
           ..strokeWidth = 1.05
-          ..color = const Color(0xFFE8FFFF).withValues(alpha: bAlpha),
+          ..color = icyAqua.withValues(alpha: bAlpha),
       );
       canvas.drawCircle(
         Offset(bCenter.dx - br * 0.30, bCenter.dy - br * 0.30),
@@ -3068,9 +3125,8 @@ class BoardSandStreamToJarVfx extends PositionComponent {
       height: ry * 2.0,
     );
 
-    final brightAqua =
-        Color.lerp(const Color(0xFF7EFAFF), style.topBright, 0.16)!;
-    final midAqua = Color.lerp(const Color(0xFF14CCF5), style.topMid, 0.18)!;
+    final brightAqua = style.topBright;
+    final midAqua = style.topMid;
 
     canvas.drawOval(
       poolRect,

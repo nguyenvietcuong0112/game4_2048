@@ -27,6 +27,7 @@ class AudioHapticsService extends ChangeNotifier {
     'sfx_levelup_merge.wav': (1, 2),
     'sfx_target_collect.wav': (2, 6),
     'sfx_time_freeze.wav': (1, 2),
+    'sfx_water_stream.wav': (1, 2),
     'sfx_win_complete.wav': (1, 2),
     'sfx_win_amazing.wav': (1, 2),
     'sfx_lose_timeout.wav': (1, 2),
@@ -76,6 +77,7 @@ class AudioHapticsService extends ChangeNotifier {
         'sfx_ice_break_whole.wav',
         'sfx_lose_timeout.wav',
         'sfx_lose_failed.wav',
+        'sfx_water_stream.wav',
         'sfx_win_complete.wav',
         'sfx_win_amazing.wav',
         'sfx_pu_select.wav',
@@ -298,6 +300,12 @@ class AudioHapticsService extends ChangeNotifier {
   void playTimeFreeze() {
     _playSfx('sfx_time_freeze.wav', volume: 1.0);
     _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+  }
+
+  /// Sound of continuous rushing/flowing water when the winning block merges and
+  /// streams upward into the potion pouch jar (`BoardSandStreamToJarVfx`).
+  void playWaterStreamFlow() {
+    _playSfx('sfx_water_stream.wav', volume: 1.0);
   }
 
   /// Stage 1 Win (`LevelCompleteView` golden wave text).

@@ -946,6 +946,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
     await ScrewTextureCleaner.ensureCleanedScrewsLoaded();
+    await SparkleAtlas.ensureLoaded();
 
     add(_boardStage);
     _isReady = true;
@@ -2503,10 +2504,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _mergeImpactShakeAmpPx = _cellSize * (0.022 + 0.0085 * tier);
     _mergeImpactZoomPunch = 0.009 + 0.0038 * tier;
 
-    // 2. Sympathetic shockwave shake on nearby pieces for >= 64 (`tier >= 2`)
+    // 2. Sympathetic shockwave shake on immediate neighbors for >= 64 (`tier >= 2`)
     if (tier >= 2) {
       final survivorCenter = survivor.worldCenter;
-      final maxRadius = _cellSize * (2.2 + 0.45 * tier);
+      final maxRadius = _cellSize * 1.35;
+      int shakenCount = 0;
       for (final p in _pieces) {
         if (identical(p, survivor) || p.isFlyingOrSwallowed || p.isDragging) {
           continue;
@@ -2514,8 +2516,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         final dist = (p.worldCenter - survivorCenter).length;
         if (dist <= maxRadius) {
           final falloff = (1.0 - dist / maxRadius).clamp(0.25, 1.0);
-          final mult = (0.42 + 0.16 * tier) * falloff;
+          final mult = (0.35 + 0.12 * tier) * falloff;
           p.triggerBlockedShake(shoveOffset, mult);
+          shakenCount++;
+          if (shakenCount >= 2) break;
         }
       }
     }
@@ -2800,11 +2804,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       if (!_winSandStreamSpawned && _winSequenceElapsed >= 0.32) {
         _winSandStreamSpawned = true;
         final winPiece = _finalWinningPiece;
-        final winStyle = _sandJar?.style ??
-            palette.styleFor(
-              number: winPiece?.model.number ?? _level.targetWinNumber,
-              isFrozen: false,
-            );
+        final winNumber = winPiece?.model.number ?? _level.targetWinNumber;
+        final winStyle = palette.styleFor(
+          number: winNumber,
+          isFrozen: false,
+        );
+        _sandJar?.updateStyle(winStyle);
+        _sandJar?.updateTargetNumber(winNumber);
         final primaryOrigin = winPiece != null && winPiece.isMounted
             ? winPiece.worldCenter
             : Vector2.zero();
@@ -2824,6 +2830,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         );
         _activeWinWaterStream = waterStream;
         _boardStage.add(waterStream);
+        audio.playWaterStreamFlow();
         audio.hapticMergeImpact();
       }
 

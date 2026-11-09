@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
@@ -55,6 +56,10 @@ class _GameplayScreenState extends State<GameplayScreen>
   int _tutorialBannerAnimEpoch = 0;
   MechanicUnlockInfo? _activeMechanicModal;
 
+  String? _lockedToastMessage;
+  Timer? _lockedToastTimer;
+  double _lockedToastOpacity = 0.0;
+
   /// Exact shipped `game_end_flow.play_on` pricing (`price_coins = 450`, `price_increment = 150`).
   int get _currentPlayOnCost => 450 + 150 * _playOnsUsedInAttempt;
 
@@ -99,6 +104,7 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   @override
   void dispose() {
+    _lockedToastTimer?.cancel();
     _game.remainingSecondsNotifier.removeListener(_syncLowTimerPulseTicker);
     _game.isTimeFrozenNotifier.removeListener(_syncLowTimerPulseTicker);
     _coinBounceCtrl.dispose();
@@ -329,14 +335,33 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool get _isTimeFreezeUnlocked =>
       widget.progress.isTimeFreezeUnlockedForLevel(_activeLevel.number);
 
+  void _showLockedBoosterToast(int unlockLevel) {
+    widget.audio.hapticBlocked();
+    _lockedToastTimer?.cancel();
+    setState(() {
+      _lockedToastMessage = 'Unlock at level $unlockLevel!';
+      _lockedToastOpacity = 1.0;
+    });
+    _lockedToastTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted) {
+        setState(() {
+          _lockedToastOpacity = 0.0;
+        });
+      }
+    });
+  }
+
   /// Exact `GameplayPresenter.OnClickedPowerUp(PowerUpType.LevelUp)` order:
-  /// 1. Non-interactive if `!_isLevelUpUnlocked`
+  /// 1. Show locked toast if `!_isLevelUpUnlocked`
   /// 2. Ignore while `_game.isResolving`
   /// 3. If `!isFree && count <= 0` -> open `PowerUpBuyPopup` (`600` coins) BEFORE checking board pair!
   /// 4. Check `DoesGameStatePermitUsage` (`canLevelUpNotifier.value`)
   /// 5. Consume (`consumeFreePowerUp` or `consumeLevelUp`) & execute `triggerLevelUpPowerUp()`!
   void _handleLevelUpTap({bool fromFtue = false}) {
-    if (!_isLevelUpUnlocked) return;
+    if (!_isLevelUpUnlocked) {
+      _showLockedBoosterToast(PlayerProgressService.levelUpUnlockLevel);
+      return;
+    }
     if (_game.isResolving) return;
 
     final isFree = fromFtue ||
@@ -367,14 +392,17 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   /// Exact `GameplayPresenter.OnClickedPowerUp(PowerUpType.TimeFreeze)` + `TimeFreezeHandler.UseAsync`:
-  /// 1. Non-interactive if `!_isTimeFreezeUnlocked`
+  /// 1. Show locked toast if `!_isTimeFreezeUnlocked`
   /// 2. Ignore while `_game.isResolving`
   /// 3. If `!isFree && count <= 0` -> open `PowerUpBuyPopup` (`450` coins) BEFORE checking timer started!
   /// 4. Check `DoesGameStatePermitUsage` (`_game.canUseTimeFreeze`, or `!timerDisabled` during FTUE free trial)
   /// 5. Consume (`consumeFreePowerUp` or `consumeTimeFreeze`), fly clock to top timer (`PlayTimeFreezeIntroAsync`),
   ///    and engage `20s` freeze (`StartFreeze(20)`) upon impact!
   void _handleTimeFreezeTap({bool fromFtue = false}) {
-    if (!_isTimeFreezeUnlocked) return;
+    if (!_isTimeFreezeUnlocked) {
+      _showLockedBoosterToast(PlayerProgressService.timeFreezeUnlockLevel);
+      return;
+    }
     if (_game.isResolving) return;
 
     final isFree = fromFtue ||
@@ -982,6 +1010,67 @@ class _GameplayScreenState extends State<GameplayScreen>
                     child: IgnorePointer(
                       ignoring: _showLoseOverlay && _losePeekingBoard,
                       child: _buildCoinsWidget(context),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // 15. Floating "Unlock at level X!" toast banner matching media_1794198573830.png
+          if (_lockedToastMessage != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: AnimatedOpacity(
+                    opacity: _lockedToastOpacity,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    onEnd: () {
+                      if (_lockedToastOpacity == 0.0 && mounted) {
+                        setState(() {
+                          _lockedToastMessage = null;
+                        });
+                      }
+                    },
+                    child: Container(
+                      margin: EdgeInsets.symmetric(horizontal: ux(context, 80)),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ux(context, 48),
+                        vertical: ux(context, 26),
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xB3000000),
+                        borderRadius: BorderRadius.circular(ux(context, 34)),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          width: ux(context, 1.5),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.40),
+                            blurRadius: ux(context, 20),
+                            offset: Offset(0, ux(context, 8)),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        _lockedToastMessage!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Baloo2',
+                          fontSize: ux(context, 46),
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: 0.2,
+                          shadows: const [
+                            Shadow(
+                              offset: Offset(0, 1.8),
+                              blurRadius: 3.5,
+                              color: Color(0xBF000000),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

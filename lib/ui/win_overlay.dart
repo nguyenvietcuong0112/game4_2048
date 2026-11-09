@@ -399,7 +399,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
               Positioned(
                 left: 0,
                 right: 0,
-                top: statsCenterY - ux(context, 54),
+                top: statsCenterY - ux(context, 64),
                 child: Center(
                   child: Transform.scale(
                     scale: 0.74 + 0.26 * stage2Pop,
@@ -442,15 +442,15 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   Widget _buildWinStatsRow(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: ux(context, 36),
-        vertical: ux(context, 14),
+        horizontal: ux(context, 48),
+        vertical: ux(context, 18),
       ),
       decoration: BoxDecoration(
-        color: const Color.fromRGBO(10, 32, 74, 0.60),
-        borderRadius: BorderRadius.circular(ux(context, 32)),
+        color: const Color.fromRGBO(10, 32, 74, 0.65),
+        borderRadius: BorderRadius.circular(ux(context, 38)),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.22),
-          width: ux(context, 2),
+          color: Colors.white.withValues(alpha: 0.28),
+          width: ux(context, 2.4),
         ),
       ),
       child: Row(
@@ -499,7 +499,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         icon,
-        SizedBox(width: ux(context, 14)),
+        SizedBox(width: ux(context, 16)),
         Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -508,7 +508,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
               label,
               style: TextStyle(
                 fontFamily: 'Baloo2',
-                fontSize: ux(context, 30),
+                fontSize: ux(context, 38),
                 fontWeight: FontWeight.w700,
                 color: Colors.white,
                 height: 1.05,
@@ -518,7 +518,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
               value,
               style: TextStyle(
                 fontFamily: 'Baloo2',
-                fontSize: ux(context, 34),
+                fontSize: ux(context, 44),
                 fontWeight: FontWeight.w900,
                 color: const Color(0xFF69F0AE),
                 height: 1.1,
@@ -532,17 +532,17 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
 
   Widget _buildStatDivider(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: ux(context, 26)),
+      padding: EdgeInsets.symmetric(horizontal: ux(context, 32)),
       child: Container(
-        width: 1.5,
-        height: ux(context, 52),
+        width: ux(context, 2.0),
+        height: ux(context, 68),
         color: Colors.white.withValues(alpha: 0.35),
       ),
     );
   }
 
   Widget _buildClockIcon(BuildContext context) {
-    final size = ux(context, 50);
+    final size = ux(context, 64);
     return SizedBox(
       width: size,
       height: size,
@@ -553,7 +553,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   }
 
   Widget _buildMovesIcon(BuildContext context) {
-    final size = ux(context, 50);
+    final size = ux(context, 64);
     return SizedBox(
       width: size,
       height: size,
@@ -564,7 +564,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   }
 
   Widget _buildComboStarIcon(BuildContext context) {
-    final size = ux(context, 50);
+    final size = ux(context, 64);
     return SizedBox(
       width: size,
       height: size,

@@ -23,32 +23,36 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun enableHighestRefreshRate() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        val currentDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            display
-        } else {
-            @Suppress("DEPRECATION")
-            windowManager.defaultDisplay
-        } ?: return
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+            val currentDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                display
+            } else {
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay
+            } ?: return
 
-        val modes = currentDisplay.supportedModes
-        if (modes.isEmpty()) return
+            val modes = currentDisplay.supportedModes
+            if (modes.isEmpty()) return
 
-        val activeMode = currentDisplay.mode
-        val sameResModes = modes.filter {
-            it.physicalWidth == activeMode.physicalWidth &&
-                it.physicalHeight == activeMode.physicalHeight
-        }
-        val candidates = sameResModes.ifEmpty { modes.toList() }
-        val bestMode = candidates.maxByOrNull { it.refreshRate } ?: return
+            val activeMode = currentDisplay.mode
+            val sameResModes = modes.filter {
+                it.physicalWidth == activeMode.physicalWidth &&
+                    it.physicalHeight == activeMode.physicalHeight
+            }
+            val candidates = sameResModes.ifEmpty { modes.toList() }
+            val bestMode = candidates.maxByOrNull { it.refreshRate } ?: return
 
-        val params = window.attributes
-        if (params.preferredDisplayModeId != bestMode.modeId ||
-            params.preferredRefreshRate != bestMode.refreshRate
-        ) {
-            params.preferredDisplayModeId = bestMode.modeId
-            params.preferredRefreshRate = bestMode.refreshRate
-            window.attributes = params
+            val params = window.attributes
+            if (params.preferredDisplayModeId != bestMode.modeId ||
+                params.preferredRefreshRate != bestMode.refreshRate
+            ) {
+                params.preferredDisplayModeId = bestMode.modeId
+                params.preferredRefreshRate = bestMode.refreshRate
+                window.attributes = params
+            }
+        } catch (_: Exception) {
+            // Emulators or virtual devices may not support display mode switching
         }
     }
 }

@@ -120,9 +120,8 @@ class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
 
   @override
   Widget build(BuildContext context) {
-    // Locked buttons (`SetInteractive(false)` in `PowerUpButtonView.SetLockedState`) are completely
-    // non-interactive and NEVER show a snackbar or squish!
-    final interactive = widget.isUnlocked && widget.onTap != null;
+    // Interactive whenever onTap is provided (when locked, tapping triggers "Unlock at level X!" toast)
+    final interactive = widget.onTap != null;
     final sz = _bpx(context, UnityPowerUpHudButton.unscaledSize);
 
     const baseAsset = 'assets/images/Powerup_Base.png';

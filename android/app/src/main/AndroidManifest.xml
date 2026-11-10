@@ -1,5 +1,7 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <application
         android:label="Block Order 2048"
@@ -27,6 +29,24 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <meta-data
+            android:name="applovin.sdk.key"
+            android:value="UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CARLzgqBOMc7n1ollcWugw3gexsimiopaBhA55sNDfZQq0LCI" />
+
+        <!-- Prevent Facebook SDK from auto-init and crashing on startup when App ID is not configured -->
+        <provider
+            android:name="com.facebook.internal.FacebookInitProvider"
+            android:authorities="${applicationId}.FacebookInitProvider"
+            tools:node="remove" />
+        <meta-data
+            android:name="com.facebook.sdk.AutoInitEnabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.facebook.sdk.ApplicationId"
+            android:value="0" />
+        <meta-data
+            android:name="com.facebook.sdk.ClientToken"
+            android:value="0" />
     </application>
     <queries>
         <intent>

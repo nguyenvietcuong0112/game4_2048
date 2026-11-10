@@ -1,0 +1,36 @@
+// fgsdk-deps.gradle — third-party deps mà fgsdk-release.aar CẦN nhưng KHÔNG gói kèm.
+// AAR chỉ chứa code SDK đã compile; deps dưới đây bên dùng phải tự khai để runtime kéo về.
+//
+// Cách dùng: trong build.gradle của module app native Cocos (native/engine/android/app):
+//     dependencies {
+//         implementation files('libs/fgsdk-release.aar')   // hoặc đặt AAR vào flatDir/libs
+//         apply from: '../../<đường-dẫn>/dist/FGSDK/android/fgsdk-deps.gradle'
+//     }
+// (hoặc copy nguyên khối dependencies bên dưới vào app build.gradle.)
+//
+// Version = baseline spec §17 (đã map Unity-plugin → native SDK). Pin lại nếu project khác.
+
+dependencies {
+    // Transitive deps của AAR (AAR local KHÔNG mang theo → phải khai lại). kotlin-stdlib do injector tự thêm.
+    implementation("androidx.core:core-ktx:1.13.1")                             // :fgsdk dùng core-ktx
+    implementation("androidx.appcompat:appcompat:1.6.1")                        // Activity/context
+
+    implementation("com.google.code.gson:gson:2.11.0")                          // parse config JSON
+    implementation("com.google.android.ump:user-messaging-platform:3.2.0")      // consent §6
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))         // tracking/RC §9,§10
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-messaging")                    // FCM uninstall token §9.4
+    implementation("com.google.firebase:firebase-config")
+    implementation("com.appsflyer:af-android-sdk:6.17.5")                       // §9.4 — = Unity; đi cặp connector bên dưới
+    implementation("com.android.installreferrer:installreferrer:2.1")           // §9.4 — AF đọc Play Install Referrer (= Unity)
+    implementation("com.appsflyer:purchase-connector:2.2.0")                    // §11 ROI360 — = Unity, Billing 8. KHÔNG 2.3.0: build cho AF 7.x → crash LogTag, mất af_purchase
+    implementation("com.facebook.android:facebook-android-sdk:18.0.0")          // §9.5
+    implementation("com.applovin:applovin-sdk:12.6.0")                          // ads MAX §7
+    implementation("com.google.android.gms:play-services-ads:23.6.0")           // admob backfill §8
+    implementation("com.android.billingclient:billing-ktx:8.3.0")              // IAP §11 — sync Unity IAP 5.2.1, tuân Play >=8.0.0
+}
+
+// ⚠️ Ngoài deps: cần
+//  - AndroidManifest meta-data com.google.android.gms.ads.APPLICATION_ID (AdMob app id thật)
+//  - google-services.json + plugin com.google.gms.google-services (nếu dùng Firebase qua Gradle)
+//  - minSdk >= 24

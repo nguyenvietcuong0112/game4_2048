@@ -1,0 +1,22 @@
+{
+    "name": "funtap-global-sdk-flutter",
+    "version": "1.0.5",
+    "author": "Funtap",
+    "description": "Funtap Global SDK — plugin Flutter (Android/iOS): ads MAX + AdMob backfill, tracking (Firebase/AppsFlyer/Facebook/AppLovin), remote config, IAP, deeplink. Dùng chung lõi native với 2 package Cocos.",
+    "publishConfig": {
+        "registry": "https://packages.funtapglobal.com/"
+    },
+    "files": [
+        "lib",
+        "android",
+        "ios",
+        "tools",
+        "config",
+        "example/lib",
+        "pubspec.yaml",
+        "analysis_options.yaml",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE"
+    ]
+}

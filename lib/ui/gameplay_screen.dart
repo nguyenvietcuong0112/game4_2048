@@ -7,6 +7,8 @@ import '../game/vfx_components.dart';
 import '../models/level_models.dart';
 import '../models/palette.dart';
 import '../models/unity_curve.dart';
+import '../services/ads_manager.dart';
+import '../services/analytics_service.dart';
 import '../services/audio_haptics_service.dart';
 import '../services/player_progress_service.dart';
 import 'exit_gameplay_popup.dart';
@@ -37,7 +39,7 @@ class GameplayScreen extends StatefulWidget {
 }
 
 class _GameplayScreenState extends State<GameplayScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late LevelDefinition _activeLevel;
   late final BlockOrderGame _game;
 
@@ -66,6 +68,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _activeLevel =
         widget.repository.getCampaignLevel(widget.progress.currentLevel);
 
@@ -91,6 +94,11 @@ class _GameplayScreenState extends State<GameplayScreen>
       audio: widget.audio,
       onLevelWon: _handleLevelWon,
       onTimeExpired: _handleTimeExpired,
+      onFirstAction: () {
+        if (_activeLevel.number == 1 && !_activeLevel.isBonus) {
+          AnalyticsService.logTutorial(name: 'action_1', value: 2);
+        }
+      },
     );
 
     _game.remainingSecondsNotifier.addListener(_syncLowTimerPulseTicker);
@@ -100,10 +108,13 @@ class _GameplayScreenState extends State<GameplayScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkNewMechanicOrPowerUpUnlock(_activeLevel);
     });
+
+    AnalyticsService.logLevelStart(level: _activeLevel.number);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _lockedToastTimer?.cancel();
     _game.remainingSecondsNotifier.removeListener(_syncLowTimerPulseTicker);
     _game.isTimeFrozenNotifier.removeListener(_syncLowTimerPulseTicker);
@@ -111,6 +122,21 @@ class _GameplayScreenState extends State<GameplayScreen>
     _freezeFlyCtrl.dispose();
     _lowTimerPulseCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_showWinOverlay && !_showLoseOverlay) {
+        final totalPieces = _activeLevel.initialPieces.length;
+        final currentPieces = _game.activePiecesCount;
+        AnalyticsService.logLevelReopen(
+          level: _activeLevel.number,
+          totalItems: totalPieces,
+          clearedItems: (totalPieces - currentPieces).clamp(0, totalPieces),
+        );
+      }
+    }
   }
 
   void _syncLowTimerPulseTicker() {
@@ -178,6 +204,8 @@ class _GameplayScreenState extends State<GameplayScreen>
       if (unlock.isPowerUp) {
         widget.progress.setFreePowerUpPending(unlock.id, true);
       }
+      AnalyticsService.logMechanicUnlock(mechanicId: unlock.id, level: lv.number);
+      AnalyticsService.logPopupShow(name: 'mechanic_${unlock.id}', level: lv.number);
       setState(() {
         _activeMechanicModal = unlock;
         _syncGamePauseState();
@@ -209,10 +237,38 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
     _game.loadLevel(level);
     _checkNewMechanicOrPowerUpUnlock(level);
+    AnalyticsService.logLevelStart(level: level.number);
+    AnalyticsService.updateUserProperties(
+      currentLevel: widget.progress.currentLevel,
+      highestLevel: widget.progress.highestLevel,
+      coins: widget.progress.coins,
+    );
+    if (level.number == 1 && !level.isBonus) {
+      AnalyticsService.logTutorial(name: 'tut_start', value: 1);
+    }
   }
 
   void _handleLevelWon() {
     if (!mounted) return;
+    if (_activeLevel.number == 1 && !_activeLevel.isBonus) {
+      AnalyticsService.logTutorial(name: 'tut_finish', value: 3);
+    }
+    AnalyticsService.logLevelEnd(
+      level: _activeLevel.number,
+      playDuration: _game.elapsedGameTime,
+      success: true,
+      reason: 'win',
+    );
+    AnalyticsService.logAfLevelAchieved(level: _activeLevel.number);
+    AnalyticsService.logEarnResource(
+      level: _activeLevel.number,
+      type: 'currency',
+      name: 'coins',
+      amount: _activeLevel.coinReward.toDouble(),
+      reason: 'win_level',
+      balance: (widget.progress.coins + _activeLevel.coinReward).toDouble(),
+    );
+    AnalyticsService.logPopupShow(name: 'win', level: _activeLevel.number);
     widget.progress.stageLevelWinReward(
       rewardCoins: _activeLevel.coinReward,
       isBonus: _activeLevel.isBonus,
@@ -228,6 +284,13 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   void _handleTimeExpired() {
     if (!mounted) return;
+    AnalyticsService.logLevelEnd(
+      level: _activeLevel.number,
+      playDuration: _game.elapsedGameTime,
+      success: false,
+      reason: 'timeout',
+    );
+    AnalyticsService.logPopupShow(name: 'lose', level: _activeLevel.number);
     setState(() {
       _showLoseOverlay = true;
       _loseInFailedStage = false;
@@ -242,17 +305,24 @@ class _GameplayScreenState extends State<GameplayScreen>
   void _handleNextLevelAfterWin() {
     widget.progress.flushPendingWinCoins();
     widget.audio.playClick();
-    if (_activeLevel.isBonus) {
-      final list = widget.repository.bonusLevels;
-      final idx = list.indexWhere((b) => b.number == _activeLevel.number);
-      final nextBonus = list[(idx + 1) % list.length];
-      _startLevel(nextBonus);
-      return;
-    }
-    widget.progress.advanceToNextCampaignLevel();
-    final nextLv =
-        widget.repository.getCampaignLevel(widget.progress.currentLevel);
-    _startLevel(nextLv);
+    final currentLv = _activeLevel.number;
+    AdsManager.showInterEndgame(
+      levelNumber: currentLv,
+      onCompleted: () {
+        if (!mounted) return;
+        if (_activeLevel.isBonus) {
+          final list = widget.repository.bonusLevels;
+          final idx = list.indexWhere((b) => b.number == _activeLevel.number);
+          final nextBonus = list[(idx + 1) % list.length];
+          _startLevel(nextBonus);
+          return;
+        }
+        widget.progress.advanceToNextCampaignLevel();
+        final nextLv =
+            widget.repository.getCampaignLevel(widget.progress.currentLevel);
+        _startLevel(nextLv);
+      },
+    );
   }
 
   void _handlePlayOnCoins() {
@@ -262,6 +332,14 @@ class _GameplayScreenState extends State<GameplayScreen>
       return;
     }
     widget.audio.playClick();
+    AnalyticsService.logSpendResource(
+      level: _activeLevel.number,
+      type: 'currency',
+      name: 'coins',
+      amount: cost.toDouble(),
+      reason: 'play_on',
+      balance: widget.progress.coins.toDouble(),
+    );
     setState(() {
       _playOnsUsedInAttempt++;
       _showLoseOverlay = false;
@@ -273,15 +351,23 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   void _handlePlayOnAd() {
-    widget.audio.playClick();
-    setState(() {
-      _playOnsUsedInAttempt++;
-      _showLoseOverlay = false;
-      _loseInFailedStage = false;
-      _losePeekingBoard = false;
-      _syncGamePauseState();
-    });
-    _game.addExtraTime(30);
+    AdsManager.showRewardedAd(
+      placement: 'lose_continue',
+      levelNumber: _activeLevel.number,
+      onRewardResult: (success) {
+        if (success && mounted) {
+          widget.audio.playClick();
+          setState(() {
+            _playOnsUsedInAttempt++;
+            _showLoseOverlay = false;
+            _loseInFailedStage = false;
+            _losePeekingBoard = false;
+            _syncGamePauseState();
+          });
+          _game.addExtraTime(30);
+        }
+      },
+    );
   }
 
   void _handleEnterFailedStage() {
@@ -297,26 +383,35 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   void _handleRetryLevel() {
-    widget.audio.playClick();
-    widget.progress.ensureAtLeastOneLife();
-    _freezeFlyCtrl.stop();
-    _freezeFlyCtrl.value = 0.0;
-    setState(() {
-      _showLoseOverlay = false;
-      _loseInFailedStage = false;
-      _losePeekingBoard = false;
-      _playOnsUsedInAttempt = 0;
-      _showWinOverlay = false;
-      _showExitRestartPopup = false;
-      _settingsOpen = false;
-      _tutorialBannerAnimEpoch++;
-      _syncGamePauseState();
-    });
-    _game.restartLevel();
+    final currentLv = _activeLevel.number;
+    AnalyticsService.logLevelRetry(level: currentLv);
+    AdsManager.showInterEndgame(
+      levelNumber: currentLv,
+      onCompleted: () {
+        if (!mounted) return;
+        widget.audio.playClick();
+        widget.progress.ensureAtLeastOneLife();
+        _freezeFlyCtrl.stop();
+        _freezeFlyCtrl.value = 0.0;
+        setState(() {
+          _showLoseOverlay = false;
+          _loseInFailedStage = false;
+          _losePeekingBoard = false;
+          _playOnsUsedInAttempt = 0;
+          _showWinOverlay = false;
+          _showExitRestartPopup = false;
+          _settingsOpen = false;
+          _tutorialBannerAnimEpoch++;
+          _syncGamePauseState();
+        });
+        _game.restartLevel();
+      },
+    );
   }
 
   void _handleRequestReplayFromSettings() {
     widget.audio.playClick();
+    AnalyticsService.logPopupShow(name: 'exit_restart', level: _activeLevel.number);
     setState(() {
       _settingsOpen = false;
       _showExitRestartPopup = true;
@@ -325,6 +420,11 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   void _handleConfirmExitRestart() {
+    AnalyticsService.logLevelExit(
+      level: _activeLevel.number,
+      playDuration: _game.elapsedGameTime,
+      reason: 'exit_restart',
+    );
     widget.progress.loseLife();
     _handleRetryLevel();
   }
@@ -369,6 +469,7 @@ class _GameplayScreenState extends State<GameplayScreen>
             .isFreePowerUpPending(MechanicUnlockInfo.levelUpPowerUp.id);
     if (!isFree && widget.progress.levelUpCount <= 0) {
       widget.audio.playClick();
+      AnalyticsService.logPopupShow(name: 'buy_level_up', level: _activeLevel.number);
       setState(() {
         _buyPopupIsLevelUp = true;
         _syncGamePauseState();
@@ -388,6 +489,14 @@ class _GameplayScreenState extends State<GameplayScreen>
       } else {
         widget.progress.consumeLevelUp();
       }
+      AnalyticsService.logSpendResource(
+        level: _activeLevel.number,
+        type: 'booster',
+        name: 'level_up',
+        amount: 1,
+        reason: 'gameplay',
+        balance: widget.progress.levelUpCount.toDouble(),
+      );
     }
   }
 
@@ -410,6 +519,7 @@ class _GameplayScreenState extends State<GameplayScreen>
             .isFreePowerUpPending(MechanicUnlockInfo.timeFreezePowerUp.id);
     if (!isFree && widget.progress.timeFreezeCount <= 0) {
       widget.audio.playClick();
+      AnalyticsService.logPopupShow(name: 'buy_time_freeze', level: _activeLevel.number);
       setState(() {
         _buyPopupIsLevelUp = false;
         _syncGamePauseState();
@@ -433,6 +543,14 @@ class _GameplayScreenState extends State<GameplayScreen>
     } else {
       if (!widget.progress.consumeTimeFreeze()) return;
     }
+    AnalyticsService.logSpendResource(
+      level: _activeLevel.number,
+      type: 'booster',
+      name: 'time_freeze',
+      amount: 1,
+      reason: 'gameplay',
+      balance: widget.progress.timeFreezeCount.toDouble(),
+    );
 
     widget.audio.playPowerUpSelect();
     _runTimeFreezeIntroAndEngage(allowBeforeTimerStarted: isFree);
@@ -803,8 +921,12 @@ class _GameplayScreenState extends State<GameplayScreen>
                             unitySize: 84,
                             onTap: () {
                               widget.audio.playClick();
+                              final willOpen = !_settingsOpen;
+                              if (willOpen) {
+                                AnalyticsService.logPopupShow(name: 'settings', level: _activeLevel.number);
+                              }
                               setState(() {
-                                _settingsOpen = !_settingsOpen;
+                                _settingsOpen = willOpen;
                                 _syncGamePauseState();
                               });
                             },
@@ -865,6 +987,25 @@ class _GameplayScreenState extends State<GameplayScreen>
                       count: 3,
                     )) {
                       widget.audio.playCoinCollect();
+                      AnalyticsService.logSpendResource(
+                        level: _activeLevel.number,
+                        type: 'currency',
+                        name: 'coins',
+                        amount: packCost.toDouble(),
+                        reason: 'buy_booster_pack',
+                        balance: widget.progress.coins.toDouble(),
+                      );
+                      AnalyticsService.logEarnResource(
+                        level: _activeLevel.number,
+                        type: 'booster',
+                        name: isLvUp ? 'level_up' : 'time_freeze',
+                        amount: 3,
+                        reason: 'buy_pack',
+                        balance: (isLvUp
+                                ? widget.progress.levelUpCount
+                                : widget.progress.timeFreezeCount)
+                            .toDouble(),
+                      );
                       setState(() {
                         _buyPopupIsLevelUp = null;
                         _syncGamePauseState();
@@ -874,15 +1015,34 @@ class _GameplayScreenState extends State<GameplayScreen>
                     }
                   },
                   onWatchAd: () {
-                    widget.audio.playCoinCollect();
-                    widget.progress.grantFreePowerUp(
-                      isLevelUp: isLvUp,
-                      count: 1,
+                    AdsManager.showRewardedAd(
+                      placement: isLvUp ? 'booster_levelup' : 'booster_timefreeze',
+                      levelNumber: _activeLevel.number,
+                      onRewardResult: (success) {
+                        if (success && mounted) {
+                          widget.audio.playCoinCollect();
+                          widget.progress.grantFreePowerUp(
+                            isLevelUp: isLvUp,
+                            count: 1,
+                          );
+                          AnalyticsService.logEarnResource(
+                            level: _activeLevel.number,
+                            type: 'booster',
+                            name: isLvUp ? 'level_up' : 'time_freeze',
+                            amount: 1,
+                            reason: 'rewarded_ad',
+                            balance: (isLvUp
+                                    ? widget.progress.levelUpCount
+                                    : widget.progress.timeFreezeCount)
+                                .toDouble(),
+                          );
+                          setState(() {
+                            _buyPopupIsLevelUp = null;
+                            _syncGamePauseState();
+                          });
+                        }
+                      },
                     );
-                    setState(() {
-                      _buyPopupIsLevelUp = null;
-                      _syncGamePauseState();
-                    });
                   },
                   onClose: () {
                     widget.audio.playClick();

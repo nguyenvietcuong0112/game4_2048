@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Permission + meta-data của FGSDK. Là plugin Flutter nên manifest này TỰ MERGE
+     vào app — game không phải dán tay như bản Cocos. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
+    <application>
+        <!-- AdMob §8. Giá trị lấy từ manifestPlaceholder FGSDK_ADMOB_APP_ID:
+             mặc định = app id TEST (khai trong build.gradle.kts của plugin),
+             CLI fetch-config-flutter ghi đè app id THẬT vào app/build.gradle. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${FGSDK_ADMOB_APP_ID}" />
+
+        <!-- play-services-ads và play-services-measurement (Firebase Analytics) cùng khai
+             property nay voi resource khac nhau (gma_ad_services_config vs ga_ad_services_config)
+             → manifest merger bao loi. Chot lay ban cua ads (SDK nay luon dung AdMob).
+             Khai o day de game KHONG phai tu them vao app manifest. -->
+        <property
+            android:name="android.adservices.AD_SERVICES_CONFIG"
+            android:resource="@xml/gma_ad_services_config"
+            tools:replace="android:resource" />
+    </application>
+</manifest>

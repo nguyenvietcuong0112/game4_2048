@@ -627,6 +627,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   bool _winCallbackFired = false;
   PieceComponent? _finalWinningPiece;
   double _elapsedGameTime = 0.0;
+  double get elapsedGameTime => _elapsedGameTime;
   int movesCount = 0;
   int highestCombo = 0;
 
@@ -859,6 +860,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
   @visibleForTesting
   double get debugCellSize => _cellSize;
+
+  int get activePiecesCount => _pieces.length;
 
   @visibleForTesting
   List<PieceComponent> get debugPieces => List.unmodifiable(_pieces);

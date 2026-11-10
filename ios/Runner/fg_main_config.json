@@ -1,0 +1,195 @@
+{
+  "appName": "FW37",
+  "maxOnlyCountries": [
+    "RU"
+  ],
+  "android": {
+    "main_ads_config": {
+      "primaryAdUnitConfig": {
+        "Interstitial": {
+          "AdUnitID": "0754c07fc0034a06",
+          "IsAutoLoad": true,
+          "EnableAds": true
+        },
+        "Rewarded": {
+          "AdUnitID": "498148c9609d156b",
+          "IsAutoLoad": true,
+          "EnableAds": true
+        },
+        "Banner": {
+          "AdUnitID": "1885dec7784e7e82",
+          "IsAutoLoad": true,
+          "EnableAds": true
+        },
+        "AppOpen": {
+          "AdUnitID": "1",
+          "IsAutoLoad": false,
+          "EnableAds": true
+        },
+        "MRec": {
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "EnableAds": false
+        }
+      },
+      "backfillConfig": {
+        "Interstitial": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 0
+        },
+        "MRec": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 1
+        },
+        "Banner": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 2
+        },
+        "Rewarded": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 3
+        },
+        "AppOpen": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 4
+        }
+      },
+      "primaryProvider": 0,
+      "max_sdk_key": "UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CARLzgqBOMc7n1ollcWugw3gexsimiopaBhA55sNDfZQq0LCI",
+      "max_ad_review_key": "qRZzTMEyyQ0xxLqyERK6esE2su_KclIRQ1FAqWCTxoo0bTSiVBtlwzyHEEmQd4WdqgOU8BkmpP2M7isrUS50p4f",
+      "google_admob_app_id": "ca-app-pub-6221062690273747~1313970600"
+    },
+    "facebook_configs": {
+      "app_id": "",
+      "client_token": "",
+      "app_name": ""
+    },
+    "appsflyer_configs": {
+      "DevKey": "cfgYFoj97okaEbzqp8q5w5",
+      "AppId": ""
+    },
+    "privacy_configs": {
+      "privacy_policy_url": "https://mobgame.mobi/privacy-policy",
+      "terms_of_service_url": "https://mobgame.mobi/terms-of-service",
+      "users_tracking_usage_description": "Your data will be used to deliver personalized ads to you (without revealing your personal infomation)"
+    },
+    "MediationType": 2,
+    "base_api_domain": "https://api-lego.mobgame.mobi",
+    "app_key": "",
+    "game_code": "FW37",
+    "package_name": "com.fw.water.block.number.merge"
+  },
+  "ios": {
+    "main_ads_config": {
+      "primaryAdUnitConfig": {
+        "Interstitial": {
+          "AdUnitID": "45991bfe464a49e9",
+          "IsAutoLoad": true,
+          "EnableAds": true
+        },
+        "Rewarded": {
+          "AdUnitID": "c53829c9c0ff231a",
+          "IsAutoLoad": true,
+          "EnableAds": true
+        },
+        "Banner": {
+          "AdUnitID": "4eae371b10376e60",
+          "IsAutoLoad": true,
+          "EnableAds": true
+        },
+        "AppOpen": {
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "EnableAds": true
+        },
+        "MRec": {
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "EnableAds": false
+        }
+      },
+      "backfillConfig": {
+        "Interstitial": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 0
+        },
+        "MRec": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 1
+        },
+        "Banner": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 2
+        },
+        "Rewarded": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 3
+        },
+        "AppOpen": {
+          "Enable": false,
+          "AdUnitID": "",
+          "IsAutoLoad": false,
+          "AdType": 4
+        }
+      },
+      "primaryProvider": 0,
+      "max_sdk_key": "UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CARLzgqBOMc7n1ollcWugw3gexsimiopaBhA55sNDfZQq0LCI",
+      "max_ad_review_key": "qRZzTMEyyQ0xxLqyERK6esE2su_KclIRQ1FAqWCTxoo0bTSiVBtlwzyHEEmQd4WdqgOU8BkmpP2M7isrUS50p4f",
+      "google_admob_app_id": "ca-app-pub-6221062690273747~7578454064"
+    },
+    "facebook_configs": {
+      "app_id": "",
+      "client_token": "",
+      "app_name": ""
+    },
+    "appsflyer_configs": {
+      "DevKey": "cfgYFoj97okaEbzqp8q5w5",
+      "AppId": ""
+    },
+    "privacy_configs": {
+      "privacy_policy_url": "https://mobgame.mobi/privacy-policy",
+      "terms_of_service_url": "https://mobgame.mobi/terms-of-service",
+      "users_tracking_usage_description": "Your data will be used to deliver personalized ads to you (without revealing your personal infomation)"
+    },
+    "MediationType": 2,
+    "base_api_domain": "https://api-lego.mobgame.mobi",
+    "app_key": "",
+    "game_code": "FW37",
+    "package_name": "com.fw.water.block.number.merge"
+  },
+  "listDevice": [
+    "9b9adf1ff856a2f3bffafdf77481575d",
+    "EC319E55-49BB-4561-ABAC-0000444CB0C5",
+    "ec319e55-49bb-4561-abac-0000444cb0c5",
+    "0ae602113bb710a9c4f6870eb7b4ba28c8a73443",
+    "b09a494e-1e44-4f70-a70d-e7ae0301b43e",
+    "5694ed85-805f-4893-9c01-b4d411f63182",
+    "974e20e2-6ef0-41ca-a5b4-8daf881eefd1",
+    "00008120-000150442E44201E",
+    "8A6080EA-27BA-5162-A6CE-6C190338E96C",
+    "8a6080ea-27ba-5162-a6ce-6c190338e96c",
+    "8CF93311-37A4-4BCA-B04E-DFE797087E90",
+    "8E8AF617-C49F-4815-A66D-685E122D3876",
+    "8e8af617-c49f-4815-a66d-685e122d3876",
+    "7DF9FA40-01A3-4552-AABB-4012BA538910",
+    "7df9fa40-01a3-4552-aabb-4012ba538910"
+  ]
+}

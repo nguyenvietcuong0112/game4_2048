@@ -66,5 +66,56 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>FacebookAutoLogAppEventsEnabled</key>
+	<true/>
+	<key>FacebookAdvertiserIDCollectionEnabled</key>
+	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>fbapi</string>
+		<string>fb-messenger-share-api</string>
+		<string>fbauth2</string>
+		<string>fbshareextension</string>
+	</array>
+	<key>AppsFlyerDevKey</key>
+	<string>cfgYFoj97okaEbzqp8q5w5</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Your data will be used to deliver personalized ads to you (without revealing your personal infomation)</string>
+	<key>AppLovinSdkKey</key>
+	<string>UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CARLzgqBOMc7n1ollcWugw3gexsimiopaBhA55sNDfZQq0LCI</string>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-6221062690273747~7578454064</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
+	<key>FirebaseCrashlyticsCollectionEnabled</key>
+	<true/>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>UILocalNotificationSettings</key>
+	<array>
+		<string>alert</string>
+		<string>badge</string>
+		<string>sound</string>
+	</array>
+	<key>UIUserNotificationSettings</key>
+	<array>
+		<string>alert</string>
+		<string>badge</string>
+		<string>sound</string>
+	</array>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>4pfyvq9l8r.skadnetwork</string>
+		</dict>
+	</array>
 </dict>
 </plist>

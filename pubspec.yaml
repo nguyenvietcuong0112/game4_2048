@@ -7,12 +7,17 @@ environment:
   sdk: ^3.13.0
 
 dependencies:
+  funtap_global_sdk:
+    path: ./funtap_global_sdk
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
   flame: ^1.38.2
   flame_audio: ^2.12.2
   shared_preferences: ^2.5.6
+  firebase_core: ^4.14.0
+  firebase_analytics: ^12.5.0
+  firebase_crashlytics: ^5.3.0
 
 dev_dependencies:
   flutter_test:
@@ -21,6 +26,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  config:
+    disable-swift-package-manager: true
 
   assets:
     - assets/levels/

@@ -1,0 +1,12 @@
+{
+  "consumablePack": [
+    "com.funtap.global.gems_small",
+    "com.funtap.global.gems_large"
+  ],
+  "nonConsumablePack": [
+    "com.funtap.global.remove_ads"
+  ],
+  "subscriptionPack": [
+    "com.funtap.global.vip_monthly"
+  ]
+}

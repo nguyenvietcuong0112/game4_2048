@@ -1,5 +1,4 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '15.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -28,15 +27,45 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks!
+  use_frameworks! :linkage => :static
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # AppLovin MAX Mediation Adapters (14 networks matching Android build.gradle.kts)
+  pod 'AppLovinMediationBidMachineAdapter', '3.8.2.0.0'
+  pod 'AppLovinMediationBigoAdsAdapter', '6.1.0.1'
+  pod 'AppLovinMediationByteDanceAdapter', '8.3.0.9.0'
+  pod 'AppLovinMediationFacebookAdapter', '6.22.0.4'
+  pod 'FBSDKCoreKit', '18.1.1'
+  pod 'FBSDKCoreKit_Basics', '18.1.1'
+  pod 'AppLovinMediationFyberAdapter', '8.5.1.0'
+  pod 'AppLovinMediationGoogleAdapter', '13.11.0.0'
+  pod 'AppLovinMediationGoogleAdManagerAdapter', '13.11.0.0'
+  pod 'AppLovinMediationInMobiAdapter', '11.5.0.0'
+  pod 'AppLovinMediationIronSourceAdapter', '9.6.1.0.0'
+  pod 'AppLovinMediationMintegralAdapter', '8.1.7.0.1'
+  pod 'AppLovinMediationMolocoAdapter', '4.11.1.0'
+  pod 'AppLovinMediationUnityAdsAdapter', '4.21.0.0'
+  pod 'AppLovinMediationVungleAdapter', '7.7.8.0'
+  pod 'AppLovinMediationYandexAdapter', '8.6.0.0'
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
 end
 
 post_install do |installer|
+  # --- FGSDK BEGIN (wire-flutter) ---
+  # FGSDK can iOS 13.0+ (ATT + connectedScenes). Pod nao thap hon -> keo len.
+  installer.pods_project.targets.each do |fg_t|
+    fg_t.build_configurations.each do |fg_c|
+      fg_cur = fg_c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_s
+      if fg_cur.empty? || fg_cur.to_f < 13.0
+        fg_c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      end
+    end
+  end
+  # --- FGSDK END ---
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
   end

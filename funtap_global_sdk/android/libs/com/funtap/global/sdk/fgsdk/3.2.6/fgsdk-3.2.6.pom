@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- POM tối thiểu cho repo maven cục bộ. Dependency third-party KHÔNG khai ở đây
+     mà ở fgsdk-deps.gradle (giữ nguyên cách bản Cocos đang dùng). -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.funtap.global.sdk</groupId>
+  <artifactId>fgsdk</artifactId>
+  <version>3.2.6</version>
+  <packaging>aar</packaging>
+</project>

@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'models/level_models.dart';
 import 'models/palette.dart';
 import 'models/unity_curve.dart';
+import 'services/ads_manager.dart';
+import 'services/analytics_service.dart';
 import 'services/audio_haptics_service.dart';
 import 'services/player_progress_service.dart';
 import 'ui/gameplay_screen.dart';
@@ -32,6 +34,7 @@ Future<void> main() async {
   );
 
   runApp(const BlockOrder2048App());
+  unawaited(AnalyticsService.initialize());
 }
 
 class BlockOrder2048App extends StatefulWidget {
@@ -105,6 +108,7 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
       if (_audio.musicEnabled) {
         _audio.startBgm();
       }
+      AdsManager.handleAppResume(currentLevel: _progress.currentLevel);
     }
   }
 
@@ -132,6 +136,8 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
   }
 
   Future<void> _initializeAll() async {
+    final splashWatch = Stopwatch()..start();
+    AnalyticsService.logLoadingStart(placement: 'splash');
     try {
       final minSplashFuture =
           Future<void>.delayed(const Duration(milliseconds: 700));
@@ -163,6 +169,12 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
 
       _loadProgress.value = 1.0;
       await minSplashFuture;
+      AnalyticsService.logLoadingFinish(
+        placement: 'splash',
+        success: true,
+        value: splashWatch.elapsedMilliseconds / 1000.0,
+      );
+      AdsManager.init();
       if (!mounted) return;
       setState(() {
         _bundle = _BootBundle(
@@ -171,7 +183,13 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
           visualSettings: results[2] as PieceVisualSettings,
         );
       });
+      unawaited(AdsManager.showSplashAd());
     } catch (e) {
+      AnalyticsService.logLoadingFinish(
+        placement: 'splash',
+        success: false,
+        value: splashWatch.elapsedMilliseconds / 1000.0,
+      );
       if (!mounted) return;
       setState(() => _bootError = e);
     }

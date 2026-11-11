@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.blockorder2048.block_order_2048"
+    namespace = "com.fw.water.block.number.merge"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 

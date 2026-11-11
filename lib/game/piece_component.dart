@@ -60,7 +60,6 @@ class _BakedGlyphSprite {
 class _SharedPieceGeometry {
   final String key;
   final Path topPath;
-  final Path wallPath;
   final Path innerHighlightPath;
   final Path liquidCavityPath;
   final Path inflatedLocalPath010;
@@ -76,7 +75,6 @@ class _SharedPieceGeometry {
   const _SharedPieceGeometry({
     required this.key,
     required this.topPath,
-    required this.wallPath,
     required this.innerHighlightPath,
     required this.liquidCavityPath,
     required this.inflatedLocalPath010,
@@ -190,7 +188,6 @@ class PieceComponent extends PositionComponent {
 
   late _SharedPieceGeometry _sharedGeom;
   late Path _topPath;
-  late Path _wallPath;
   late Path _innerHighlightPath;
   late Path _liquidCavityPath;
   late Path _inflatedLocalPath010;
@@ -356,16 +353,10 @@ class PieceComponent extends PositionComponent {
   // Cached GPU Paints & Shaders (zero per-frame allocations for stationary & dragged pieces!)
   (Color, Color, bool, int)? _cachedBodyStyleKey;
   final Paint _cachedWallPaint = Paint();
-  final Paint _cachedBaseStrokePaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 1.0;
   final Paint _cachedTopPaint = Paint();
   final Paint _cachedRimPaint = Paint()
     ..style = PaintingStyle.stroke
     ..strokeJoin = StrokeJoin.round;
-
-  (Color, Color, int)? _cachedReflKey;
-  final Paint _cachedReflPaint = Paint();
 
   final Paint _outerContourPaint = Paint()
     ..style = PaintingStyle.stroke
@@ -585,7 +576,7 @@ class PieceComponent extends PositionComponent {
 
     final localSet = model.localCells.toSet();
     final gapInset = cellSize * 0.013;
-    final lipDepth = cellSize * 0.235;
+    final lipDepth = cellSize * 0.090;
 
     final topPath = PolyominoPathBuilder.buildRoundedPath(
       cells: localSet,
@@ -594,16 +585,6 @@ class PieceComponent extends PositionComponent {
       cornerRadius: cellSize * 0.148,
       concaveRadius: cellSize * 0.096,
     );
-
-    Path extruded = topPath.shift(Offset(0, lipDepth));
-    for (final frac in const [0.22, 0.45, 0.68, 0.86]) {
-      extruded = Path.combine(
-        PathOperation.union,
-        extruded,
-        topPath.shift(Offset(0, lipDepth * frac)),
-      );
-    }
-    final wallPath = extruded;
 
     final bevelInset = gapInset + (cellSize * 0.052).clamp(1.8, 5.2);
     final innerHighlightPath = PolyominoPathBuilder.buildRoundedPath(
@@ -681,7 +662,6 @@ class PieceComponent extends PositionComponent {
     final geom = _SharedPieceGeometry(
       key: key,
       topPath: topPath,
-      wallPath: wallPath,
       innerHighlightPath: innerHighlightPath,
       liquidCavityPath: liquidCavityPath,
       inflatedLocalPath010: inflatedLocalPath010,
@@ -708,7 +688,6 @@ class PieceComponent extends PositionComponent {
     final geom = _getOrBuildSharedGeometry();
     _sharedGeom = geom;
     _topPath = geom.topPath;
-    _wallPath = geom.wallPath;
     _innerHighlightPath = geom.innerHighlightPath;
     _liquidCavityPath = geom.liquidCavityPath;
     _inflatedLocalPath010 = geom.inflatedLocalPath010;
@@ -723,7 +702,6 @@ class PieceComponent extends PositionComponent {
     _cachedBaseLabelLayout = null;
     _cachedPreviewLabelLayout = null;
     _cachedBodyStyleKey = null;
-    _cachedReflKey = null;
   }
 
   void refreshGeometryForMovement() {
@@ -1579,7 +1557,7 @@ class PieceComponent extends PositionComponent {
         (_iceBlocksTex != null ? 2 : 0) |
         (_arrowTopImg != null ? 4 : 0) |
         (_arrowHorizCombinedImg != null ? 8 : 0);
-    return 'glassHalfLiquidV3|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
+    return 'glassHalfLiquidV4|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
   }
 
   _BakedStaticPieceSprite? _getOrBakeStaticPieceSprite(
@@ -1804,17 +1782,14 @@ class PieceComponent extends PositionComponent {
       _drawGlassSlideMotionStreaks(canvas, baseStyle, liftPx);
     }
 
-    // 1. Pre-Baked Drop Shadow (compact offset for sleek glass containers so rows never overlap!)
+    // 1. Pre-Baked Compact Drop Shadow (uniform across glass, ice, and dud so rows never overlap!)
     final clampedLiftCells = math.max(0.0, totalLiftCells);
-    final shadowBaseDy =
-        isGlassLiquid ? (cellSize * 0.055) : (_lipDepth + cellSize * 0.055);
+    final shadowBaseDy = cellSize * 0.055;
     final shadowShift = Offset(
       -0.20 * clampedLiftCells * cellSize,
       shadowBaseDy + 0.42 * clampedLiftCells * cellSize,
     );
-    final shadowAlpha = isGlassLiquid
-        ? (0.30 + clampedLiftCells * 1.35).clamp(0.0, 0.50)
-        : (0.36 + clampedLiftCells * 1.4).clamp(0.0, 0.54);
+    final shadowAlpha = (0.30 + clampedLiftCells * 1.35).clamp(0.0, 0.50);
     final shadowImg = _bakedShadowImage;
     if (shadowImg != null) {
       final liftSpread = clampedLiftCells * 0.14 * cellSize;
@@ -1841,33 +1816,6 @@ class PieceComponent extends PositionComponent {
       canvas.save();
       canvas.translate(shadowShift.dx, shadowShift.dy);
       canvas.drawPath(_topPath, _fallbackShadowPaint);
-      canvas.restore();
-    }
-
-    if (!isGlassLiquid &&
-        clampedLiftCells < 0.05 &&
-        !_areComponentsRemovedForAbsorb) {
-      final reflFade = (1.0 - clampedLiftCells / 0.05).clamp(0.0, 1.0);
-      final reflAlpha =
-          (visualSettings.reflectionAlpha * 1.08 * reflFade).clamp(0.0, 0.28);
-      final reflAlphaKey = (reflAlpha * 255).round();
-      final nextReflKey = (baseStyle.topMid, baseStyle.bottomLip, reflAlphaKey);
-      if (_cachedReflKey != nextReflKey) {
-        _cachedReflKey = nextReflKey;
-        final reflTopLocal = _localBounds.bottom - _lipDepth * 0.65;
-        final reflBottomLocal = _localBounds.bottom + _lipDepth * 0.40;
-        _cachedReflPaint.shader = ui.Gradient.linear(
-          Offset(_visualPivotLocal.dx, reflTopLocal),
-          Offset(_visualPivotLocal.dx, reflBottomLocal),
-          [
-            baseStyle.topMid.withValues(alpha: reflAlpha),
-            baseStyle.bottomLip.withValues(alpha: 0.0),
-          ],
-        );
-      }
-      canvas.save();
-      canvas.translate(0, _lipDepth * 1.55);
-      canvas.drawPath(_topPath, _cachedReflPaint);
       canvas.restore();
     }
 
@@ -2008,7 +1956,11 @@ class PieceComponent extends PositionComponent {
       );
 
       if (_isIceCovered) {
-        _drawIceFrostAndSheen(canvas, topJellyShift);
+        _drawIceFrostAndSheen(
+          canvas,
+          topJellyShift,
+          effectiveLipDepth: effectiveLipDepth,
+        );
       }
 
       final outerContourColor = _isIceCovered
@@ -2618,53 +2570,36 @@ class PieceComponent extends PositionComponent {
     canvas.restore();
   }
 
-  void _drawExtrudedOpaqueWall(
-    Canvas canvas,
-    Paint opaqueWallPaint,
-    Offset topJellyShift,
-    double effectiveLipDepth,
-  ) {
-    if (topJellyShift.distance <= 0.35 &&
-        (effectiveLipDepth - _lipDepth).abs() <= 0.35) {
-      canvas.drawPath(_wallPath, opaqueWallPaint);
-      return;
-    }
-    for (final h in const [0.0, 0.14, 0.28, 0.42, 0.56, 0.70, 0.84, 0.94]) {
-      canvas.save();
-      canvas.translate(
-        topJellyShift.dx * h,
-        effectiveLipDepth * (1.0 - h) + topJellyShift.dy * h,
-      );
-      canvas.drawPath(_topPath, opaqueWallPaint);
-      canvas.restore();
-    }
-  }
-
   /// Solid surface renderer used ONLY for Dud (`model.isDud`) and Ice-Covered (`_isIceCovered`) obstacles.
+  /// Keeps the 3D bottom lip strictly contained inside `_topPath` (`[gapInset .. cellSize - gapInset]`)
+  /// so ice and dud blocks fit flush 1:1 inside their board grid cell without spilling into the row below.
   void _drawBodySurface(
     Canvas canvas,
     BlockColorStyle style, {
     required Offset topJellyShift,
     required double effectiveLipDepth,
   }) {
-    final lipKey = (effectiveLipDepth * 16.0).round();
+    final innerBevel = effectiveLipDepth.clamp(2.0, cellSize * 0.135);
+    final lipKey = (innerBevel * 16.0).round();
     final nextBodyKey = (style.topBright, style.bottomLip, _isIceCovered, lipKey);
     if (_cachedBodyStyleKey != nextBodyKey) {
       _cachedBodyStyleKey = nextBodyKey;
       final topCrease = Color.lerp(style.bottomLip, Colors.black, 0.08)!;
       final baseShade = Color.lerp(style.bottomLip, Colors.black, 0.16)!;
       _cachedWallPaint.shader = ui.Gradient.linear(
-        Offset(_localBounds.left, _localBounds.bottom - cellSize * 0.15),
-        Offset(_localBounds.left, _localBounds.bottom + effectiveLipDepth),
+        Offset(_localBounds.left, _localBounds.bottom - innerBevel * 1.4),
+        Offset(_localBounds.left, _localBounds.bottom),
         _isIceCovered
             ? const [Color(0xFF2B8CFA), Color(0xFF1876EE), Color(0xFF105EC8)]
             : [topCrease, style.bottomLip, baseShade],
         const [0.0, 0.45, 1.0],
       );
-      _cachedBaseStrokePaint.color = baseShade.withValues(alpha: 0.72);
       _cachedTopPaint.shader = ui.Gradient.linear(
         _localBounds.topLeft,
-        Offset(_localBounds.left + _localBounds.width * 0.75, _localBounds.bottom),
+        Offset(
+          _localBounds.left + _localBounds.width * 0.75,
+          _localBounds.bottom - innerBevel,
+        ),
         [
           Color.lerp(style.topBright, Colors.white, 0.18)!,
           style.topBright,
@@ -2672,38 +2607,36 @@ class PieceComponent extends PositionComponent {
         ],
         const [0.0, 0.36, 1.0],
       );
-      final rimStrokeW = (cellSize * 0.048).clamp(1.8, 3.8);
+      final rimStrokeW = (cellSize * 0.044).clamp(1.6, 3.4);
       final softRimEnd = Color.lerp(style.topBright, style.rimHighlight, 0.55)!;
       _cachedRimPaint
         ..strokeWidth = rimStrokeW
         ..shader = ui.Gradient.linear(
           _localBounds.topLeft,
-          _localBounds.bottomRight,
+          Offset(_localBounds.right, _localBounds.bottom - innerBevel),
           [
             Colors.white.withValues(alpha: _isIceCovered ? 0.90 : 0.84),
-            style.rimHighlight.withValues(alpha: _isIceCovered ? 0.75 : 0.64),
-            softRimEnd.withValues(alpha: _isIceCovered ? 0.62 : 0.44),
+            style.rimHighlight.withValues(alpha: _isIceCovered ? 0.78 : 0.64),
+            softRimEnd.withValues(alpha: _isIceCovered ? 0.68 : 0.44),
           ],
           const [0.0, 0.42, 1.0],
         );
     }
 
-    _drawExtrudedOpaqueWall(
-      canvas,
-      _cachedWallPaint,
-      topJellyShift,
-      effectiveLipDepth,
-    );
-
-    canvas.save();
-    canvas.translate(0, effectiveLipDepth);
-    canvas.drawPath(_topPath, _cachedBaseStrokePaint);
-    canvas.restore();
-
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
+    canvas.clipPath(_topPath);
+
+    // 1. 3D Bottom Lip base contained cleanly within `_topPath`
+    canvas.drawPath(_topPath, _cachedWallPaint);
+
+    // 2. Upper frosty/solid face shifted upward by `innerBevel` inside `_topPath`
+    canvas.save();
+    canvas.translate(0, -innerBevel);
     canvas.drawPath(_topPath, _cachedTopPaint);
     canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
+    canvas.restore();
+
     canvas.restore();
   }
 
@@ -2993,10 +2926,16 @@ class PieceComponent extends PositionComponent {
     canvas.restore();
   }
 
-  void _drawIceFrostAndSheen(Canvas canvas, Offset topJellyShift) {
+  void _drawIceFrostAndSheen(
+    Canvas canvas,
+    Offset topJellyShift, {
+    required double effectiveLipDepth,
+  }) {
+    final innerBevel = effectiveLipDepth.clamp(2.0, cellSize * 0.135);
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
     canvas.clipPath(_topPath);
+    canvas.clipPath(_topPath.shift(Offset(0, -innerBevel)));
 
     if (_iceBlocksTex != null) {
       canvas.drawImageRect(
@@ -3548,9 +3487,10 @@ class PieceComponent extends PositionComponent {
   /// animated by the 23-frame `0.3833s` `"Pop"` clip (`1.0 -> 1.62907 -> 1.0`) before shattering!
   void _drawFrozenLockBadge(Canvas canvas, int targetNum) {
     final (spanCx, spanCy) = model.spanCenterInCells();
-    final badgeCenter = model.coversLabel(spanCx, spanCy)
+    final rawCenter = model.coversLabel(spanCx, spanCy)
         ? Offset(spanCx * cellSize, spanCy * cellSize)
         : _labelAnchorLocal;
+    final badgeCenter = Offset(rawCenter.dx, rawCenter.dy - cellSize * 0.036);
 
     final lockImg = _iceLockImg;
     final aspect =

@@ -1078,11 +1078,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         .clamp(24.0, 220.0);
 
     // On timed levels (`!_level.timerDisabled`), ensure `[Jar + Board]` fits cleanly
-    // between the bottom of the Timer (`_safeTop + 284*u`) and the top of the bottom PowerUps
-    // (`size.y - _safeBottom - 226*u`) so BOTH Timer and Jar are always visible without overlapping!
+    // between the bottom of the Timer (`_safeTop + 278*u`) and the top of the bottom Footer + PowerUps
+    // (`size.y - _safeBottom - 272*u`) so BOTH Timer and Jar are always visible without overlapping!
     final minJarTopScreenY =
-        _safeTop + (_level.timerDisabled ? 150.0 : 284.0) * u;
-    final maxBoardBottomScreenY = size.y - _safeBottom - 222.0 * u;
+        _safeTop + (_level.timerDisabled ? 150.0 : 278.0) * u;
+    final maxBoardBottomScreenY = size.y - _safeBottom - 272.0 * u;
     if (!_level.timerDisabled) {
       final maxTimedSpanH =
           (maxBoardBottomScreenY - minJarTopScreenY).clamp(180.0, 4000.0);
@@ -1106,13 +1106,14 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     double stageCenterY = centerY;
     final jarTopStageY = jarCenterY - jarHeight * 0.48;
-    if (stageCenterY + jarTopStageY < minJarTopScreenY) {
-      final bottomBoardRimY = _boardOrigin.y + boardH + _cellSize * 0.34;
-      final maxCenterY = maxBoardBottomScreenY - bottomBoardRimY;
-      stageCenterY = math.max(
-        stageCenterY,
-        math.min(minJarTopScreenY - jarTopStageY, maxCenterY),
-      );
+    final bottomBoardRimY = _boardOrigin.y + boardH + _cellSize * 0.34;
+    final maxCenterY = maxBoardBottomScreenY - bottomBoardRimY;
+    final minCenterY = minJarTopScreenY - jarTopStageY;
+    if (stageCenterY > maxCenterY) {
+      stageCenterY = math.max(minCenterY, maxCenterY);
+    }
+    if (stageCenterY < minCenterY) {
+      stageCenterY = math.max(stageCenterY, math.min(minCenterY, maxCenterY));
     }
 
     _baseStagePosition = Vector2(

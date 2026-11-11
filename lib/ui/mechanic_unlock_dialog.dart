@@ -80,14 +80,16 @@ const List<(double, double, double, double)> _kFtueSparkles = [
   (2.55, 248, 26, 0.45),
 ];
 
-/// Exact 1:1 `PowerUpButtonView` (`GameplayView.prefab`: `PowerUps` parent `sc = 0.816`,
-/// button `sz = (282.39, 282.39)` at `pos = (±145.10, +6.80)` -> `230.43 x 230.43` Unity px at `X = ±118.40`).
-/// Shared between `GameplayScreen` HUD and Step 2 of `PowerUpFtueOverlay` for pixel-identical alignment!
+/// Circular Booster HUD Button (`Play_Scene.png` & `Play_Scene 2.png`):
+/// - Unlocked: `Powerup_Base.png` (`208x208`) + `PowerUp_LevelUp.png` / `PowerUp_TimeFreeze.png`
+///   + corner `PowerUp_Amount.png` / `PowerUp_Plus.png` / `PowerUp_Free.png`
+/// - Locked: `Powerup_Base_Locked.png` (`204x204`) + centered `Icon_Padlock_Silver.png` (`78x98`)
+/// Shared between `GameplayScreen` HUD and Step 2 of `PowerUpFtueOverlay` for pixel-identical alignment.
 class UnityPowerUpHudButton extends StatefulWidget {
-  static const double containerScale = 0.816;
-  static const double unscaledSize = 282.39;
-  static const double scaledUnitySize = unscaledSize * containerScale; // 230.43
-  static const double horizontalOffsetUnity = 145.10 * containerScale; // 118.40
+  static const double scaledUnitySize = 208.0;
+  static const double horizontalOffsetUnity = 135.0;
+  static const double bottomOffsetUnity = 56.0;
+  static const double footerTopLineUnity = 160.0;
 
   final bool isLevelUp;
   final bool isUnlocked;
@@ -115,30 +117,11 @@ class UnityPowerUpHudButton extends StatefulWidget {
 class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
   bool _pressed = false;
 
-  double _bpx(BuildContext context, double unscaled) =>
-      ux(context, unscaled * UnityPowerUpHudButton.containerScale);
-
   @override
   Widget build(BuildContext context) {
     // Interactive whenever onTap is provided (when locked, tapping triggers "Unlock at level X!" toast)
     final interactive = widget.onTap != null;
-    final sz = _bpx(context, UnityPowerUpHudButton.unscaledSize);
-
-    const baseAsset = 'assets/images/Powerup_Base.png';
-    final iconAsset = widget.isLevelUp
-        ? (widget.isUnlocked
-            ? 'assets/images/PowerUp_LevelUp.png'
-            : 'assets/images/PowerUp_LevelUp_Locked.png')
-        : (widget.isUnlocked
-            ? 'assets/images/PowerUp_TimeFreeze.png'
-            : 'assets/images/PowerUp_TimeFreeze_Locked.png');
-
-    // Exact prefab icon sizes inside `282.39 x 282.39` button space:
-    // - `LevelUp`: `pos = (0, +10.31)`, `sz = (289.54, 294.46)`
-    // - `TimeFreeze`: `pos = (0, +16.70)`, `sz = (215.35, 211.01)`
-    final iconW = _bpx(context, widget.isLevelUp ? 268.0 : 215.35);
-    final iconH = _bpx(context, widget.isLevelUp ? 272.0 : 211.01);
-    final iconOffsetY = _bpx(context, widget.isLevelUp ? -10.31 : -16.70);
+    final sz = ux(context, UnityPowerUpHudButton.scaledUnitySize);
 
     // Visual dim ONLY when unlocked, `count > 0` (`!isFree`), and game state doesn't permit usage yet
     // (when `count == 0`, tapping `+` is ALWAYS actionable to open `PowerUpBuyView`!).
@@ -155,110 +138,116 @@ class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
         alignment: Alignment.center,
         clipBehavior: Clip.none,
         children: [
-          // Optional FTUE Step 2 `SelectedHighlight_01` cyan/green additive glow
-          if (widget.isHighlighted)
-            Positioned(
-              left: -_bpx(context, 48),
-              right: -_bpx(context, 48),
-              top: -_bpx(context, 48),
-              bottom: -_bpx(context, 48),
-              child: IgnorePointer(
+          if (!widget.isUnlocked) ...[
+            // Locked State (`Play_Scene 2.png`): metallic grey circle + centered golden padlock
+            Image.asset(
+              'assets/images/Powerup_Base_Locked.png',
+              width: ux(context, 204.0),
+              height: ux(context, 204.0),
+              fit: BoxFit.contain,
+            ),
+            Transform.translate(
+              offset: Offset(0, -ux(context, 2.0)),
+              child: Image.asset(
+                'assets/images/Icon_Padlock_Silver.png',
+                width: ux(context, 78.0),
+                height: ux(context, 98.0),
+                fit: BoxFit.contain,
+              ),
+            ),
+          ] else ...[
+            // Optional FTUE Step 2 `SelectedHighlight_01` cyan/green additive glow
+            if (widget.isHighlighted)
+              Positioned(
+                left: -ux(context, 42),
+                right: -ux(context, 42),
+                top: -ux(context, 42),
+                bottom: -ux(context, 42),
+                child: IgnorePointer(
+                  child: Image.asset(
+                    'assets/images/Glow_02.png',
+                    fit: BoxFit.contain,
+                    color: const Color(0xE63CFFB0),
+                    colorBlendMode: BlendMode.modulate,
+                  ),
+                ),
+              ),
+
+            // 1. Unlocked Gold-Rimmed Blue Circle (`Powerup_Base.png`)
+            Image.asset(
+              'assets/images/Powerup_Base.png',
+              width: sz,
+              height: sz,
+              fit: BoxFit.contain,
+            ),
+
+            // 2. Centered Booster Icon (`PowerUp_LevelUp.png` / `PowerUp_TimeFreeze.png`)
+            Transform.translate(
+              offset: Offset(0, -ux(context, widget.isLevelUp ? 2.0 : 3.0)),
+              child: Opacity(
+                opacity: dimUnavailable ? 0.58 : 1.0,
                 child: Image.asset(
-                  'assets/images/Glow_02.png',
+                  widget.isLevelUp
+                      ? 'assets/images/PowerUp_LevelUp.png'
+                      : 'assets/images/PowerUp_TimeFreeze.png',
+                  width: ux(context, widget.isLevelUp ? 126.0 : 132.0),
+                  height: ux(context, widget.isLevelUp ? 124.0 : 130.0),
                   fit: BoxFit.contain,
-                  color: const Color(0xE63CFFB0),
-                  colorBlendMode: BlendMode.modulate,
                 ),
               ),
             ),
 
-          // 1. `Background` (`Powerup_Base.png` / `Powerup_Base_Locked.png`, `pos=(0,-1.28) sz=(221.39, 232.38)`)
-          Transform.translate(
-            offset: Offset(0, _bpx(context, 1.28)),
-            child: Image.asset(
-              baseAsset,
-              width: _bpx(context, 224.0),
-              height: _bpx(context, 234.0),
-              fit: BoxFit.contain,
-            ),
-          ),
-
-          // 2. `Icon` (`PowerUp_LevelUp` / `PowerUp_TimeFreeze`)
-          Transform.translate(
-            offset: Offset(0, iconOffsetY),
-            child: Opacity(
-              opacity: dimUnavailable ? 0.58 : 1.0,
-              child: Image.asset(
-                iconAsset,
-                width: iconW,
-                height: iconH,
-                fit: BoxFit.contain,
-              ),
-            ),
-          ),
-
-          // 3A. Locked Padlock (`Icon_Padlock_Silver.png`, `pos=(+98.20, -71.20)`, `sz=(108.85, 114.30)`)
-          if (!widget.isUnlocked)
-            Transform.translate(
-              offset: Offset(_bpx(context, 84.0), _bpx(context, 66.0)),
-              child: Image.asset(
-                'assets/images/Icon_Padlock_Silver.png',
-                width: _bpx(context, 108.85),
-                height: _bpx(context, 114.30),
-                fit: BoxFit.contain,
-              ),
-            )
-          // 3B. Free FTUE Badge (`PowerUp_Free.png`, `amin/amax=(0.5, 0)`, `pos=(0, +48.80)`, `sz=(168.40, 57.94)`)
-          else if (widget.isFree)
-            Positioned(
-              bottom: _bpx(context, 18.0),
-              child: Image.asset(
-                'assets/images/PowerUp_Free.png',
-                width: _bpx(context, 172.0),
-                height: _bpx(context, 59.0),
-                fit: BoxFit.contain,
-              ),
-            )
-          // 3C. Empty Inventory `+` Badge (`PowerUp_Plus.png`, `pos=(+90.30, -79.77)`, `sz=(108.94, 110.94)`)
-          else if (widget.count <= 0)
-            Transform.translate(
-              offset: Offset(_bpx(context, 78.0), _bpx(context, 70.0)),
-              child: Image.asset(
-                'assets/images/PowerUp_Plus.png',
-                width: _bpx(context, 108.94),
-                height: _bpx(context, 110.94),
-                fit: BoxFit.contain,
-              ),
-            )
-          // 3D. Numeric Amount Badge (`PowerUp_Amount.png`, `pos=(+90.60, -77.20)`, `sz=(108.34, 119.43)`, `fontSize=48.28`)
-          else
-            Transform.translate(
-              offset: Offset(_bpx(context, 78.0), _bpx(context, 68.0)),
-              child: SizedBox(
-                width: _bpx(context, 108.34),
-                height: _bpx(context, 119.43),
+            // 3A. Free FTUE Badge (`PowerUp_Free.png`)
+            if (widget.isFree)
+              Positioned(
+                bottom: ux(context, 4.0),
+                child: Image.asset(
+                  'assets/images/PowerUp_Free.png',
+                  width: ux(context, 148.0),
+                  height: ux(context, 51.0),
+                  fit: BoxFit.contain,
+                ),
+              )
+            // 3B. Empty Inventory `+` Badge (`PowerUp_Plus.png` at bottom-right)
+            else if (widget.count <= 0)
+              Positioned(
+                right: ux(context, 2.0),
+                bottom: ux(context, 2.0),
+                child: Image.asset(
+                  'assets/images/PowerUp_Plus.png',
+                  width: ux(context, 69.0),
+                  height: ux(context, 69.0),
+                  fit: BoxFit.contain,
+                ),
+              )
+            // 3C. Red Numeric Amount Badge (`PowerUp_Amount.png` at bottom-right)
+            else
+              Positioned(
+                right: ux(context, 2.0),
+                bottom: ux(context, 2.0),
+                width: ux(context, 69.0),
+                height: ux(context, 69.0),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     Image.asset(
                       'assets/images/PowerUp_Amount.png',
-                      width: _bpx(context, 108.34),
-                      height: _bpx(context, 119.43),
+                      width: ux(context, 69.0),
+                      height: ux(context, 69.0),
                       fit: BoxFit.contain,
                     ),
                     Transform.translate(
-                      offset: Offset(0, -_bpx(context, 5.5)),
+                      offset: Offset(0, -ux(context, 1.5)),
                       child: UnitySdfText(
                         '${widget.count}',
-                        unityFontSize:
-                            48.28 * UnityPowerUpHudButton.containerScale,
+                        unityFontSize: 38.0,
                         material: UnityTextMaterial.pinkBadge,
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
+          ],
         ],
       ),
     );
@@ -397,12 +386,12 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
 
               const Spacer(flex: 3),
 
-              // 4. `Button_CTA` (`583.4 x 185.0`, `"Continue"`, `fontSize = 90`)
+              // 4. `Button_CTA` (`499 x 221`, `"Continue"`, `fontSize = 68`)
               UnityCtaButton(
                 label: 'Continue',
-                unityWidth: 583,
-                unityHeight: 185,
-                unityFontSize: 90,
+                unityWidth: 499,
+                unityHeight: 221,
+                unityFontSize: 68,
                 onTap: widget.onDismiss,
               ),
 
@@ -516,12 +505,12 @@ class _PowerUpFtueOverlayState extends State<PowerUpFtueOverlay>
 
                     const Spacer(flex: 2),
 
-                    // Bare `PowerUp_LevelUp.png` (`475 x 540`) / `PowerUp_TimeFreeze.png` (`390 x 390`)
+                    // Bare `PowerUp_LevelUp.png` / `PowerUp_TimeFreeze.png`
                     _FtueHeroIllustration(
                       controller: _ctrl,
                       iconAsset: info.iconAsset,
-                      iconUnityWidth: isLevelUp ? 450 : 370,
-                      iconUnityHeight: isLevelUp ? 500 : 370,
+                      iconUnityWidth: 310,
+                      iconUnityHeight: 310,
                     ),
 
                     const Spacer(flex: 2),
@@ -550,12 +539,12 @@ class _PowerUpFtueOverlayState extends State<PowerUpFtueOverlay>
 
                     const Spacer(flex: 3),
 
-                    // `Button_CTA` (`580.5 x 181.8`, `"Continue"`, `fontSize = 90`)
+                    // `Button_CTA` (`499 x 221`, `"Continue"`, `fontSize = 68`)
                     UnityCtaButton(
                       label: 'Continue',
-                      unityWidth: 580,
-                      unityHeight: 182,
-                      unityFontSize: 90,
+                      unityWidth: 499,
+                      unityHeight: 221,
+                      unityFontSize: 68,
                       onTap: _handleContinue,
                     ),
 
@@ -569,7 +558,7 @@ class _PowerUpFtueOverlayState extends State<PowerUpFtueOverlay>
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: ux(context, 10),
+                bottom: ux(context, UnityPowerUpHudButton.bottomOffsetUnity),
                 child: SizedBox(
                   height: ux(context, 480),
                   child: AnimatedBuilder(

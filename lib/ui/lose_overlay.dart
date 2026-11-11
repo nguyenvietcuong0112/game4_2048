@@ -588,7 +588,6 @@ class _PlayOnCoinsButtonState extends State<_PlayOnCoinsButton> {
   @override
   Widget build(BuildContext context) {
     final active = widget.enabled && widget.onTap != null;
-    final bgSprite = active ? 'Button_CTA.png' : 'Button_CTA_Disabled.png';
     final insetSprite =
         active ? 'Inset_Button_CTA.png' : 'Inset_Button_CTA_Red.png';
     final textMat =
@@ -614,17 +613,19 @@ class _PlayOnCoinsButtonState extends State<_PlayOnCoinsButton> {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              // 1. `Background` (`left=-10, right=-10, top=0, bottom=-20`)
+              // 1. Gold-rimmed pill background (`Button_CTA.png`)
               Positioned(
-                left: ppx(context, -10.0),
-                right: ppx(context, -10.0),
+                left: ppx(context, -6.0),
+                right: ppx(context, -6.0),
                 top: 0.0,
-                bottom: ppx(context, -20.0),
+                bottom: ppx(context, -16.0),
                 child: IgnorePointer(
                   child: UnityNineSlice(
-                    sprite: bgSprite,
-                    pixelMultiplier:
-                        active ? (kUnityPopupScale / 0.82) : kUnityPopupScale,
+                    sprite: 'Button_CTA.png',
+                    colorFilter: active
+                        ? null
+                        : UnityButtonColorFilters.disabledSilver,
+                    pixelMultiplier: kUnityPopupScale,
                   ),
                 ),
               ),
@@ -753,41 +754,41 @@ class _PlayOnAdsButtonState extends State<_PlayOnAdsButton> {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              // 1. `Background` (`Button_Blue.png`, `left=-10, right=-10, top=0, bottom=-20`)
+              // 1. Gold-rimmed royal-blue pill background (`Button_CTA.png` + `blueWithGoldRim`)
               Positioned(
-                left: ppx(context, -10.0),
-                right: ppx(context, -10.0),
+                left: ppx(context, -6.0),
+                right: ppx(context, -6.0),
                 top: 0.0,
-                bottom: ppx(context, -20.0),
+                bottom: ppx(context, -16.0),
                 child: IgnorePointer(
                   child: UnityNineSlice(
-                    sprite: enabled
-                        ? 'Button_Blue.png'
-                        : 'Button_CTA_Disabled.png',
-                    pixelMultiplier:
-                        enabled ? (kUnityPopupScale / 0.82) : kUnityPopupScale,
+                    sprite: 'Button_CTA.png',
+                    colorFilter: enabled
+                        ? UnityButtonColorFilters.blueWithGoldRim
+                        : UnityButtonColorFilters.disabledSilver,
+                    pixelMultiplier: kUnityPopupScale,
                   ),
                 ),
               ),
 
-              // 2. `Icon_Ad` (`amin=(0, 0.5) pos=(73.50, 0) sz=(121.76, 121.76)`)
+              // 2. `Icon_Ad`
               Positioned(
-                left: ppx(context, 73.50 - 121.76 * 0.5),
-                top: ppx(context, (226.79 - 121.76) * 0.5),
-                width: ppx(context, 121.76),
-                height: ppx(context, 121.76),
+                left: ppx(context, 48.0),
+                top: ppx(context, (226.79 - 106.0) * 0.5),
+                width: ppx(context, 106.0),
+                height: ppx(context, 106.0),
                 child: Image.asset(
                   'assets/images/Icon_Ad.png',
                   fit: BoxFit.contain,
                 ),
               ),
 
-              // 3. `Label` (`"Play On"`, `pos=(+50.35, -4.20) sz=(-124.00, -56.39)`)
+              // 3. `Label` (`"Play On"`)
               Positioned(
-                left: ppx(context, 62.00 + 50.35),
-                right: ppx(context, 62.00 - 50.35),
-                top: ppx(context, 28.20 + 4.20),
-                bottom: ppx(context, 28.20 - 4.20),
+                left: ppx(context, 162.0),
+                right: ppx(context, 40.0),
+                top: ppx(context, 28.0),
+                bottom: ppx(context, 28.0),
                 child: Center(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,

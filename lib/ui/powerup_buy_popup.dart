@@ -55,48 +55,9 @@ class PowerUpBuyPopup extends StatelessWidget {
           children: [
             // 1. Elevated Top-Left `CoinsWidget` (`CurrencyBar.ShowCoinsOnPopupLayer()`)
             Positioned(
-              left: ux(context, 30),
-              top: ux(context, 16),
-              child: SizedBox(
-                width: ux(context, 314),
-                height: ux(context, 114),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.centerLeft,
-                  children: [
-                    Positioned(
-                      left: ux(context, 16),
-                      right: 0,
-                      child: UnityNineSlice(
-                        sprite: 'WidgetBase.png',
-                        height: ux(context, 92),
-                        padding: EdgeInsets.only(
-                          left: ux(context, 94),
-                          right: ux(context, 22),
-                          bottom: ux(context, 4),
-                        ),
-                        alignment: Alignment.center,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: UnitySdfText(
-                            '$playerCoins',
-                            unityFontSize: 52,
-                            material: UnityTextMaterial.levelCounter,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      child: Image.asset(
-                        'assets/images/Icon_Coin.png',
-                        width: ux(context, 112),
-                        height: ux(context, 112),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              left: ux(context, UnityCoinsWidget.hudLeftUnity),
+              top: ux(context, UnityCoinsWidget.hudTopUnity),
+              child: UnityCoinsWidget(coins: playerCoins),
             ),
 
             // 2. Main `PowerUpBuyView` Content (`Ribbon` + Side-by-Side `CoinPurchasePanel` & `AdsPurchasePanel`)
@@ -239,7 +200,7 @@ class _PowerUpOfferColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconSize = isLevelUp ? 306.0 : 254.0;
+    final iconSize = isLevelUp ? 168.0 : 174.0;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -258,12 +219,18 @@ class _PowerUpOfferColumn extends StatelessWidget {
                 colorBlendMode: BlendMode.modulate,
               ),
               Image.asset(
+                'assets/images/Powerup_Base.png',
+                width: ux(context, 272),
+                height: ux(context, 272),
+                fit: BoxFit.contain,
+              ),
+              Image.asset(
                 iconAsset,
                 width: ux(context, iconSize),
                 height: ux(context, iconSize),
                 fit: BoxFit.contain,
               ),
-              // Floating `'x3'` / `'x1'` (`fontSize = 131.65 * 0.88` at bottom-right, NO circle base!)
+              // Floating `'x3'` / `'x1'` at bottom-right
               Positioned(
                 right: ux(context, 28),
                 bottom: ux(context, 18),
@@ -283,9 +250,9 @@ class _PowerUpOfferColumn extends StatelessWidget {
   }
 }
 
-/// Exact `CoinPurchasePanel/BuyButton` (`414.32 x 192.66` in `PowerUpBuyView.prefab`):
-/// Stacked `"Buy"` (`fontSize = 66.1`) on top + `Inset_Button_CTA.png` (`245.61 x 60.63`)
-/// with `Icon_Coin.png` + `600` / `450` below. Uses `Button_CTA_Disabled.png` + `ctaGray` when unaffordable!
+/// Gold-rimmed `CoinPurchasePanel/BuyButton` (`Button_CTA.png`):
+/// Stacked `"Buy"` on top + `Inset_Button_CTA.png` (`Icon_Coin.png` + `600` / `450`) below.
+/// Uses `UnityButtonColorFilters.disabledSilver` + `ctaGray` when unaffordable.
 class _PowerUpStackedBuyButton extends StatefulWidget {
   final String label;
   final int coinPrice;
@@ -310,7 +277,6 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.enabled && widget.onTap != null;
-    final sprite = enabled ? 'Button_CTA.png' : 'Button_CTA_Disabled.png';
     final textMat =
         enabled ? UnityTextMaterial.ctaGreen : UnityTextMaterial.ctaGray;
 
@@ -329,13 +295,15 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOutCubic,
         child: UnityNineSlice(
-          sprite: sprite,
-          width: ux(context, 414),
-          height: ux(context, 193),
+          sprite: 'Button_CTA.png',
+          colorFilter:
+              enabled ? null : UnityButtonColorFilters.disabledSilver,
+          width: ux(context, 430),
+          height: ux(context, 200),
           padding: EdgeInsets.fromLTRB(
-            ux(context, 24),
-            ux(context, 14),
-            ux(context, 24),
+            ux(context, 42),
+            ux(context, 16),
+            ux(context, 42),
             ux(context, 24),
           ),
           child: Column(
@@ -345,18 +313,18 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
                 fit: BoxFit.scaleDown,
                 child: UnitySdfText(
                   widget.label,
-                  unityFontSize: 66,
+                  unityFontSize: 64,
                   material: textMat,
                 ),
               ),
-              SizedBox(height: ux(context, 6)),
+              SizedBox(height: ux(context, 4)),
               UnityNineSlice(
                 sprite: 'Inset_Button_CTA.png',
-                width: ux(context, 246),
-                height: ux(context, 62),
+                width: ux(context, 236),
+                height: ux(context, 58),
                 tint: enabled ? null : const Color(0xFF99A3B0),
                 padding: EdgeInsets.symmetric(
-                  horizontal: ux(context, 18),
+                  horizontal: ux(context, 16),
                   vertical: ux(context, 4),
                 ),
                 child: Row(
@@ -365,8 +333,8 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
                   children: [
                     Image.asset(
                       'assets/images/Icon_Coin.png',
-                      width: ux(context, 48),
-                      height: ux(context, 48),
+                      width: ux(context, 46),
+                      height: ux(context, 46),
                     ),
                     SizedBox(width: ux(context, 10)),
                     Flexible(
@@ -374,7 +342,7 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
                         fit: BoxFit.scaleDown,
                         child: UnitySdfText(
                           '${widget.coinPrice}',
-                          unityFontSize: 50,
+                          unityFontSize: 48,
                           material: textMat,
                         ),
                       ),
@@ -390,8 +358,8 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
   }
 }
 
-/// Exact `AdsPurchasePanel/WatchAdButton` (`416.70 x 192.66` in `PowerUpBuyView.prefab`):
-/// `Button_Blue.png` with `Icon_Ad.png` (`92 x 114`) on left + `"Watch"` (`fontSize = 68.8`) on right.
+/// Gold-rimmed blue `AdsPurchasePanel/WatchAdButton` (`Button_CTA.png` + `blueWithGoldRim`)
+/// with `Icon_Ad.png` on left + `"Watch"` on right.
 class _PowerUpWatchAdButton extends StatefulWidget {
   final VoidCallback onTap;
 
@@ -419,13 +387,14 @@ class _PowerUpWatchAdButtonState extends State<_PowerUpWatchAdButton> {
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOutCubic,
         child: UnityNineSlice(
-          sprite: 'Button_Blue.png',
-          width: ux(context, 417),
-          height: ux(context, 193),
+          sprite: 'Button_CTA.png',
+          colorFilter: UnityButtonColorFilters.blueWithGoldRim,
+          width: ux(context, 430),
+          height: ux(context, 200),
           padding: EdgeInsets.fromLTRB(
-            ux(context, 28),
-            ux(context, 14),
-            ux(context, 28),
+            ux(context, 44),
+            ux(context, 16),
+            ux(context, 44),
             ux(context, 24),
           ),
           child: Row(
@@ -433,8 +402,8 @@ class _PowerUpWatchAdButtonState extends State<_PowerUpWatchAdButton> {
             children: [
               Image.asset(
                 'assets/images/Icon_Ad.png',
-                width: ux(context, 84),
-                height: ux(context, 104),
+                width: ux(context, 80),
+                height: ux(context, 98),
                 fit: BoxFit.contain,
               ),
               SizedBox(width: ux(context, 14)),
@@ -443,7 +412,7 @@ class _PowerUpWatchAdButtonState extends State<_PowerUpWatchAdButton> {
                   fit: BoxFit.scaleDown,
                   child: const UnitySdfText(
                     'Watch',
-                    unityFontSize: 66,
+                    unityFontSize: 64,
                     material: UnityTextMaterial.ctaBlue,
                   ),
                 ),

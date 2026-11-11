@@ -11,7 +11,7 @@ class AdsManager {
   AdsManager._();
 
   /// Master switch to enable or disable ads across the entire app.
-  static bool enableAds = true;
+  static bool enableAds = false;
 
   @visibleForTesting
   static bool? mockRewardResult;

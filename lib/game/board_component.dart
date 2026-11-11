@@ -52,10 +52,9 @@ class BoardComponent extends PositionComponent {
     final playable = level.playableCells;
     if (playable.isEmpty) return;
 
-    final sideClearance = cellSize * 0.095;
-    final topPerspectiveShift = cellSize * 0.080;
-    final bottomPerspectiveShift = cellSize * 0.145;
-    _bakePadding = sideClearance + bottomPerspectiveShift + cellSize * 0.28;
+    final sideClearance = cellSize * 0.085;
+    final bottomShadowClearance = cellSize * 0.015;
+    _bakePadding = sideClearance + bottomShadowClearance + cellSize * 0.24;
 
     final logicalW = (size.x + _bakePadding * 2).clamp(1.0, 4096.0);
     final logicalH = (size.y + _bakePadding * 2).clamp(1.0, 4096.0);
@@ -70,30 +69,27 @@ class BoardComponent extends PositionComponent {
     canvas.scale(imgW / logicalW, imgH / logicalH);
     canvas.translate(_bakePadding, _bakePadding);
 
-    // 1. Build 2.5D Perspective Cavity Cutout:
-    // Shifting top edges by `+0.080 * cs` (`-0.015 * cs` at row 0) and bottom edges by
-    // `+0.145 * cs` (`rows + 0.240 * cs` at bottom row) aligns the cavity with the `+0.15 * cs`
-    // perspective floor plane AND keeps enclosed inner wall pillars (`L5`, `L17`, `L20`, `L27`...)
-    // at full `0.81 * cs × 0.745 * cs` 3D royal-blue pillar proportions centered on the 2.5D grid!
+    // 1. Build Recessed Cavity Cutout aligned 1:1 with `[0 .. cols * cs] x [0 .. rows * cs]`
+    // so every block at `(c * cs, r * cs)` sits dead-center inside its corresponding grid cell!
     final baseCutout = PolyominoPathBuilder.buildRoundedPath(
       cells: playable,
       cellSize: cellSize,
       inset: -sideClearance,
-      cornerRadius: cellSize * 0.20,
-      concaveRadius: cellSize * 0.14,
+      cornerRadius: cellSize * 0.19,
+      concaveRadius: cellSize * 0.13,
     );
     final cavityPath = Path.combine(
       PathOperation.union,
-      baseCutout.shift(Offset(0, topPerspectiveShift)),
-      baseCutout.shift(Offset(0, bottomPerspectiveShift)),
+      baseCutout,
+      baseCutout.shift(Offset(0, bottomShadowClearance)),
     );
 
     // Subtle outer table ambient shadow around the cutout
     canvas.drawPath(
-      cavityPath.shift(Offset(0, cellSize * 0.03)),
+      cavityPath.shift(Offset(0, cellSize * 0.025)),
       Paint()
         ..color = const Color(0x6601092B)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cellSize * 0.09),
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cellSize * 0.08),
     );
 
     // Deep abyssal recessed cavity base (`#040A24`)
@@ -102,22 +98,20 @@ class BoardComponent extends PositionComponent {
       Paint()..color = const Color(0xFF040A24),
     );
 
-    // 2. Clipped Interior: Recessed Floor Plane + `TileMaterial_A` / `TileMaterial_B` Pedestals
+    // 2. Clipped Interior: Recessed Floor Plane + 1:1 Aligned Grid Slots
     canvas.save();
     canvas.clipPath(cavityPath);
 
-    // Recessed floor plane shifted down by the inner top table cliff wall (`0.165 * cellSize`)
-    final cliffDrop = cellSize * 0.165;
+    // Subtle recessed top cliff wall kept within `sideClearance` so it never cuts across row-0 glass blocks
+    final cliffDrop = cellSize * 0.055;
     canvas.drawPath(
       cavityPath.shift(Offset(0, cliffDrop)),
       Paint()..color = const Color(0xFF07133B),
     );
 
-    // Subtle dark-navy 3D floor tile pedestals (`TileMaterial_A: #0D1E4C`, `TileMaterial_B: #0C225C`)
-    // shifted down slightly in perspective so empty slots show rounded dark-blue pedestals (`ref_gameplay.png`)
-    final tileYShift = cellSize * 0.15;
-    final tileInset = cellSize * 0.032;
-    final tileRadius = Radius.circular(cellSize * 0.13);
+    // Dark-navy 3D floor tile slots centered 1:1 on `(c * cellSize, r * cellSize)` (`tileYShift = 0`)
+    final tileInset = cellSize * 0.028;
+    final tileRadius = Radius.circular(cellSize * 0.135);
 
     for (final (c, r) in playable) {
       final isAlt = ((c + r) & 1) == 1;
@@ -126,48 +120,48 @@ class BoardComponent extends PositionComponent {
 
       final tileRect = Rect.fromLTWH(
         c * cellSize + tileInset,
-        r * cellSize + tileYShift + tileInset,
+        r * cellSize + tileInset,
         cellSize - tileInset * 2,
         cellSize - tileInset * 2,
       );
       final rrect = RRect.fromRectAndRadius(tileRect, tileRadius);
 
-      // Subtle pedestal front lip
+      // Compact pedestal front lip staying within the cell groove
       canvas.drawRRect(
-        rrect.shift(Offset(0, cellSize * 0.09)),
+        rrect.shift(Offset(0, cellSize * 0.024)),
         Paint()..color = wallColor,
       );
-      // Pedestal top face
+      // Pedestal top face aligned 1:1 with `(c * cellSize, r * cellSize)`
       canvas.drawRRect(
         rrect,
         Paint()..color = topColor,
       );
-      // Crisp subtle top bevel highlight on empty floor pedestals
+      // Crisp subtle top bevel highlight on empty floor slots
       canvas.drawRRect(
         rrect.deflate(0.8),
         Paint()
-          ..color = const Color(0xFF143284).withValues(alpha: 0.55)
+          ..color = const Color(0xFF16368C).withValues(alpha: 0.55)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.1,
       );
     }
 
-    // Soft inner shadow cast downward from the top table cliff edges into the cavity
+    // Soft inner shadow cast downward from the top table cliff edges into the recessed frame margin
     final innerShadowDiff = Path.combine(
       PathOperation.difference,
       cavityPath,
-      cavityPath.shift(Offset(0, cellSize * 0.11)),
+      cavityPath.shift(Offset(0, cellSize * 0.065)),
     );
     canvas.drawPath(
       innerShadowDiff,
       Paint()
-        ..color = const Color(0xAA020618)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cellSize * 0.04),
+        ..color = const Color(0x99020618)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cellSize * 0.035),
     );
 
     canvas.restore();
 
-    // 3. Crisp Electric-Blue Table Cutout Rim Bevel (`#064AE8` on bottom/sides, `#032690` on top)
+    // 3. Subtle Purple-Indigo Table Cutout Rim Bevel harmonizing with `Background_Core.png`
     final bounds = cavityPath.getBounds();
     final rimStrokeW = (cellSize * 0.042).clamp(1.6, 3.2);
     canvas.drawPath(
@@ -179,40 +173,35 @@ class BoardComponent extends PositionComponent {
           Offset(bounds.center.dx, bounds.top),
           Offset(bounds.center.dx, bounds.bottom),
           const [
-            Color(0xFF03238A),
-            Color(0xFF0542D4),
-            Color(0xFF0A54FF),
+            Color(0xFF1F1254),
+            Color(0xFF392184),
+            Color(0xFF5232AE),
           ],
           const [0.0, 0.55, 1.0],
         ),
     );
 
-    // 4. Highlight enclosed inner wall islands (`L5`, `L17`, `L20`, `L27`, `L33`...) as raised 3D
-    // `#0330AC` royal-blue table pillars with top rim highlight so inner obstacles read clearly.
+    // 4. Highlight enclosed inner wall islands (`L5`, `L17`, `L20`, `L27`, `L33`...) centered 1:1
+    // on `(c * cellSize, r * cellSize)` so inner obstacles align symmetrically with adjacent blocks.
     final enclosedWalls = _findEnclosedWallCells(playable);
     if (enclosedWalls.isNotEmpty) {
-      final rawIsland = PolyominoPathBuilder.buildRoundedPath(
+      final islandTopPath = PolyominoPathBuilder.buildRoundedPath(
         cells: enclosedWalls,
         cellSize: cellSize,
         inset: sideClearance,
         cornerRadius: cellSize * 0.14,
         concaveRadius: cellSize * 0.14,
       );
-      final islandTopPath = Path.combine(
-        PathOperation.intersect,
-        rawIsland.shift(Offset(0, topPerspectiveShift)),
-        rawIsland.shift(Offset(0, bottomPerspectiveShift)),
-      );
       canvas.drawPath(
         islandTopPath,
-        Paint()..color = const Color(0xFF0330AC),
+        Paint()..color = const Color(0xFF462899),
       );
       canvas.drawPath(
         islandTopPath,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = rimStrokeW
-          ..color = const Color(0xFF084EE8),
+          ..color = const Color(0xFF5C39BC),
       );
     }
 

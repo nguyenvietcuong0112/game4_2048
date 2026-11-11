@@ -57,25 +57,17 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(
-            top: ux(context, 36),
+            top: ux(context, 42),
             child: UnityNineSlice(
               sprite: 'Background_Popup.png',
               padding: EdgeInsets.fromLTRB(
-                ux(context, 34),
-                ux(context, 34),
-                ux(context, 34),
-                ux(context, 40),
+                ux(context, 44),
+                ux(context, 108),
+                ux(context, 44),
+                ux(context, 48),
               ),
               child: Column(
                 children: [
-                  SizedBox(height: ux(context, 8)),
-                  const UnitySdfText(
-                    'Select Level',
-                    unityFontSize: 78,
-                    material: UnityTextMaterial.popupTitle,
-                  ),
-                  SizedBox(height: ux(context, 24)),
-
                   // Campaign / Bonus Tab Switcher
                   Container(
                     margin: EdgeInsets.symmetric(horizontal: ux(context, 12)),
@@ -107,7 +99,7 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                   ),
                   SizedBox(height: ux(context, 22)),
 
-                  // White `Panel_Popup.png` scrollable well
+                  // Cream `Panel_Popup.png` scrollable well
                   Expanded(
                     child: UnityNineSlice(
                       sprite: 'Panel_Popup.png',
@@ -124,16 +116,13 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                               crossAxisCount: 4,
                               mainAxisSpacing: ux(context, 22),
                               crossAxisSpacing: ux(context, 22),
-                              childAspectRatio: 0.94,
+                              childAspectRatio: 0.98,
                             ),
                             itemCount: campaign.length,
                             itemBuilder: (context, index) {
                               final lv = campaign[index];
                               final isCurrent = !widget.activeIsBonus &&
                                   widget.activeLevelNumber == lv.number;
-                              final sprite = isCurrent
-                                  ? 'Button_CTA.png'
-                                  : 'Button_Blue.png';
                               final textMat = isCurrent
                                   ? UnityTextMaterial.ctaGreen
                                   : UnityTextMaterial.ctaBlue;
@@ -144,14 +133,18 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                                   widget.onSelectLevel(lv);
                                 },
                                 child: UnityNineSlice(
-                                  sprite: sprite,
-                                  padding: EdgeInsets.only(bottom: ux(context, 10)),
+                                  sprite: 'Button_CTA.png',
+                                  colorFilter: isCurrent
+                                      ? null
+                                      : UnityButtonColorFilters.blueWithGoldRim,
+                                  padding:
+                                      EdgeInsets.only(bottom: ux(context, 8)),
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       UnitySdfText(
                                         '${lv.number}',
-                                        unityFontSize: 60,
+                                        unityFontSize: 56,
                                         material: textMat,
                                       ),
                                       Text(
@@ -163,7 +156,8 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                                           fontVariations: const [
                                             FontVariation('wght', 700),
                                           ],
-                                          color: Colors.white.withValues(alpha: 0.9),
+                                          color: Colors.white
+                                              .withValues(alpha: 0.9),
                                           height: 1.0,
                                         ),
                                       ),
@@ -190,8 +184,8 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                                     : UnityButtonSkin.blue,
                                 label: '${lv.title} (${lv.cols}×${lv.rows})',
                                 unityWidth: 780,
-                                unityHeight: 136,
-                                unityFontSize: 52,
+                                unityHeight: 156,
+                                unityFontSize: 50,
                                 onTap: () {
                                   Navigator.of(context).pop();
                                   widget.onSelectLevel(lv);
@@ -204,6 +198,36 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+
+          // Top Centered Header Ribbon (`Frame_Popup_Title.png`)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: IgnorePointer(
+                child: UnityNineSlice(
+                  sprite: 'Frame_Popup_Title.png',
+                  width: ux(context, 580),
+                  height: ux(context, 140),
+                  padding: EdgeInsets.fromLTRB(
+                    ux(context, 42),
+                    ux(context, 6),
+                    ux(context, 42),
+                    ux(context, 14),
+                  ),
+                  child: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: UnitySdfText(
+                      'Select Level',
+                      unityFontSize: 66,
+                      material: UnityTextMaterial.popupTitle,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

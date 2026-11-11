@@ -3,23 +3,19 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'unity_ui_kit.dart';
 
-/// 100% Pixel-Exact Replica of Unity `WinGameplayView.prefab` + `RewardView.prefab` (`sc = 0.82`):
-/// - Background Scrim: `rgba(15, 32, 74, 0.98)` (`LevelCompleteView/Background`).
-/// - Stage 1 (`LevelCompleteView`, `0.0s..0.92s`): Pre-cached wave-bouncing `"Level complete!"`
-///   (`Baloo2_ExtraBold_Level_Complete` + `Gradient_Title_Light`) + warm additive glow & bokeh.
-/// - Stage 2 (`WinContent`, center-anchored `amin.y = amax.y = 0.5`):
-///   1. `Header` (`dy = -559`): `Banner_Gold.png` (`1038x276`) + `"AMAZING!"` (`sz = 126`,
-///      `dy = -36` above ribbon center) + tucked 9-slice `Label_Level.png` (`376x122`,
-///      `pixelMultiplier = 0.82`, rendered behind ribbon with zero gap, `"Level X"`, `sz = 62.7`).
-///   2. `Rewards` (`dy = +17`): Multi-layer additive `UI_Add` `#FF82B2` rose-pink + `#FF914F`
-///      peach-amber + `#FFB800` golden aura, 4-ray `+` `CentralFlare` light beams, outward-drifting
-///      soft round white bokeh orbs (`VFXSparkleMaterial`), giant `Reward_Coin.png` (`500x500`,
-///      `~274` visible gold diameter), and `"25"` (`sz = 124`, `Baloo2_ExtraBold_CTA_Blue_Text`)
-///      overlapping the bottom gold rim of the coin!
-///   3. `NextLevelButton` (`dy = +685`): `Button_CTA.png` (`606x206`, `sliceScale = 0.82`,
-///      `"Next Level"`, `sz = 74`).
-/// - Stage 3 (Coin Collect Flight): Tapping `"Next Level"` arcs golden `Icon_Coin.png` sprites
-///   into the top-left `CoinsWidget` with live counter ticks.
+/// Level Complete Overlay combining a smooth 2-line `'Level' / 'Complete!'` wave header (`PoetsenOne`)
+/// with the redesigned `Victory` reward layout & denser one-shot Confetti FX:
+/// - Dark backdrop scrim (`rgba(10, 8, 28, 0.90)`)
+/// - Stage 1 (`0.0s .. 0.72s`): 2-line `'Level'` / `'Complete!'` (`UnityTextMaterial.levelCompleteWave`
+///   with `PoetsenOne` font) ripples in letter-by-letter with a continuous C-infinity wave + warm glow,
+///   then glides effortlessly on the GPU (`Transform.translate`, zero layout passes) to the top header!
+/// - Stage 2 (`seq >= 0.46`):
+///   1. One-shot 60/120Hz `_VictoryConfettiPainter` (96 colorful pieces launching from upper-left & upper-right
+///      downward over ~4.4s before smoothly fading out and unmounting)
+///   2. Center rotating 12-ray sunbeam starburst + golden aura + `Reward_Coin.png` (`428x323`)
+///      with `${rewardCoins}` (`UnityTextMaterial.winCoinAmount`) overlapping bottom-right
+///   3. `Time | Moves | Combo` summary pill positioned cleanly between the coin pile and CTA
+///   4. Bottom `"Continue"` `Button_CTA.png` (`499x221`) triggering curved `Icon_Coin.png` flight to HUD
 class WinOverlay extends StatefulWidget {
   final String levelLabel;
   final int rewardCoins;
@@ -49,31 +45,42 @@ class WinOverlay extends StatefulWidget {
 class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   late final AnimationController _ambientCtrl;
   late final AnimationController _sequenceCtrl;
+  late final AnimationController _confettiCtrl;
   late final AnimationController _coinFlyCtrl;
 
+  bool _confettiStarted = false;
+  bool _confettiFinished = false;
   bool _stage2Notified = false;
   bool _collecting = false;
   final Set<int> _arrivedCoinIndices = {};
 
   static const int _flyingCoinCount = 7;
-  static const String _stage1Phrase = 'Level complete!';
-  List<Widget>? _cachedStage1Glyphs;
-  double? _cachedStage1Scale;
+  static const String _line1Text = 'Level';
+  static const String _line2Text = 'Complete!';
 
   @override
   void initState() {
     super.initState();
     _ambientCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 3600),
     )..repeat();
 
     _sequenceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1450),
+      duration: const Duration(milliseconds: 1650),
     )
       ..addListener(_checkStageTransition)
       ..forward();
+
+    _confettiCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4400),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _confettiFinished = true);
+        }
+      });
 
     _coinFlyCtrl = AnimationController(
       vsync: this,
@@ -87,31 +94,12 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       });
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final sc = uxScale(context);
-    if (_cachedStage1Glyphs == null || _cachedStage1Scale != sc) {
-      _cachedStage1Scale = sc;
-      _cachedStage1Glyphs = List<Widget>.generate(_stage1Phrase.length, (i) {
-        final ch = _stage1Phrase[i];
-        if (ch == ' ') {
-          return SizedBox(width: ux(context, 28));
-        }
-        return RepaintBoundary(
-          child: UnitySdfText(
-            ch,
-            unityFontSize: 130,
-            material: UnityTextMaterial.levelCompleteWave,
-          ),
-        );
-      });
-    }
-  }
-
   void _checkStageTransition() {
-    // Stage 2 (`WinContent` AMAZING! + Coin) pops in at 62% of sequence (~900ms)
-    if (!_stage2Notified && _sequenceCtrl.value >= 0.62) {
+    if (!_confettiStarted && _sequenceCtrl.value >= 0.38) {
+      _confettiStarted = true;
+      _confettiCtrl.forward(from: 0.0);
+    }
+    if (!_stage2Notified && _sequenceCtrl.value >= 0.46) {
       _stage2Notified = true;
       widget.onStage2Shown?.call();
     }
@@ -133,7 +121,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
     }
   }
 
-  void _onTapNextLevel() {
+  void _onTapContinue() {
     if (_collecting) return;
     setState(() => _collecting = true);
     _coinFlyCtrl.forward(from: 0.0);
@@ -143,6 +131,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   void dispose() {
     _ambientCtrl.dispose();
     _sequenceCtrl.dispose();
+    _confettiCtrl.dispose();
     _coinFlyCtrl.dispose();
     super.dispose();
   }
@@ -153,20 +142,29 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       animation: Listenable.merge([_sequenceCtrl, _coinFlyCtrl]),
       builder: (context, _) {
         final seq = _sequenceCtrl.value;
-        // Exact `rgba(0.059, 0.125, 0.290, 0.980)` (`Color.fromRGBO(15, 32, 74, 0.98)`)
-        final bgAlpha = (seq / 0.16).clamp(0.0, 1.0) * 0.98;
-        final showStage1 = seq < 0.66;
-        final stage2Raw = ((seq - 0.62) / 0.38).clamp(0.0, 1.0);
-        final stage2Pop = Curves.easeOutBack.transform(stage2Raw);
+        final bgAlpha = (seq / 0.16).clamp(0.0, 1.0) * 0.90;
 
         return ColoredBox(
-          color: Color.fromRGBO(15, 32, 74, bgAlpha),
+          color: Color.fromRGBO(10, 8, 28, bgAlpha),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (showStage1) _buildStage1LevelComplete(context, seq),
-              if (seq >= 0.62)
-                _buildStage2AmazingWin(context, stage2Raw, stage2Pop),
+              // One-shot Celebratory Confetti FX: flies in from top-left & top-right downward for ~2.8s, then turns off
+              if (_confettiStarted && !_confettiFinished)
+                IgnorePointer(
+                  key: const ValueKey('win_confetti_fx'),
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      painter: _VictoryConfettiPainter(
+                        progress: _confettiCtrl,
+                        scale1080: uxScale(context),
+                      ),
+                    ),
+                  ),
+                ),
+
+              _buildWinSequenceBody(context, seq),
+
               if (_collecting) _buildFlyingCoinsLayer(context),
             ],
           ),
@@ -175,81 +173,28 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
     );
   }
 
-  /// Stage 1: `LevelCompleteView` wave-bouncing `"Level complete!"` + warm additive aura & bokeh.
-  Widget _buildStage1LevelComplete(BuildContext context, double seq) {
-    final stage1T = (seq / 0.64).clamp(0.0, 1.0);
-    final fadeOut =
-        stage1T > 0.80 ? ((1.0 - stage1T) / 0.20).clamp(0.0, 1.0) : 1.0;
-    final popIn =
-        Curves.easeOutBack.transform((stage1T / 0.28).clamp(0.0, 1.0));
-    final glyphs = _cachedStage1Glyphs ?? const <Widget>[];
-    final auraSize = ux(context, 780);
+  Widget _buildWinSequenceBody(BuildContext context, double seq) {
+    final stage1GlowFade =
+        seq > 0.36 ? (1.0 - ((seq - 0.36) / 0.24)).clamp(0.0, 1.0) : 1.0;
 
-    final waveRow = Transform.scale(
-      scale: 0.72 + 0.28 * popIn,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: ux(context, 44)),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List<Widget>.generate(glyphs.length, (i) {
-              if (_stage1Phrase[i] == ' ') return glyphs[i];
-              final wavePhase = stage1T * math.pi * 3.4 - i * 0.34;
-              final dy =
-                  -math.max(0.0, math.sin(wavePhase)) * ux(context, 28);
-              return Transform.translate(
-                offset: Offset(0, dy),
-                child: glyphs[i],
-              );
-            }),
-          ),
-        ),
-      ),
+    // Smooth 726ms S-curve glide (`seq` `0.36 -> 0.80`) driven purely via GPU `Transform.translate`
+    final glideT = Curves.easeInOutCubic.transform(
+      ((seq - 0.36) / 0.44).clamp(0.0, 1.0),
     );
+    final stage2Raw = ((seq - 0.44) / 0.40).clamp(0.0, 1.0);
+    final coinRaw = ((seq - 0.44) / 0.38).clamp(0.0, 1.0);
+    final statsRaw = ((seq - 0.50) / 0.38).clamp(0.0, 1.0);
+    final ctaRaw = ((seq - 0.55) / 0.38).clamp(0.0, 1.0);
 
-    return Center(
-      child: Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: [
-          // Warm additive central glow & outward sparkles (`LevelCompleteView/VFX_Group`)
-          // Modulated directly via `intensity` (zero fullscreen `Opacity` `saveLayer`!).
-          RepaintBoundary(
-            child: SizedBox(
-              width: auraSize,
-              height: auraSize,
-              child: CustomPaint(
-                painter: _UnityWinCoinAuraPainter(
-                  ambient: _ambientCtrl,
-                  scale1080: uxScale(context),
-                  showCrossFlare: false,
-                  intensity:
-                      (0.85 * (1.0 - stage1T * 0.30) * fadeOut).clamp(0.0, 1.0),
-                ),
-              ),
-            ),
-          ),
+    final coinPop = Curves.easeOutBack.transform(coinRaw);
+    final statsPop = Curves.easeOutBack.transform(statsRaw);
+    final ctaPop = Curves.easeOutBack.transform(ctaRaw);
 
-          // Pre-cached wave-bouncing character glyphs (`TMPModifier_01` + `TMPModifier_02`)
-          fadeOut >= 0.999
-              ? waveRow
-              : Opacity(opacity: fadeOut, child: waveRow),
-        ],
-      ),
-    );
-  }
-
-  /// Stage 2: Exact center-anchored `WinContent` (`sc = 0.82`) matching `WinGameplayView.prefab`
-  /// and `media_1793412272544.png` 1:1 across all screen aspect ratios!
-  Widget _buildStage2AmazingWin(
-    BuildContext context,
-    double stage2Raw,
-    double stage2Pop,
-  ) {
-    final fade = stage2Raw.clamp(0.0, 1.0);
-    Widget wrapBoundaryFade(Widget boundary) =>
-        fade >= 0.999 ? boundary : Opacity(opacity: fade, child: boundary);
+    Widget wrapFade(double alpha, Widget child) {
+      final a = alpha.clamp(0.0, 1.0);
+      if (a <= 0.005) return const SizedBox.shrink();
+      return a >= 0.999 ? child : Opacity(opacity: a, child: child);
+    }
 
     return SafeArea(
       child: LayoutBuilder(
@@ -258,184 +203,369 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
           final safeH = constraints.maxHeight;
           final centerY = safeH * 0.5;
 
-          // Exact Unity `SafeArea` center-relative Y offsets (`+682*0.82`, `-21*0.82`, `-835*0.82`)
-          // safely bounded for compact 16:9 screens.
-          final headerH = ux(context, 304);
-          final headerCenterY =
-              centerY - math.min(ux(context, 559), safeH * 0.355);
+          final headerBoxH = ux(context, 300);
+          final minHeaderCenterY = ux(context, 108) + headerBoxH * 0.5;
+          final targetHeaderCenterY = math.max(
+            minHeaderCenterY,
+            centerY - math.min(ux(context, 495), safeH * 0.308),
+          );
+          final headerGlideDy =
+              (centerY - targetHeaderCenterY) * (1.0 - glideT);
 
-          final auraBoxSize = ux(context, 860);
-          final coinBoxSize = ux(context, 500);
-          final rewardsCenterY = centerY + ux(context, 17);
+          final stage1AuraSize = ux(context, 780);
+          final auraBoxSize = ux(context, 920);
+          final coinW = ux(context, 428);
+          final coinH = ux(context, 323);
+          final rewardsCenterY = centerY + ux(context, 8);
 
-          final nextBtnW = ux(context, 606);
-          final nextBtnH = ux(context, 206);
-          final nextBtnCenterY =
-              centerY + math.min(ux(context, 685), safeH * 0.375);
-          final statsCenterY = centerY + ux(context, 415);
+          final statsCenterY =
+              centerY + math.min(ux(context, 300), safeH * 0.175);
 
-          final coinPopScale = (0.68 + 0.32 * stage2Pop) *
-              (_collecting ? (1.0 - _coinFlyCtrl.value * 0.25) : 1.0);
+          final ctaW = ux(context, 499);
+          final ctaH = ux(context, 221);
+          final ctaCenterY =
+              centerY + math.min(ux(context, 585), safeH * 0.348);
+
+          final coinScale = (0.68 + 0.32 * coinPop) *
+              (_collecting ? (1.0 - _coinFlyCtrl.value * 0.22) : 1.0);
 
           return Stack(
             clipBehavior: Clip.none,
             children: [
-              // 1. Center Multi-Layer Additive Aura + Cross-Flare + Floating Bokeh (`Rewards/VFX_Group`)
-              // Alpha modulated directly via `intensity: fade` with zero `Opacity` `saveLayer`!
-              Positioned(
-                left: (safeW - auraBoxSize) * 0.5,
-                top: rewardsCenterY - auraBoxSize * 0.5,
-                width: auraBoxSize,
-                height: auraBoxSize,
-                child: IgnorePointer(
-                  child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: _UnityWinCoinAuraPainter(
-                        ambient: _ambientCtrl,
-                        scale1080: uxScale(context),
-                        showCrossFlare: true,
-                        intensity: fade,
+              // Stage 1 Central Warm Glow behind 2-line `'Level / Complete!'`
+              if (stage1GlowFade > 0.01)
+                Positioned(
+                  left: (safeW - stage1AuraSize) * 0.5,
+                  top: targetHeaderCenterY - stage1AuraSize * 0.5,
+                  width: stage1AuraSize,
+                  height: stage1AuraSize,
+                  child: IgnorePointer(
+                    child: Transform.translate(
+                      offset: Offset(0, headerGlideDy),
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          painter: _UnityWinCoinAuraPainter(
+                            ambient: _ambientCtrl,
+                            scale1080: uxScale(context),
+                            showCrossFlare: false,
+                            intensity: (0.85 * stage1GlowFade).clamp(0.0, 1.0),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // 2. Giant `Reward_Coin.png` (`500x500` -> `274` visible gold coin) + Overlapping `"25"`
-              Positioned(
-                left: (safeW - coinBoxSize) * 0.5,
-                top: rewardsCenterY - coinBoxSize * 0.5,
-                width: coinBoxSize,
-                height: coinBoxSize,
-                child: Transform.scale(
-                  scale: coinPopScale,
-                  child: wrapBoundaryFade(
-                    RepaintBoundary(
-                      child: Stack(
-                        alignment: Alignment.topCenter,
-                        clipBehavior: Clip.none,
-                        children: [
-                          Image.asset(
-                            'assets/images/Reward_Coin.png',
-                            width: coinBoxSize,
-                            height: coinBoxSize,
-                            fit: BoxFit.contain,
-                          ),
-                          // `RewardView/Amount`: overlaps bottom gold rim of the coin by ~5px!
-                          Positioned(
-                            top: ux(context, 353),
-                            child: UnitySdfText(
-                              '${widget.rewardCoins}',
-                              unityFontSize: 124,
-                              material: UnityTextMaterial.ctaBlue,
-                            ),
-                          ),
-                        ],
+              // Stage 2: Rotating Sunbeam Starburst + Golden Glow + Sparkles
+              if (stage2Raw > 0.005)
+                Positioned(
+                  left: (safeW - auraBoxSize) * 0.5,
+                  top: rewardsCenterY - auraBoxSize * 0.5,
+                  width: auraBoxSize,
+                  height: auraBoxSize,
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: _UnityWinCoinAuraPainter(
+                          ambient: _ambientCtrl,
+                          scale1080: uxScale(context),
+                          showCrossFlare: true,
+                          intensity: coinRaw,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // 3. Top Header (`Banner_Gold.png` + `AMAZING!` + tucked `Label_Level.png` `Level X`)
-              Positioned(
-                left: (safeW - ux(context, 1040)) * 0.5,
-                top: headerCenterY - headerH * 0.5,
-                width: ux(context, 1040),
-                height: headerH,
-                child: Transform.scale(
-                  scale: 0.74 + 0.26 * stage2Pop,
-                  child: wrapBoundaryFade(
-                    RepaintBoundary(
-                      child: Stack(
-                        alignment: Alignment.topCenter,
-                        clipBehavior: Clip.none,
-                        children: [
-                          // Tucked 9-Slice `Label_Level.png` rendered BEHIND `Banner_Gold.png` (`zero gap`!)
-                          Positioned(
-                            top: ux(context, 174),
-                            child: UnityNineSlice(
-                              sprite: 'Label_Level.png',
-                              width: ux(context, 376),
-                              height: ux(context, 122),
-                              pixelMultiplier: 0.82,
-                              padding: EdgeInsets.only(bottom: ux(context, 6)),
-                              child: UnitySdfText(
-                                widget.levelLabel,
-                                unityFontSize: 62.5,
-                                material: UnityTextMaterial.blueLabel,
-                              ),
-                            ),
-                          ),
-
-                          // `Banner_Gold.png` (`1042x277` native Unity aspect preserved)
-                          Positioned(
-                            top: 0,
-                            width: ux(context, 1036),
-                            height: ux(context, 275),
-                            child: Image.asset(
-                              'assets/images/Banner_Gold.png',
+              // Stage 2: Golden Crown Coin Pile (`Reward_Coin.png`) + Bottom-Right Amount
+              if (coinRaw > 0.005)
+                Positioned(
+                  left: (safeW - coinW) * 0.5,
+                  top: rewardsCenterY - coinH * 0.5,
+                  width: coinW,
+                  height: coinH,
+                  child: Transform.scale(
+                    scale: coinScale,
+                    child: wrapFade(
+                      coinRaw,
+                      RepaintBoundary(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          clipBehavior: Clip.none,
+                          children: [
+                            Image.asset(
+                              'assets/images/Reward_Coin.png',
+                              width: coinW,
+                              height: coinH,
                               fit: BoxFit.contain,
                             ),
-                          ),
-
-                          // `AMAZING!` (`Baloo2_ExtraBold_Brown_Text`, `pos.y = +44 * 0.82 = +36` above ribbon center)
-                          Positioned(
-                            top: ux(context, 32),
-                            child: const UnitySdfText(
-                              'AMAZING!',
-                              unityFontSize: 125,
-                              material: UnityTextMaterial.bannerBrown,
+                            Positioned(
+                              right: -ux(context, 16),
+                              bottom: -ux(context, 22),
+                              child: UnitySdfText(
+                                '${widget.rewardCoins}',
+                                unityFontSize: 108,
+                                material: UnityTextMaterial.winCoinAmount,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // 3b. 3-Stat Card (Time | Moves | Combo) matching media_1794007597111.png
+              // Smooth 2-Line `'Level' / 'Complete!'` (`PoetsenOne` font):
+              // Ripples in at screen center, glides on GPU (`Transform.translate`) up to the top header!
               Positioned(
                 left: 0,
                 right: 0,
-                top: statsCenterY - ux(context, 64),
-                child: Center(
-                  child: Transform.scale(
-                    scale: 0.74 + 0.26 * stage2Pop,
-                    child: wrapBoundaryFade(
-                      RepaintBoundary(
-                        child: _buildWinStatsRow(context),
+                top: targetHeaderCenterY - headerBoxH * 0.5,
+                height: headerBoxH,
+                child: IgnorePointer(
+                  child: Transform.translate(
+                    offset: Offset(0, headerGlideDy),
+                    child: Center(
+                      child: _buildTwoLineWaveLevelComplete(
+                        context,
+                        seq: seq,
+                        glideT: glideT,
                       ),
                     ),
                   ),
                 ),
               ),
 
-              // 4. `NextLevelButton` (`(718.9+20)x(233.2+20) * 0.82 = 606x206`, `sliceScale: 0.82`, `sz: 74`)
-              Positioned(
-                left: (safeW - nextBtnW) * 0.5,
-                top: nextBtnCenterY - nextBtnH * 0.5,
-                child: Transform.scale(
-                  scale: 0.78 + 0.22 * stage2Pop,
-                  child: wrapBoundaryFade(
-                    RepaintBoundary(
-                      child: UnityCtaButton(
-                        label: 'Next Level',
-                        unityWidth: 606,
-                        unityHeight: 206,
-                        unityFontSize: 74,
-                        sliceScale: 0.82,
-                        onTap: _collecting ? null : _onTapNextLevel,
+              // Stage 2: 3-Stat Card (`Time | Moves | Combo`)
+              if (statsRaw > 0.005)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: statsCenterY - ux(context, 62),
+                  child: Center(
+                    child: Transform.scale(
+                      scale: 0.76 + 0.24 * statsPop,
+                      child: wrapFade(
+                        statsRaw,
+                        RepaintBoundary(
+                          child: _buildWinStatsRow(context),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+
+              // Stage 2: Bottom `"Continue"` Gold-Rimmed Green Pill (`Button_CTA.png`, `499x221`)
+              if (ctaRaw > 0.005)
+                Positioned(
+                  left: (safeW - ctaW) * 0.5,
+                  top: ctaCenterY - ctaH * 0.5,
+                  child: Transform.scale(
+                    scale: 0.78 + 0.22 * ctaPop,
+                    child: wrapFade(
+                      ctaRaw,
+                      RepaintBoundary(
+                        child: UnityCtaButton(
+                          label: 'Continue',
+                          unityWidth: 499,
+                          unityHeight: 221,
+                          unityFontSize: 68,
+                          onTap: _collecting ? null : _onTapContinue,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },
       ),
+    );
+  }
+
+  /// Silky 120Hz 2-line `'Level' / 'Complete!'` wave header (`PoetsenOne` + `UnityTextMaterial.levelCompleteWave`):
+  /// - 2-pass per-line rendering (Pass 1: all drop shadows & strokes; Pass 2: all golden gradient faces)
+  ///   so outlines never cut across neighboring characters.
+  /// - Single continuous `C∞` sine wave (`sin(ambVal * 4π - phase)`) with zero V-kink velocity jumps
+  ///   and zero phase switches during the center-to-header glide.
+  Widget _buildTwoLineWaveLevelComplete(
+    BuildContext context, {
+    required double seq,
+    required double glideT,
+  }) {
+    final blockScale = ui.lerpDouble(1.04, 0.94, glideT)!;
+    final waveAmp = ui.lerpDouble(ux(context, 11.5), ux(context, 6.0), glideT)!;
+
+    return AnimatedBuilder(
+      animation: _ambientCtrl,
+      builder: (context, _) {
+        final ambVal = _ambientCtrl.value;
+        return Transform.scale(
+          scale: blockScale,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: ux(context, 40),
+                vertical: ux(context, 18),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildTwoPassWaveLine(
+                    context,
+                    text: _line1Text,
+                    unityFontSize: 132,
+                    seq: seq,
+                    baseDelay: 0.00,
+                    charStagger: 0.022,
+                    phaseOffset: 1.4,
+                    ambVal: ambVal,
+                    waveAmp: waveAmp,
+                  ),
+                  Transform.translate(
+                    offset: Offset(0, -ux(context, 18)),
+                    child: _buildTwoPassWaveLine(
+                      context,
+                      text: _line2Text,
+                      unityFontSize: 120,
+                      seq: seq,
+                      baseDelay: 0.068,
+                      charStagger: 0.019,
+                      phaseOffset: 0.0,
+                      ambVal: ambVal,
+                      waveAmp: waveAmp,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTwoPassWaveLine(
+    BuildContext context, {
+    required String text,
+    required double unityFontSize,
+    required double seq,
+    required double baseDelay,
+    required double charStagger,
+    required double phaseOffset,
+    required double ambVal,
+    required double waveAmp,
+  }) {
+    const mat = UnityTextMaterial.levelCompleteWave;
+    final fs = ux(context, unityFontSize);
+    final innerSw = (fs * mat.strokeRatio).clamp(1.2, 22.0);
+    final outerSw = (fs * mat.outerStrokeRatio).clamp(innerSw + 0.8, 28.0);
+    final dropY = fs * mat.underlayYRatio;
+    final riseDist = ux(context, 28);
+
+    TextStyle styleWith(Paint foreground) => TextStyle(
+          fontFamily: mat.fontFamily,
+          fontSize: fs,
+          fontWeight: mat.fontWeight,
+          height: 1.05,
+          foreground: foreground,
+        );
+
+    final underlayStyle = styleWith(
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = outerSw
+        ..strokeJoin = StrokeJoin.round
+        ..color = mat.underlayColor,
+    );
+    final outerStrokeStyle = styleWith(
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = outerSw
+        ..strokeJoin = StrokeJoin.round
+        ..color = mat.outerStrokeColor!,
+    );
+    final innerStrokeStyle = styleWith(
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = innerSw
+        ..strokeJoin = StrokeJoin.round
+        ..color = mat.strokeColor,
+    );
+    final faceStyle = styleWith(
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(0, fs * 0.12),
+          Offset(0, fs * 0.96),
+          [mat.faceTop, mat.faceBottom],
+        ),
+    );
+
+    final backRow = <Widget>[];
+    final faceRow = <Widget>[];
+
+    for (int i = 0; i < text.length; i++) {
+      final ch = text[i];
+      final charStart = baseDelay + i * charStagger;
+      final u = ((seq - charStart) / 0.22).clamp(0.0, 1.0);
+
+      final alpha = Curves.easeOut.transform((u / 0.42).clamp(0.0, 1.0));
+      final charScale = 0.34 + 0.66 * Curves.easeOutBack.transform(u);
+      final enterDy = (1.0 - Curves.easeOutCubic.transform(u)) * riseDist;
+      final waveEnv = Curves.easeInOut.transform(u);
+
+      // Continuous C∞ smooth sine wave (`2` exact cycles per 3.6s loop -> seamless wrap)
+      final waveAngle = ambVal * math.pi * 4.0 - (i + phaseOffset) * 0.42;
+      final waveDy = math.sin(waveAngle) * waveAmp * waveEnv;
+      final totalDy = enterDy + waveDy;
+
+      Widget wrapMotion(Widget child) {
+        Widget res = Transform.translate(
+          offset: Offset(0, totalDy),
+          child: Transform.scale(scale: charScale, child: child),
+        );
+        if (alpha <= 0.005) {
+          res = Opacity(opacity: 0.0, child: res);
+        } else if (alpha < 0.999) {
+          res = Opacity(opacity: alpha, child: res);
+        }
+        return res;
+      }
+
+      backRow.add(
+        ExcludeSemantics(
+          child: wrapMotion(
+            Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                Transform.translate(
+                  offset: Offset(0, dropY),
+                  child: Text(ch, style: underlayStyle),
+                ),
+                Text(ch, style: outerStrokeStyle),
+                Text(ch, style: innerStrokeStyle),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      faceRow.add(
+        wrapMotion(
+          Text(ch, style: faceStyle),
+        ),
+      );
+    }
+
+    return Stack(
+      alignment: Alignment.center,
+      clipBehavior: Clip.none,
+      children: [
+        Row(mainAxisSize: MainAxisSize.min, children: backRow),
+        Row(mainAxisSize: MainAxisSize.min, children: faceRow),
+      ],
     );
   }
 
@@ -446,11 +576,11 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
         vertical: ux(context, 18),
       ),
       decoration: BoxDecoration(
-        color: const Color.fromRGBO(10, 32, 74, 0.65),
+        color: const Color.fromRGBO(24, 14, 62, 0.74),
         borderRadius: BorderRadius.circular(ux(context, 38)),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.28),
-          width: ux(context, 2.4),
+          color: const Color(0x6BFFB915),
+          width: ux(context, 2.6),
         ),
       ),
       child: Row(
@@ -574,15 +704,18 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
     );
   }
 
-  /// Stage 3: Curved Bezier flight of golden `Icon_Coin.png` sprites up into top-left `CoinsWidget`.
+  /// Curved Bezier flight of golden `Icon_Coin.png` sprites up into top-left `CoinsWidget`.
   Widget _buildFlyingCoinsLayer(BuildContext context) {
     final screen = MediaQuery.sizeOf(context);
     final topPad = MediaQuery.paddingOf(context).top;
     final startCenter = Offset(
       screen.width * 0.5,
-      screen.height * 0.5 + ux(context, 17),
+      screen.height * 0.5 - ux(context, 42),
     );
-    final targetCoinIcon = Offset(ux(context, 103), topPad + ux(context, 78));
+    final targetCoinIcon = Offset(
+      ux(context, UnityCoinsWidget.coinCenterXUnity),
+      topPad + ux(context, UnityCoinsWidget.coinCenterYUnity),
+    );
 
     final t = _coinFlyCtrl.value;
     final children = <Widget>[];
@@ -609,7 +742,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
           2 * oneMinus * eased * ctrl.dy +
           eased * eased * targetCoinIcon.dy;
 
-      final coinSz = ux(context, 112) * (1.05 - 0.22 * eased);
+      final coinSz = ux(context, 98) * (1.05 - 0.18 * eased);
       children.add(
         Positioned(
           left: px - coinSz * 0.5,
@@ -629,17 +762,230 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   }
 }
 
-/// Pure GPU additive (`BlendMode.plus`) painter replicating `WinGameplayView/Rewards/VFX_Group`:
-/// 1. `Static_Glow` (`UI_Add`, `rgba(1.0, 0.511, 0.696, 0.533)` `#FF82B2` rose-pink outer halo)
-/// 2. `CentralGlow` (`rgba(1.0, 0.57, 0.31, 0.35)` `#FF914F` warm peach-orange aura)
-/// 3. `CentralGlow_01` (`rgba(1.0, 0.69, 0.0, 0.18)` `#FFB000` golden core)
-/// 4. `CentralFlare` (`VFXGlowFlareMaterial`, `sz = (800, 66)`, 4-ray `+` horizontal & vertical light beams)
-/// 5. `Sparkles` (`VFXSparkleMaterial` -> `_MainTex: Glow`, soft round white bokeh orbs drifting outward!)
+class _ConfettiSeed {
+  final bool fromLeft;
+  final double startXEdge1080;
+  final double startYFrac;
+  final double xReachFrac;
+  final double vyInitFrac;
+  final double fallDistFrac;
+  final double delay;
+  final double lifeSpan;
+  final double sz1080;
+  final double swayAmp1080;
+  final double spinRate;
+  final int colIdx;
+  final int shapeKind; // 0: oval disc, 1: streamer ribbon, 2: foil petal
+
+  const _ConfettiSeed({
+    required this.fromLeft,
+    required this.startXEdge1080,
+    required this.startYFrac,
+    required this.xReachFrac,
+    required this.vyInitFrac,
+    required this.fallDistFrac,
+    required this.delay,
+    required this.lifeSpan,
+    required this.sz1080,
+    required this.swayAmp1080,
+    required this.spinRate,
+    required this.colIdx,
+    required this.shapeKind,
+  });
+}
+
+/// One-shot 60/120Hz Celebratory Confetti FX Painter (`progress` `0.0 -> 1.0` over ~4.4s):
+/// Launches 96 colorful 3D-tumbling confetti discs, ribbons, and foil petals (`48` upper-left + `48` upper-right),
+/// arcing inward with air-drag and fluttering downward before smoothly fading out and unmounting.
+class _VictoryConfettiPainter extends CustomPainter {
+  final Animation<double> progress;
+  final double scale1080;
+
+  static const List<Color> _palette = [
+    Color(0xFF00D4FF), // Electric Cyan
+    Color(0xFF00F0C6), // Aqua Mint
+    Color(0xFF6CE800), // Bright Lime
+    Color(0xFF00E858), // Vivid Emerald
+    Color(0xFFFF2ED1), // Hot Magenta
+    Color(0xFFF68EFF), // Candy Pink
+    Color(0xFFFF7B00), // Vivid Orange
+    Color(0xFFFF4A00), // Tangerine Red-Orange
+    Color(0xFFFFE600), // Sunshine Yellow
+    Color(0xFFFFB400), // Warm Amber
+    Color(0xFF8B82FF), // Periwinkle Violet
+  ];
+
+  static final List<_ConfettiSeed> _cannonSeeds = _buildCannonParticles();
+
+  static List<_ConfettiSeed> _buildCannonParticles() {
+    final rng = math.Random(204837);
+    final list = <_ConfettiSeed>[];
+    const perSide = 48;
+
+    for (int side = 0; side < 2; side++) {
+      final fromLeft = side == 0;
+      for (int idx = 0; idx < perSide; idx++) {
+        final fromTopCeiling = (idx % 4) == 3;
+        final startXEdge1080 = fromTopCeiling
+            ? (18.0 + rng.nextDouble() * 175.0)
+            : (-30.0 + rng.nextDouble() * 14.0);
+        final startYFrac = fromTopCeiling
+            ? (-0.03 + rng.nextDouble() * 0.035)
+            : (0.01 + rng.nextDouble() * 0.25);
+
+        // Stratified across 8 horizontal bands so coverage is lush and even without clumping
+        final band = (idx % 8) / 8.0;
+        final xReachFrac = 0.065 + band * 0.43 + rng.nextDouble() * 0.055;
+        final vyInitFrac = fromTopCeiling
+            ? (0.01 + rng.nextDouble() * 0.045)
+            : (-0.075 + rng.nextDouble() * 0.11);
+        final fallDistFrac = 0.74 + rng.nextDouble() * 0.26;
+
+        final delay = (idx / (perSide - 1)) * 0.36 + rng.nextDouble() * 0.024;
+        final lifeSpan = 0.55 + rng.nextDouble() * 0.06;
+
+        final sz1080 = 26.0 + rng.nextDouble() * 20.0;
+        final swayAmp1080 = 18.0 + rng.nextDouble() * 22.0;
+        final rawSpin = 10.5 + rng.nextDouble() * 6.5;
+        final spinRate = fromLeft ? rawSpin : -rawSpin;
+        final colIdx = (idx * 3 + side * 5 + rng.nextInt(3)) % _palette.length;
+
+        final shapeRoll = idx % 10;
+        final shapeKind = shapeRoll < 5
+            ? 0 // glossy oval disc (50%)
+            : (shapeRoll < 8 ? 1 : 2); // streamer ribbon (30%) / foil petal (20%)
+
+        list.add(
+          _ConfettiSeed(
+            fromLeft: fromLeft,
+            startXEdge1080: startXEdge1080,
+            startYFrac: startYFrac,
+            xReachFrac: xReachFrac,
+            vyInitFrac: vyInitFrac,
+            fallDistFrac: fallDistFrac,
+            delay: delay,
+            lifeSpan: lifeSpan,
+            sz1080: sz1080,
+            swayAmp1080: swayAmp1080,
+            spinRate: spinRate,
+            colIdx: colIdx,
+            shapeKind: shapeKind,
+          ),
+        );
+      }
+    }
+    return list;
+  }
+
+  const _VictoryConfettiPainter({
+    required this.progress,
+    required this.scale1080,
+  }) : super(repaint: progress);
+
+  double _u(double px1080) => px1080 * scale1080;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = progress.value;
+    if (t <= 0.001 || t >= 0.999 || size.width <= 1 || size.height <= 1) return;
+
+    final paint = Paint()..style = PaintingStyle.fill;
+    final dragNorm = 1.0 - math.exp(-3.8);
+
+    for (final p in _cannonSeeds) {
+      if (t <= p.delay) continue;
+      final u = (t - p.delay) / p.lifeSpan;
+      if (u <= 0.0 || u >= 1.0) continue;
+
+      final fadeIn = (u / 0.05).clamp(0.0, 1.0);
+      final fadeOut = u > 0.72
+          ? Curves.easeInQuad.transform(((1.0 - u) / 0.28).clamp(0.0, 1.0))
+          : 1.0;
+
+      // 3D tumbling spin + subtle specular glint when catching light face-on
+      final tumble = u * p.spinRate + p.colIdx * 0.45;
+      final minorRatio = 0.18 + 0.82 * math.cos(tumble).abs();
+      final glint = 0.88 + 0.12 * minorRatio;
+      final alpha = (fadeIn * fadeOut * glint).clamp(0.0, 1.0);
+      if (alpha <= 0.015) continue;
+
+      // Inward burst decelerated by air drag + gentle leaf-flutter sway
+      final dragX = (1.0 - math.exp(-3.8 * u)) / dragNorm;
+      final swayEnvelope = (u * 2.0).clamp(0.0, 1.0);
+      final sway = math.sin(u * math.pi * 3.6 + p.spinRate) *
+          _u(p.swayAmp1080) *
+          swayEnvelope;
+      final startX = p.fromLeft
+          ? _u(p.startXEdge1080)
+          : (size.width - _u(p.startXEdge1080));
+      final inwardDx = size.width * p.xReachFrac * dragX + sway;
+      final x = p.fromLeft ? (startX + inwardDx) : (startX - inwardDx);
+
+      // Slight upper-corner loft curving smoothly into downward flutter fall
+      final loftDy = size.height * p.vyInitFrac * (1.0 - math.exp(-4.5 * u));
+      final fallDy =
+          size.height * p.fallDistFrac * math.pow(u, 1.28).toDouble();
+      final y = size.height * p.startYFrac + loftDy + fallDy;
+
+      final yaw = (p.fromLeft ? 0.35 : -0.35) +
+          0.45 * math.sin(u * math.pi * 2.8 + p.colIdx) +
+          tumble * 0.18;
+
+      paint.color =
+          _palette[p.colIdx % _palette.length].withValues(alpha: alpha);
+
+      canvas.save();
+      canvas.translate(x, y);
+      canvas.rotate(yaw);
+      if (p.shapeKind == 1) {
+        final rw = _u(p.sz1080) * 1.38;
+        final rh = _u(p.sz1080) * 0.42 * minorRatio;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset.zero, width: rw, height: rh),
+            Radius.circular(_u(5)),
+          ),
+          paint,
+        );
+      } else if (p.shapeKind == 2) {
+        final pw = _u(p.sz1080) * 0.86;
+        final ph = pw * minorRatio;
+        canvas.rotate(math.pi * 0.25);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset.zero, width: pw, height: ph),
+            Radius.circular(_u(4)),
+          ),
+          paint,
+        );
+      } else {
+        final ow = _u(p.sz1080);
+        final oh = ow * 0.65 * minorRatio;
+        canvas.drawOval(
+          Rect.fromCenter(center: Offset.zero, width: ow, height: oh),
+          paint,
+        );
+      }
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _VictoryConfettiPainter oldDelegate) =>
+      oldDelegate.scale1080 != scale1080;
+}
+
+/// Pure GPU additive (`BlendMode.plus`) painter for `Victory.png`:
+/// 1. 12 rotating soft white-gold sunbeam wedges (`sunburst`)
+/// 2. Warm golden-amber radial halo & bright white-gold core behind `Reward_Coin.png`
+/// 3. Outward-drifting soft white-gold bokeh orbs
 class _UnityWinCoinAuraPainter extends CustomPainter {
   final Animation<double> ambient;
   final double scale1080;
   final bool showCrossFlare;
   final double intensity;
+
+  static const int _rayCount = 12;
 
   // Deterministic sparkle seeds `(angleRad, baseRadius1080, travel1080, size1080, phase)`
   static const List<(double, double, double, double, double)> _sparkleSeeds = [
@@ -674,88 +1020,87 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
     final center = Offset(size.width * 0.5, size.height * 0.5);
     final phase = ambient.value * math.pi * 2.0;
     final breathe = 1.0 + 0.045 * math.sin(phase);
-    final counterBreathe = 1.0 - 0.038 * math.sin(phase);
 
-    // 1. Outer Rose-Pink `Static_Glow` (`#FF82B2`, `UI_Add`)
-    final outerR = _u(415) * breathe;
+    // 1. Rotating 12-Ray White-Gold Radial Starburst (`Victory.png` sunbeams)
+    if (showCrossFlare) {
+      final rayR = _u(455) * breathe;
+      final stepAngle = (math.pi * 2.0) / _rayCount;
+      // Advance by exactly 2 ray pitches per cycle so `ambient.value` 1.0 -> 0.0 wraps seamlessly
+      final baseRot = ambient.value * stepAngle * 2.0;
+      final halfWedge = stepAngle * 0.23;
+
+      final wedgesPath = Path();
+      for (int i = 0; i < _rayCount; i++) {
+        final a = baseRot + i * stepAngle;
+        wedgesPath.moveTo(center.dx, center.dy);
+        wedgesPath.lineTo(
+          center.dx + math.cos(a - halfWedge) * rayR,
+          center.dy + math.sin(a - halfWedge) * rayR,
+        );
+        wedgesPath.lineTo(
+          center.dx + math.cos(a + halfWedge) * rayR,
+          center.dy + math.sin(a + halfWedge) * rayR,
+        );
+        wedgesPath.close();
+      }
+
+      final rayPaint = Paint()
+        ..blendMode = BlendMode.plus
+        ..shader = ui.Gradient.radial(
+          center,
+          rayR,
+          [
+            Color.fromRGBO(255, 252, 236, 0.42 * intensity),
+            Color.fromRGBO(255, 240, 190, 0.24 * intensity),
+            Color.fromRGBO(255, 214, 128, 0.08 * intensity),
+            const Color.fromRGBO(255, 214, 128, 0.0),
+          ],
+          const [0.0, 0.42, 0.76, 1.0],
+        );
+      canvas.drawPath(wedgesPath, rayPaint);
+    }
+
+    // 2. Soft Warm White-Gold Outer Halo
+    final outerR = _u(395) * breathe;
     final outerPaint = Paint()
       ..blendMode = BlendMode.plus
       ..shader = ui.Gradient.radial(
         center,
         outerR,
         [
-          Color.fromRGBO(255, 130, 178, 0.46 * intensity),
-          Color.fromRGBO(255, 130, 178, 0.32 * intensity),
-          Color.fromRGBO(255, 118, 172, 0.14 * intensity),
-          const Color.fromRGBO(255, 118, 172, 0.0),
+          Color.fromRGBO(255, 235, 165, 0.46 * intensity),
+          Color.fromRGBO(255, 198, 92, 0.24 * intensity),
+          Color.fromRGBO(186, 128, 255, 0.08 * intensity),
+          const Color.fromRGBO(186, 128, 255, 0.0),
         ],
-        const [0.0, 0.34, 0.66, 1.0],
+        const [0.0, 0.36, 0.72, 1.0],
       );
     canvas.drawCircle(center, outerR, outerPaint);
 
-    // 2. Mid Warm Peach-Orange `CentralGlow` (`rgba(255, 145, 79, 0.38)`)
-    final midR = _u(285) * counterBreathe;
-    final midPaint = Paint()
-      ..blendMode = BlendMode.plus
-      ..shader = ui.Gradient.radial(
-        center,
-        midR,
-        [
-          Color.fromRGBO(255, 152, 86, 0.42 * intensity),
-          Color.fromRGBO(255, 138, 112, 0.22 * intensity),
-          const Color.fromRGBO(255, 138, 112, 0.0),
-        ],
-        const [0.0, 0.52, 1.0],
-      );
-    canvas.drawCircle(center, midR, midPaint);
-
-    // 3. Inner Golden Core `CentralGlow_01` (`rgba(255, 190, 40, 0.34)`)
-    final coreR = _u(195) * breathe;
+    // 3. Bright White-Gold Core behind `Reward_Coin.png`
+    final coreR = _u(225) * breathe;
     final corePaint = Paint()
       ..blendMode = BlendMode.plus
       ..shader = ui.Gradient.radial(
         center,
         coreR,
         [
-          Color.fromRGBO(255, 214, 102, 0.42 * intensity),
-          Color.fromRGBO(255, 176, 32, 0.18 * intensity),
-          const Color.fromRGBO(255, 176, 32, 0.0),
+          Color.fromRGBO(255, 255, 245, 0.56 * intensity),
+          Color.fromRGBO(255, 216, 102, 0.28 * intensity),
+          const Color.fromRGBO(255, 190, 48, 0.0),
         ],
-        const [0.0, 0.58, 1.0],
+        const [0.0, 0.55, 1.0],
       );
     canvas.drawCircle(center, coreR, corePaint);
 
-    // 4. `CentralFlare` (`sz = (800, 66) * 0.70 * 0.82`, 4-ray `+` horizontal & vertical light beams)
-    if (showCrossFlare) {
-      final flarePulse = 0.88 + 0.12 * math.cos(phase * 2.0);
-      _drawTaperedFlareRay(
-        canvas,
-        center: center,
-        halfLength: _u(345) * flarePulse,
-        halfThickness: _u(24),
-        horizontal: true,
-        alpha: 0.26 * intensity * flarePulse,
-      );
-      _drawTaperedFlareRay(
-        canvas,
-        center: center,
-        halfLength: _u(320) * flarePulse,
-        halfThickness: _u(22),
-        horizontal: false,
-        alpha: 0.22 * intensity * flarePulse,
-      );
-    }
-
-    // 5. `Sparkles` (`VFXSparkleMaterial` -> `_MainTex: Glow`):
-    // Soft round glowing white bokeh dots drifting radially outward around the coin!
+    // 4. Outward-drifting soft white-gold bokeh sparkles
     final bokehPaint = Paint()..blendMode = BlendMode.plus;
     for (final (ang, baseDist, travel, sz1080, seedPhase) in _sparkleSeeds) {
       final lifeT = (ambient.value * 1.5 + seedPhase) % 1.0;
-      // Smooth bell-curve fade in (0..0.25) and fade out (0.25..1.0)
       final env = lifeT < 0.24
           ? (lifeT / 0.24)
           : math.pow(1.0 - (lifeT - 0.24) / 0.76, 1.35).toDouble();
-      final alpha = (env * 0.92 * intensity).clamp(0.0, 1.0);
+      final alpha = (env * 0.90 * intensity).clamp(0.0, 1.0);
       if (alpha <= 0.02) continue;
 
       final dist = _u(baseDist + travel * lifeT);
@@ -770,44 +1115,14 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
         radius,
         [
           Color.fromRGBO(255, 255, 255, alpha),
-          Color.fromRGBO(255, 240, 220, alpha * 0.62),
-          Color.fromRGBO(255, 168, 196, alpha * 0.20),
-          const Color.fromRGBO(255, 168, 196, 0.0),
+          Color.fromRGBO(255, 242, 198, alpha * 0.62),
+          Color.fromRGBO(255, 206, 112, alpha * 0.20),
+          const Color.fromRGBO(255, 206, 112, 0.0),
         ],
         const [0.0, 0.28, 0.62, 1.0],
       );
       canvas.drawCircle(pos, radius, bokehPaint);
     }
-  }
-
-  void _drawTaperedFlareRay(
-    Canvas canvas, {
-    required Offset center,
-    required double halfLength,
-    required double halfThickness,
-    required bool horizontal,
-    required double alpha,
-  }) {
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    if (!horizontal) {
-      canvas.rotate(math.pi * 0.5);
-    }
-    canvas.scale(halfLength, halfThickness);
-    final rayPaint = Paint()
-      ..blendMode = BlendMode.plus
-      ..shader = ui.Gradient.radial(
-        Offset.zero,
-        1.0,
-        [
-          Color.fromRGBO(255, 232, 168, alpha),
-          Color.fromRGBO(255, 162, 168, alpha * 0.45),
-          const Color.fromRGBO(255, 140, 178, 0.0),
-        ],
-        const [0.0, 0.42, 1.0],
-      );
-    canvas.drawCircle(Offset.zero, 1.0, rayPaint);
-    canvas.restore();
   }
 
   @override

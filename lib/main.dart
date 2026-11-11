@@ -47,21 +47,29 @@ class BlockOrder2048App extends StatefulWidget {
 class _BlockOrder2048AppState extends State<BlockOrder2048App>
     with WidgetsBindingObserver {
   static const List<String> _criticalUiAssetImages = [
+    'assets/images/Background_Core.png',
     'assets/images/Icon_Coin.png',
     'assets/images/Icon_Timer.png',
     'assets/images/Icon_Settings.png',
+    'assets/images/Button_Circle_Blue.png',
+    'assets/images/Button_Circle_Gray.png',
     'assets/images/Powerup_Base.png',
+    'assets/images/Powerup_Base_Locked.png',
+    'assets/images/Icon_Padlock_Silver.png',
     'assets/images/PowerUp_LevelUp.png',
-    'assets/images/PowerUp_LevelUp_Locked.png',
     'assets/images/PowerUp_TimeFreeze.png',
-    'assets/images/PowerUp_TimeFreeze_Locked.png',
+    'assets/images/PowerUp_Amount.png',
+    'assets/images/PowerUp_Plus.png',
     'assets/images/PowerUp_Free.png',
-    'assets/images/PowerUp_Add.png',
     'assets/images/Button_Close.png',
+    'assets/images/Icon_Sounds.png',
+    'assets/images/Icon_Sounds_Off.png',
+    'assets/images/Icon_Music.png',
+    'assets/images/Icon_Music_Off.png',
+    'assets/images/Icon_Haptics.png',
+    'assets/images/Icon_Haptics_Off.png',
     'assets/images/Icon_Ad.png',
     'assets/images/Reward_Coin.png',
-    'assets/images/Banner_Gold.png',
-    'assets/images/Icon_Clock_PlayOn.png',
     'assets/images/Icon_BrokenLife.png',
     'assets/images/Snow.png',
     'assets/images/Ice_Top.png',
@@ -120,11 +128,11 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
         final completer = Completer<void>();
         late final ImageStreamListener listener;
         listener = ImageStreamListener(
-          (_, __) {
+          (_, _) {
             stream.removeListener(listener);
             if (!completer.isCompleted) completer.complete();
           },
-          onError: (_, __) {
+          onError: (_, _) {
             stream.removeListener(listener);
             if (!completer.isCompleted) completer.complete();
           },

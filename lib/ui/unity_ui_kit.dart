@@ -42,16 +42,19 @@ class UnitySpriteRegistry {
 
   static final Map<String, ui.Image> _cache = {};
 
-  /// Exact 9-slice borders extracted from Unity `extracted_assets/_Manifests/sprites.json`.
+  /// Exact 9-slice borders for UI sprites in `assets/images/`.
   static const Map<String, UnitySliceSpec> slices = {
-    'Background_Popup.png': UnitySliceSpec(158, 207, 156, 163),
-    'Panel_Popup.png': UnitySliceSpec(120, 120, 120, 120),
+    'Background_Popup.png': UnitySliceSpec(175, 175, 175, 175),
+    'Panel_Popup.png': UnitySliceSpec(56, 56, 56, 56),
+    'Frame_Popup_Title.png': UnitySliceSpec(52, 0, 52, 0),
+    'Frame_Level.png': UnitySliceSpec(52, 0, 52, 0),
+    'Frame_Footer.png': UnitySliceSpec(24, 8, 24, 30),
     'Panel_PlayOn.png': UnitySliceSpec(61, 67, 59, 48),
     'Box_Text.png': UnitySliceSpec(62, 69, 65, 51),
     'Banner.png': UnitySliceSpec(50, 57, 50, 37),
     'Label_Level.png': UnitySliceSpec(90, 0, 90, 0),
-    'WidgetBase.png': UnitySliceSpec(111, 0, 107, 0),
-    'Button_CTA.png': UnitySliceSpec(72, 70, 72, 56),
+    'WidgetBase.png': UnitySliceSpec(42, 0, 42, 0),
+    'Button_CTA.png': UnitySliceSpec(110, 0, 110, 0),
     'Button_CTA_Disabled.png': UnitySliceSpec(72, 70, 72, 56),
     'Button_Blue.png': UnitySliceSpec(72, 70, 72, 56),
     'Button_Red.png': UnitySliceSpec(72, 70, 72, 56),
@@ -108,6 +111,7 @@ class UnityNineSlice extends StatefulWidget {
   final EdgeInsetsGeometry? padding;
   final Widget? child;
   final Color? tint;
+  final ColorFilter? colorFilter;
   final AlignmentGeometry alignment;
   final double pixelMultiplier;
 
@@ -119,6 +123,7 @@ class UnityNineSlice extends StatefulWidget {
     this.padding,
     this.child,
     this.tint,
+    this.colorFilter,
     this.alignment = Alignment.center,
     this.pixelMultiplier = 1.0,
   });
@@ -169,6 +174,7 @@ class _UnityNineSliceState extends State<UnityNineSlice> {
         spec: spec,
         canvasScale: canvasScale,
         tint: widget.tint,
+        colorFilter: widget.colorFilter,
       ),
       child: Padding(
         padding: widget.padding ?? EdgeInsets.zero,
@@ -199,12 +205,14 @@ class _UnityNineSlicePainter extends CustomPainter {
   final UnitySliceSpec spec;
   final double canvasScale;
   final Color? tint;
+  final ColorFilter? colorFilter;
 
   const _UnityNineSlicePainter({
     required this.image,
     required this.spec,
     required this.canvasScale,
     this.tint,
+    this.colorFilter,
   });
 
   @override
@@ -216,7 +224,9 @@ class _UnityNineSlicePainter extends CustomPainter {
     final ih = img.height.toDouble();
 
     final paint = Paint()..filterQuality = FilterQuality.medium;
-    if (tint != null) {
+    if (colorFilter != null) {
+      paint.colorFilter = colorFilter;
+    } else if (tint != null) {
       paint.colorFilter = ColorFilter.mode(tint!, BlendMode.modulate);
     }
 
@@ -318,6 +328,7 @@ class _UnityNineSlicePainter extends CustomPainter {
     return old.image != image ||
         old.canvasScale != canvasScale ||
         old.tint != tint ||
+        old.colorFilter != colorFilter ||
         old.spec != spec;
   }
 }
@@ -446,7 +457,7 @@ class UnityTextMaterial {
     letterSpacing: 0.4,
   );
 
-  /// `Baloo2_ExtraBold_Level_Complete.json` + `Gradient_Title_Light.png` (`Level complete!` Stage-1 Win wave text)
+  /// `Level complete!` Win wave text (`PoetsenOne` font + original golden SDF stroke & gradient)
   static const levelCompleteWave = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
     faceBottom: Color(0xFFFFDE82),
@@ -456,6 +467,8 @@ class UnityTextMaterial {
     outerStrokeRatio: 0.185,
     underlayColor: Color(0xE0000000),
     underlayYRatio: 0.105,
+    fontFamily: 'PoetsenOne',
+    fontWeight: FontWeight.w400,
   );
 
   /// `Baloo2_ExtraBold_Label.json` (`Level X` inside `Label_Level.png`)
@@ -468,14 +481,24 @@ class UnityTextMaterial {
     underlayYRatio: 0.035,
   );
 
-  /// `Baloo2_ExtraBold_Label_Pink.json` (Power-up magenta count badge `3`)
+  /// Red power-up count badge (`PowerUp_Amount.png`)
   static const pinkBadge = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
     faceBottom: Color(0xFFFFFFFF),
-    strokeColor: Color(0xFFBF12BA),
-    strokeRatio: 0.18,
-    underlayColor: Color(0xAA00096A),
-    underlayYRatio: 0.08,
+    strokeColor: Color(0xFF7B0C0C),
+    strokeRatio: 0.16,
+    underlayColor: Color(0xAA400202),
+    underlayYRatio: 0.06,
+  );
+
+  /// Win coin pile amount (`60` on `Victory.png`)
+  static const winCoinAmount = UnityTextMaterial(
+    faceTop: Color(0xFFFFFFFF),
+    faceBottom: Color(0xFFFFF8EA),
+    strokeColor: Color(0xFF3A200B),
+    strokeRatio: 0.175,
+    underlayColor: Color(0xCC241104),
+    underlayYRatio: 0.065,
   );
 
   /// `Baloo2_ExtraBold_Navigation_Bar_Label_Brown` (`-1` on `Icon_BrokenLife.png`:
@@ -583,6 +606,7 @@ class UnitySdfText extends StatelessWidget {
 
     return Stack(
       alignment: Alignment.center,
+      clipBehavior: Clip.none,
       children: [
         // 1. 3D Drop Underlay
         if (dropY > 0.2)
@@ -640,8 +664,47 @@ class UnitySdfText extends StatelessWidget {
 
 enum UnityButtonSkin { green, blue, red }
 
-/// Authentic Unity 9-Slice CTA Button (`Button_CTA.png`, `Button_Blue.png`, `Button_Red.png`,
-/// `Button_CTA_Disabled.png`) with `Button_Down` / `Button_Up` spring scale squish and
+/// GPU color-matrix filters that transform the green body of `Button_CTA.png` (`499x221`)
+/// into Royal Blue, Crimson Red, or Metallic Disabled Silver while preserving the exact
+/// golden outer rim (`#FFB715`) across all button skins.
+class UnityButtonColorFilters {
+  UnityButtonColorFilters._();
+
+  /// Turns green inner body into royal blue while keeping `#FFB715` gold border intact.
+  static const ColorFilter blueWithGoldRim = ColorFilter.matrix(<double>[
+    0.96, 0.05, 0.00, 0, 0,
+    0.31, 0.57, 0.00, 0, 0,
+    -0.82, 1.25, 0.10, 0, 0,
+    0.00, 0.00, 0.00, 1, 0,
+  ]);
+
+  /// Turns green inner body into crimson red while keeping `#FFB715` gold border intact.
+  static const ColorFilter redWithGoldRim = ColorFilter.matrix(<double>[
+    0.18, 1.14, 0.00, 0, 0,
+    0.62, 0.14, 0.00, 0, 0,
+    -0.12, 0.28, 0.10, 0, 0,
+    0.00, 0.00, 0.00, 1, 0,
+  ]);
+
+  /// Desaturates `Button_CTA.png` into metallic silver-grey matching `Button_Circle_Gray.png`.
+  static const ColorFilter disabledSilver = ColorFilter.matrix(<double>[
+    0.28, 0.58, 0.14, 0, 12,
+    0.28, 0.58, 0.14, 0, 14,
+    0.28, 0.58, 0.14, 0, 18,
+    0.00, 0.00, 0.00, 1, 0,
+  ]);
+
+  static ColorFilter? forSkin(UnityButtonSkin skin, {required bool enabled}) {
+    if (!enabled) return disabledSilver;
+    return switch (skin) {
+      UnityButtonSkin.green => null,
+      UnityButtonSkin.blue => blueWithGoldRim,
+      UnityButtonSkin.red => redWithGoldRim,
+    };
+  }
+}
+
+/// Gold-rimmed 3-Slice Pill CTA Button (`Button_CTA.png`) with spring scale squish and
 /// optional `Inset_Button_CTA.png` coin price box or `Icon_Ad.png` badge.
 class UnityCtaButton extends StatefulWidget {
   final String label;
@@ -660,9 +723,9 @@ class UnityCtaButton extends StatefulWidget {
     required this.label,
     required this.onTap,
     this.skin = UnityButtonSkin.green,
-    this.unityWidth = 560,
-    this.unityHeight = 158,
-    this.unityFontSize = 84,
+    this.unityWidth = 499,
+    this.unityHeight = 221,
+    this.unityFontSize = 68,
     this.sliceScale = 1.0,
     this.coinPrice,
     this.showAdBadge = false,
@@ -679,13 +742,10 @@ class _UnityCtaButtonState extends State<UnityCtaButton> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    final sprite = !enabled
-        ? 'Button_CTA_Disabled.png'
-        : switch (widget.skin) {
-            UnityButtonSkin.green => 'Button_CTA.png',
-            UnityButtonSkin.blue => 'Button_Blue.png',
-            UnityButtonSkin.red => 'Button_Red.png',
-          };
+    final filter = UnityButtonColorFilters.forSkin(
+      widget.skin,
+      enabled: enabled,
+    );
 
     final textMat = !enabled
         ? UnityTextMaterial.ctaGray
@@ -713,14 +773,15 @@ class _UnityCtaButtonState extends State<UnityCtaButton> {
         duration: const Duration(milliseconds: 85),
         curve: Curves.easeOutCubic,
         child: UnityNineSlice(
-          sprite: sprite,
+          sprite: 'Button_CTA.png',
           width: w,
           height: h,
           pixelMultiplier: widget.sliceScale,
+          colorFilter: filter,
           padding: EdgeInsets.only(
-            left: ux(context, 34 * widget.sliceScale),
-            right: ux(context, 30 * widget.sliceScale),
-            bottom: ux(context, 18 * widget.sliceScale),
+            left: ux(context, 38 * widget.sliceScale),
+            right: ux(context, 38 * widget.sliceScale),
+            bottom: ux(context, 10 * widget.sliceScale),
           ),
           child: _buildInnerContent(context, textMat, enabled),
         ),
@@ -923,14 +984,14 @@ class UnityPopupCard extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // 1. `Background` (`Background_Popup.png`, `pos=(0,-35) sz=(+70,+80)`)
+          // 1. `Background` (`Background_Popup.png` gold-rimmed blue shell)
           // Absorbs pointer hits inside the visual card body so taps on the card
           // never leak through to `DarkOverlay` hold-to-peek.
           Positioned(
-            left: ppx(context, _hitPadX - 35.0),
-            right: ppx(context, _hitPadX - 35.0),
-            top: ppx(context, _hitPadY - 5.0),
-            bottom: ppx(context, _hitPadY - 75.0),
+            left: ppx(context, _hitPadX - 18.0),
+            right: ppx(context, _hitPadX - 18.0),
+            top: ppx(context, _hitPadY + 42.0),
+            bottom: ppx(context, _hitPadY - 65.0),
             child: Listener(
               behavior: HitTestBehavior.opaque,
               child: const UnityNineSlice(
@@ -940,46 +1001,49 @@ class UnityPopupCard extends StatelessWidget {
             ),
           ),
 
-          // 2. `Header` (`1026.50 x 195.00` at `left = 40.00, top = 22.50`)
+          // 2. `Header` (`Frame_Popup_Title.png` gold-rimmed blue ribbon sitting over top edge)
           Positioned(
-            left: ppx(context, _hitPadX + 40.00),
-            top: ppx(context, _hitPadY + 22.50),
-            width: ppx(context, localInnerWidth),
-            height: ppx(context, 195.00),
+            left: ppx(context, _hitPadX + 160.0),
+            right: ppx(context, _hitPadX + 160.0),
+            top: ppx(context, _hitPadY - 6.0),
+            height: ppx(context, 182.0),
             child: IgnorePointer(
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: ppx(context, onClose != null ? 88.0 : 20.0),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: UnitySdfText(
-                      title,
-                      unityFontSize: localTitleFontSize * kUnityPopupScale,
-                      material: UnityTextMaterial.popupTitle,
-                    ),
+              child: UnityNineSlice(
+                sprite: 'Frame_Popup_Title.png',
+                pixelMultiplier: kUnityPopupScale,
+                padding: EdgeInsets.fromLTRB(
+                  ppx(context, 48.0),
+                  ppx(context, 6.0),
+                  ppx(context, 48.0),
+                  ppx(context, 16.0),
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: UnitySdfText(
+                    title,
+                    unityFontSize: localTitleFontSize * 0.80 * kUnityPopupScale,
+                    material: UnityTextMaterial.popupTitle,
                   ),
                 ),
               ),
             ),
           ),
 
-          // 3. `Panel` (`1026.50 x 734.23` at `left = 40.00, top = 226.37`)
+          // 3. `Panel` (`1026.50 x 734.23` at `left = 40.00, top = 216.00`)
           Positioned(
-            left: ppx(context, _hitPadX + 40.00),
-            top: ppx(context, _hitPadY + 226.37),
-            width: ppx(context, localInnerWidth),
+            left: ppx(context, _hitPadX + 44.00),
+            top: ppx(context, _hitPadY + 216.00),
+            width: ppx(context, localInnerWidth - 8.0),
             height: ppx(context, localPanelHeight),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // `Panel/Image` (`Panel_Popup.png`, `pos=(0,-2.5) sz=(+10,+25)`)
+                // `Panel/Image` (`Panel_Popup.png` cream content well)
                 Positioned(
-                  left: ppx(context, -5.0),
-                  right: ppx(context, -5.0),
-                  top: ppx(context, -10.0),
-                  bottom: ppx(context, -15.0),
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
                   child: const IgnorePointer(
                     child: UnityNineSlice(
                       sprite: 'Panel_Popup.png',
@@ -997,25 +1061,25 @@ class UnityPopupCard extends StatelessWidget {
           // 4. `Footer / ButtonsContainer` (`1026.50 x 290.00` centered at `cy = 1133.91`)
           Positioned(
             left: ppx(context, _hitPadX + 40.00),
-            top: ppx(context, _hitPadY + 988.91),
+            top: ppx(context, _hitPadY + 982.00),
             width: ppx(context, localInnerWidth),
             height: ppx(context, 290.00),
             child: Center(child: footerChild),
           ),
 
-          // 5. `Header / CloseButton` (`173.90 x 170.18` `Button_Close.png` centered at `(1077.60, 46.91)`)
+          // 5. `Header / CloseButton` (`Button_Close.png` overlapping top-right corner)
           if (onClose != null)
             Positioned(
-              left: ppx(context, _hitPadX + 990.65),
-              top: ppx(context, _hitPadY - 38.18),
-              width: ppx(context, 173.90),
-              height: ppx(context, 170.18),
+              right: ppx(context, _hitPadX - 30.0),
+              top: ppx(context, _hitPadY + 2.0),
+              width: ppx(context, 168.0),
+              height: ppx(context, 168.0),
               child: UnitySpriteButton(
                 onTap: onClose,
                 child: Image.asset(
                   'assets/images/Button_Close.png',
-                  width: ppx(context, 173.90),
-                  height: ppx(context, 170.18),
+                  width: ppx(context, 168.0),
+                  height: ppx(context, 168.0),
                   fit: BoxFit.contain,
                 ),
               ),
@@ -1041,10 +1105,8 @@ class UnityPopupCard extends StatelessWidget {
   }
 }
 
-/// Exact `PopupContainer`-scale single CTA button (`LoseGameplayView` `"Try Again"` &
-/// `ExitGameplayView` `"Restart"`, `sz = (585.20, 217.44)`, `Background` `pos=(0,-10) sz=(+20,+20)`,
-/// `m_PixelsPerUnitMultiplier = 0.82`, `Label` `fontSize = 116.6` at `pos = (0, -3.0)`,
-/// `Button_Down` scale `= 0.95`).
+/// Gold-rimmed `PopupContainer`-scale single CTA button (`LoseGameplayView` `"Try Again"` &
+/// `ExitGameplayView` `"Restart"`).
 class UnityPopupCtaButton extends StatefulWidget {
   final String label;
   final VoidCallback? onTap;
@@ -1059,8 +1121,8 @@ class UnityPopupCtaButton extends StatefulWidget {
     required this.onTap,
     this.skin = UnityButtonSkin.green,
     this.localWidth = 585.20,
-    this.localHeight = 217.44,
-    this.localFontSize = 116.6,
+    this.localHeight = 232.0,
+    this.localFontSize = 96.0,
   });
 
   @override
@@ -1073,13 +1135,10 @@ class _UnityPopupCtaButtonState extends State<UnityPopupCtaButton> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    final sprite = !enabled
-        ? 'Button_CTA_Disabled.png'
-        : switch (widget.skin) {
-            UnityButtonSkin.green => 'Button_CTA.png',
-            UnityButtonSkin.blue => 'Button_Blue.png',
-            UnityButtonSkin.red => 'Button_Red.png',
-          };
+    final filter = UnityButtonColorFilters.forSkin(
+      widget.skin,
+      enabled: enabled,
+    );
     final textMat = !enabled
         ? UnityTextMaterial.ctaGray
         : switch (widget.skin) {
@@ -1105,47 +1164,126 @@ class _UnityPopupCtaButtonState extends State<UnityPopupCtaButton> {
         child: SizedBox(
           width: ppx(context, widget.localWidth),
           height: ppx(context, widget.localHeight),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // `Background`: `amin=(0,0) amax=(1,1) pos=(0,-10) sz=(+20,+20)` (`left=-10, right=-10, top=0, bottom=-20`)
-              Positioned(
-                left: ppx(context, -10.0),
-                right: ppx(context, -10.0),
-                top: 0.0,
-                bottom: ppx(context, -20.0),
-                child: IgnorePointer(
-                  child: UnityNineSlice(
-                    sprite: sprite,
-                    pixelMultiplier: enabled
-                        ? (kUnityPopupScale / 0.82)
-                        : kUnityPopupScale,
-                  ),
-                ),
+          child: UnityNineSlice(
+            sprite: 'Button_CTA.png',
+            colorFilter: filter,
+            pixelMultiplier: kUnityPopupScale,
+            padding: EdgeInsets.fromLTRB(
+              ppx(context, 42.0),
+              ppx(context, 12.0),
+              ppx(context, 42.0),
+              ppx(context, 22.0),
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: UnitySdfText(
+                widget.label,
+                unityFontSize: widget.localFontSize * kUnityPopupScale,
+                material: textMat,
               ),
-
-              // `Label`: `amin=(0,0) amax=(1,1) pos=(0,-3.0) sz=(-48,-48)`
-              Positioned(
-                left: ppx(context, 24.0),
-                right: ppx(context, 24.0),
-                top: ppx(context, 27.0),
-                bottom: ppx(context, 21.0),
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: UnitySdfText(
-                      widget.label,
-                      unityFontSize: widget.localFontSize * kUnityPopupScale,
-                      material: textMat,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 }
+
+/// Shared Top-Left `CoinsWidget` (`Play_Scene.png` / `Play_Scene 2.png`):
+/// - `WidgetBase.png` (`255x96` gold-rimmed dark-blue pill)
+/// - `Icon_Coin.png` (`97x101` golden crown coin on the left)
+/// - `PowerUp_Plus.png` (`46x46` green `+` badge at bottom-right of the coin icon)
+class UnityCoinsWidget extends StatelessWidget {
+  static const double hudLeftUnity = 42.0;
+  static const double hudTopUnity = 18.0;
+  static const double widthUnity = 286.0;
+  static const double heightUnity = 108.0;
+  static const double coinCenterXUnity = hudLeftUnity + 48.5;
+  static const double coinCenterYUnity = hudTopUnity + 52.5;
+
+  final int coins;
+  final double scale;
+
+  const UnityCoinsWidget({
+    super.key,
+    required this.coins,
+    this.scale = 1.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget pill = SizedBox(
+      width: ux(context, widthUnity),
+      height: ux(context, heightUnity),
+      child: Stack(
+        alignment: Alignment.centerLeft,
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: ux(context, 29),
+            top: ux(context, 4),
+            width: ux(context, 257),
+            height: ux(context, 96),
+            child: UnityNineSlice(
+              sprite: 'WidgetBase.png',
+              height: ux(context, 96),
+              padding: EdgeInsets.only(
+                left: ux(context, 78),
+                right: ux(context, 22),
+                bottom: ux(context, 4),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '$coins',
+                  style: TextStyle(
+                    fontFamily: 'Baloo2',
+                    fontSize: ux(context, 48),
+                    fontWeight: FontWeight.w800,
+                    fontVariations: const [FontVariation('wght', 800)],
+                    color: Colors.white,
+                    height: 1.0,
+                    shadows: const [
+                      Shadow(
+                        color: Color(0xAA09042E),
+                        offset: Offset(0, 1.5),
+                        blurRadius: 2.5,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: ux(context, 2),
+            width: ux(context, 97),
+            height: ux(context, 101),
+            child: Image.asset(
+              'assets/images/Icon_Coin.png',
+              fit: BoxFit.contain,
+            ),
+          ),
+          Positioned(
+            left: ux(context, 58),
+            bottom: 0,
+            width: ux(context, 46),
+            height: ux(context, 46),
+            child: Image.asset(
+              'assets/images/PowerUp_Plus.png',
+              fit: BoxFit.contain,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if ((scale - 1.0).abs() > 0.001) {
+      pill = Transform.scale(scale: scale, child: pill);
+    }
+    return IgnorePointer(child: pill);
+  }
+}
+
 

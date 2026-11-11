@@ -598,39 +598,25 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
   }
 
-  void _showUnityBannerToast(String msg) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1400),
-          margin: EdgeInsets.fromLTRB(
-            ux(context, 90),
-            0,
-            ux(context, 90),
-            ux(context, 280),
-          ),
-          content: UnityNineSlice(
-            sprite: 'Banner.png',
-            height: ux(context, 120),
-            padding: EdgeInsets.only(bottom: ux(context, 10)),
-            child: UnitySdfText(
-              msg,
-              unityFontSize: 44,
-              material: UnityTextMaterial.popupTitle,
-            ),
-          ),
-        ),
-      );
-  }
-
   String _formatTimer(int totalSeconds) {
     final m = totalSeconds ~/ 60;
     final s = totalSeconds % 60;
     return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  void _toggleSettingsPopup() {
+    widget.audio.playClick();
+    final willOpen = !_settingsOpen;
+    if (willOpen) {
+      AnalyticsService.logPopupShow(
+        name: 'settings',
+        level: _activeLevel.number,
+      );
+    }
+    setState(() {
+      _settingsOpen = willOpen;
+      _syncGamePauseState();
+    });
   }
 
   @override
@@ -649,12 +635,19 @@ class _GameplayScreenState extends State<GameplayScreen>
         _buyPopupIsLevelUp != null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0330AC),
+      backgroundColor: const Color(0xFF47279B),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Exact Sampled Multi-Radial Unity Gameplay Background (`ref_gameplay.png`)
-          const RepaintBoundary(child: _UnityGameplayBackground()),
+          // 1. Redesigned Purple Gameplay Background (`Background_Core.png`)
+          RepaintBoundary(
+            child: Image.asset(
+              'assets/images/Background_Core.png',
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
 
           // 2. Flame 2.5D Board & Block Puzzle Canvas (isolated in dedicated GPU layer!)
           RepaintBoundary(child: GameWidget<BlockOrderGame>(game: _game)),
@@ -704,80 +697,122 @@ class _GameplayScreenState extends State<GameplayScreen>
             },
           ),
 
-          // 5. Top HUD (`CoinsWidget`, `Level X`, `TimerGameplayView`)
+          // 5. Top HUD (`CoinsWidget` left, `Frame_Level.png` center, `Settings` right, + `TimerGameplayView` below)
           SafeArea(
             child: RepaintBoundary(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: ux(context, 42),
-                  right: ux(context, 46),
-                  top: ux(context, 18),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: ux(context, 144),
+                    child: Stack(
+                      alignment: Alignment.topCenter,
+                      clipBehavior: Clip.none,
                       children: [
                         // Top-Left `CoinsWidget` (hidden here when elevated above `WinOverlay`, `PlayOnPopupView`, or `PowerUpBuyPopup`)
-                        Opacity(
-                          opacity: hideBaseCoins ? 0.0 : 1.0,
-                          child: IgnorePointer(
-                            ignoring: hideBaseCoins,
-                            child: _buildCoinsWidget(context),
+                        Positioned(
+                          left: ux(context, UnityCoinsWidget.hudLeftUnity),
+                          top: ux(context, UnityCoinsWidget.hudTopUnity),
+                          child: Opacity(
+                            opacity: hideBaseCoins ? 0.0 : 1.0,
+                            child: IgnorePointer(
+                              ignoring: hideBaseCoins,
+                              child: _buildCoinsWidget(context),
+                            ),
                           ),
                         ),
 
-                        // Top-Right `Level 20` (`Baloo2_ExtraBold_LevelCounter`, `sz = 65.3`)
-                        IgnorePointer(
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: ux(context, 8),
-                              vertical: ux(context, 8),
+                        // Top-Center `Frame_Level.png` (`Level 15`)
+                        Positioned(
+                          top: ux(context, 10),
+                          child: IgnorePointer(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minWidth: ux(context, 287),
+                              ),
+                              child: UnityNineSlice(
+                                sprite: 'Frame_Level.png',
+                                height: ux(context, 125),
+                                padding: EdgeInsets.fromLTRB(
+                                  ux(context, 34),
+                                  ux(context, 6),
+                                  ux(context, 34),
+                                  ux(context, 12),
+                                ),
+                                child: UnitySdfText(
+                                  _activeLevel.title,
+                                  unityFontSize: 52,
+                                  material: UnityTextMaterial.levelCounter,
+                                ),
+                              ),
                             ),
-                            child: UnitySdfText(
-                              _activeLevel.title,
-                              unityFontSize: 65.3,
-                              material: UnityTextMaterial.levelCounter,
+                          ),
+                        ),
+
+                        // Top-Right Settings Circle Button (`Button_Circle_Blue.png` + `Icon_Settings.png`)
+                        Positioned(
+                          right: ux(context, 42),
+                          top: ux(context, 6),
+                          child: UnitySpriteButton(
+                            onTap: _toggleSettingsPopup,
+                            child: SizedBox(
+                              width: ux(context, 133),
+                              height: ux(context, 133),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Image.asset(
+                                    'assets/images/Button_Circle_Blue.png',
+                                    width: ux(context, 133),
+                                    height: ux(context, 133),
+                                    fit: BoxFit.contain,
+                                  ),
+                                  Image.asset(
+                                    'assets/images/Icon_Settings.png',
+                                    width: ux(context, 76),
+                                    height: ux(context, 76),
+                                    fit: BoxFit.contain,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
+                  ),
 
-                    // Top-Center `TimerGameplayView.prefab` (hides immediately on level complete so the Magic Sand Jar appears without overlap!)
-                    if (!_activeLevel.timerDisabled) ...[
-                      SizedBox(height: ux(context, 18)),
-                      ValueListenableBuilder<bool>(
-                        valueListenable: _game.isWinSequenceActiveNotifier,
-                        builder: (context, winActive, child) {
-                          return AnimatedScale(
-                            scale: winActive ? 0.65 : 1.0,
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeInBack,
-                            child: AnimatedOpacity(
-                              opacity: winActive ? 0.0 : 1.0,
-                              duration: const Duration(milliseconds: 160),
-                              curve: Curves.easeOut,
-                              child: IgnorePointer(
-                                ignoring: winActive,
-                                child: child,
-                              ),
+                  // Top-Center `TimerGameplayView` (hides immediately on level complete so the Magic Sand Jar appears without overlap!)
+                  if (!_activeLevel.timerDisabled) ...[
+                    SizedBox(height: ux(context, 8)),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _game.isWinSequenceActiveNotifier,
+                      builder: (context, winActive, child) {
+                        return AnimatedScale(
+                          scale: winActive ? 0.65 : 1.0,
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeInBack,
+                          child: AnimatedOpacity(
+                            opacity: winActive ? 0.0 : 1.0,
+                            duration: const Duration(milliseconds: 160),
+                            curve: Curves.easeOut,
+                            child: IgnorePointer(
+                              ignoring: winActive,
+                              child: child,
                             ),
-                          );
-                        },
-                        child: _buildTimerGameplayView(context),
-                      ),
-                    ],
+                          ),
+                        );
+                      },
+                      child: _buildTimerGameplayView(context),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           ),
 
-          // 5b. Top-Anchored `TutorialText` (`GameplayView.prefab`: `AnchoredPos=(0, -419.20)`,
-          // `SizeDelta=(-70.52, 124.60)`, `fontSize = 47.3`, Levels 1-3).
+          // 5b. Top-Anchored `TutorialText` (Levels 1-3).
           // Stays visible during gameplay on Levels 1-3 and fades out when win sequence starts so the Jar appears cleanly!
           if (tutorialHint != null)
             SafeArea(
@@ -832,109 +867,110 @@ class _GameplayScreenState extends State<GameplayScreen>
               ),
             ),
 
-          // 6. Bottom `PowerUps` Bar (`sc = 0.816`, `230.43 x 230.43` at `X = ∓118.40`) + Bottom-Right `Icon_Settings.png`
-          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: RepaintBoundary(
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: ux(context, 10)),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: ux(
+          // 6. Bottom `Frame_Footer.png` Shelf + Straddling Circular `PowerUps` (`Play_Scene.png`)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: RepaintBoundary(
+              child: SizedBox(
+                width: double.infinity,
+                height: safePadding.bottom +
+                    ux(
                       context,
-                      UnityPowerUpHudButton.scaledUnitySize + 10,
+                      UnityPowerUpHudButton.bottomOffsetUnity +
+                          UnityPowerUpHudButton.scaledUnitySize,
                     ),
-                    child: Stack(
-                      alignment: Alignment.bottomCenter,
-                      clipBehavior: Clip.none,
-                      children: [
-                        // Left Power-Up (`LevelUp` at `X = -118.40` Unity px)
-                        ListenableBuilder(
-                          listenable: Listenable.merge([
-                            widget.progress,
-                            _game.canLevelUpNotifier,
-                          ]),
-                          builder: (context, _) {
-                            final isFree = widget.progress.isFreePowerUpPending(
-                              MechanicUnlockInfo.levelUpPowerUp.id,
-                            );
-                            return Transform.translate(
-                              offset: Offset(
-                                -ux(
-                                  context,
-                                  UnityPowerUpHudButton.horizontalOffsetUnity,
-                                ),
-                                0,
-                              ),
-                              child: UnityPowerUpHudButton(
-                                key: const ValueKey('hud_level_up_btn'),
-                                isLevelUp: true,
-                                isUnlocked: _isLevelUpUnlocked,
-                                isFree: isFree,
-                                count: widget.progress.levelUpCount,
-                                isActionable: _game.canLevelUpNotifier.value,
-                                onTap: _handleLevelUpTap,
-                              ),
-                            );
-                          },
-                        ),
-
-                        // Right Power-Up (`TimeFreeze` at `X = +118.40` Unity px)
-                        ListenableBuilder(
-                          listenable: Listenable.merge([
-                            widget.progress,
-                            _game.isTimeFrozenNotifier,
-                            _game.isTimerStartedNotifier,
-                          ]),
-                          builder: (context, _) {
-                            final isFree = widget.progress.isFreePowerUpPending(
-                              MechanicUnlockInfo.timeFreezePowerUp.id,
-                            );
-                            return Transform.translate(
-                              offset: Offset(
-                                ux(
-                                  context,
-                                  UnityPowerUpHudButton.horizontalOffsetUnity,
-                                ),
-                                0,
-                              ),
-                              child: UnityPowerUpHudButton(
-                                key: const ValueKey('hud_time_freeze_btn'),
-                                isLevelUp: false,
-                                isUnlocked: _isTimeFreezeUnlocked,
-                                isFree: isFree,
-                                count: widget.progress.timeFreezeCount,
-                                isActionable: _game.canUseTimeFreeze,
-                                onTap: _handleTimeFreezeTap,
-                              ),
-                            );
-                          },
-                        ),
-
-                        // Bottom-Right White Gear (`Icon_Settings.png` `ux(84)`)
-                        Positioned(
-                          right: ux(context, 42),
-                          bottom: ux(context, 34),
-                          child: UnitySpriteButton(
-                            asset: 'Icon_Settings.png',
-                            unitySize: 84,
-                            onTap: () {
-                              widget.audio.playClick();
-                              final willOpen = !_settingsOpen;
-                              if (willOpen) {
-                                AnalyticsService.logPopupShow(name: 'settings', level: _activeLevel.number);
-                              }
-                              setState(() {
-                                _settingsOpen = willOpen;
-                                _syncGamePauseState();
-                              });
-                            },
+                child: Stack(
+                  alignment: Alignment.bottomCenter,
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Full-width purple footer shelf with golden top trim (`Frame_Footer.png`)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: safePadding.bottom +
+                          ux(
+                            context,
+                            UnityPowerUpHudButton.footerTopLineUnity,
                           ),
+                      child: const IgnorePointer(
+                        child: UnityNineSlice(
+                          sprite: 'Frame_Footer.png',
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+
+                    // Left Power-Up (`LevelUp` at `X = -135` Unity px)
+                    Positioned(
+                      bottom: safePadding.bottom +
+                          ux(context, UnityPowerUpHudButton.bottomOffsetUnity),
+                      child: ListenableBuilder(
+                        listenable: Listenable.merge([
+                          widget.progress,
+                          _game.canLevelUpNotifier,
+                        ]),
+                        builder: (context, _) {
+                          final isFree = widget.progress.isFreePowerUpPending(
+                            MechanicUnlockInfo.levelUpPowerUp.id,
+                          );
+                          return Transform.translate(
+                            offset: Offset(
+                              -ux(
+                                context,
+                                UnityPowerUpHudButton.horizontalOffsetUnity,
+                              ),
+                              0,
+                            ),
+                            child: UnityPowerUpHudButton(
+                              key: const ValueKey('hud_level_up_btn'),
+                              isLevelUp: true,
+                              isUnlocked: _isLevelUpUnlocked,
+                              isFree: isFree,
+                              count: widget.progress.levelUpCount,
+                              isActionable: _game.canLevelUpNotifier.value,
+                              onTap: _handleLevelUpTap,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                    // Right Power-Up (`TimeFreeze` at `X = +135` Unity px)
+                    Positioned(
+                      bottom: safePadding.bottom +
+                          ux(context, UnityPowerUpHudButton.bottomOffsetUnity),
+                      child: ListenableBuilder(
+                        listenable: Listenable.merge([
+                          widget.progress,
+                          _game.isTimeFrozenNotifier,
+                          _game.isTimerStartedNotifier,
+                        ]),
+                        builder: (context, _) {
+                          final isFree = widget.progress.isFreePowerUpPending(
+                            MechanicUnlockInfo.timeFreezePowerUp.id,
+                          );
+                          return Transform.translate(
+                            offset: Offset(
+                              ux(
+                                context,
+                                UnityPowerUpHudButton.horizontalOffsetUnity,
+                              ),
+                              0,
+                            ),
+                            child: UnityPowerUpHudButton(
+                              key: const ValueKey('hud_time_freeze_btn'),
+                              isLevelUp: false,
+                              isUnlocked: _isTimeFreezeUnlocked,
+                              isFree: isFree,
+                              count: widget.progress.timeFreezeCount,
+                              isActionable: _game.canUseTimeFreeze,
+                              onTap: _handleTimeFreezeTap,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -951,8 +987,8 @@ class _GameplayScreenState extends State<GameplayScreen>
             },
           ),
 
-          // 8. Authentic Settings Speed-Dial & Legal Footer (`PauseGameplayView` + `ref_settings.png`)
-          if (_settingsOpen) _buildSettingsSpeedDialOverlay(context),
+          // 8. Redesigned Settings Modal Popup (`PopUp_Setting.png`)
+          if (_settingsOpen) _buildSettingsPopupOverlay(context),
 
           // 9. `ExitGameplayView.prefab` (`Restart level?` -> `You will lose a life!`)
           if (_showExitRestartPopup)
@@ -1160,8 +1196,8 @@ class _GameplayScreenState extends State<GameplayScreen>
                 alignment: Alignment.topLeft,
                 child: Padding(
                   padding: EdgeInsets.only(
-                    left: ux(context, 42),
-                    top: ux(context, 18),
+                    left: ux(context, UnityCoinsWidget.hudLeftUnity),
+                    top: ux(context, UnityCoinsWidget.hudTopUnity),
                   ),
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 140),
@@ -1241,75 +1277,23 @@ class _GameplayScreenState extends State<GameplayScreen>
     );
   }
 
-  /// Authentic `CoinsWidget` (`Pill`: `WidgetBase.png` `313.2x100.0` + `Icon_Coin.png` `122.8x122.8`).
+  /// Redesigned `CoinsWidget` (`WidgetBase.png` + `Icon_Coin.png` + `PowerUp_Plus.png`).
   Widget _buildCoinsWidget(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([widget.progress, _coinBounceCtrl]),
       builder: (context, _) {
         final t = _coinBounceCtrl.value;
         final pulse = 1.0 + 0.14 * math.sin(t * math.pi);
-
-        return IgnorePointer(
-          child: Transform.scale(
-            scale: pulse,
-            child: SizedBox(
-              width: ux(context, 340),
-              height: ux(context, 123),
-              child: Stack(
-                alignment: Alignment.centerLeft,
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: ux(context, 28),
-                    width: ux(context, 312),
-                    height: ux(context, 96),
-                    child: UnityNineSlice(
-                      sprite: 'WidgetBase.png',
-                      height: ux(context, 96),
-                      padding: EdgeInsets.only(
-                        left: ux(context, 96),
-                        right: ux(context, 24),
-                        bottom: ux(context, 4),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '${widget.progress.coins}',
-                          style: TextStyle(
-                            fontFamily: 'Baloo2',
-                            fontSize: ux(context, 52),
-                            fontWeight: FontWeight.w800,
-                            fontVariations: const [FontVariation('wght', 800)],
-                            color: Colors.white,
-                            height: 1.0,
-                            shadows: const [
-                              Shadow(
-                                color: Color(0x99140858),
-                                offset: Offset(0, 1.5),
-                                blurRadius: 2,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Image.asset(
-                    'assets/images/Icon_Coin.png',
-                    width: ux(context, 123),
-                    height: ux(context, 123),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        return UnityCoinsWidget(
+          coins: widget.progress.coins,
+          scale: pulse,
         );
       },
     );
   }
 
   /// Authentic `TimerGameplayView.prefab`:
-  /// - Normal: `Shadow.png` + `Circle_01.png` tinted `#0C004F` + `Icon_Timer.png` + `3:00`
+  /// - Normal: `Shadow.png` + `Circle_01.png` tinted `#24115C` + `Icon_Timer.png` + `3:00`
   /// - Urgent (`<= 10s`): pulsing `Widget_Timer_Set.png` + `Icon_Timer.png` + `0:09`
   /// - Frozen: `Pill_03.png` + `Snow.png` snow cap + `PowerUp_TimeFreeze.png` + `TimeFreeze_TimerBar.png`
   Widget _buildTimerGameplayView(BuildContext context) {
@@ -1393,14 +1377,14 @@ class _GameplayScreenState extends State<GameplayScreen>
                         sprite: 'Shadow.png',
                         width: pillW,
                         height: pillH,
-                        tint: const Color(0x55000522),
+                        tint: const Color(0x55080224),
                       ),
                     ),
                     UnityNineSlice(
                       sprite: 'Circle_01.png',
                       width: pillW,
                       height: pillH,
-                      tint: const Color(0xFF0C024C),
+                      tint: const Color(0xFF24115C),
                       child: _buildTimerInnerRow(
                         context: context,
                         secs: secs,
@@ -1429,7 +1413,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                           sprite: 'TimeFreeze_TimerBar.png',
                           width: ux(context, 268),
                           height: ux(context, 24),
-                          tint: const Color(0xFF0A245E),
+                          tint: const Color(0xFF191254),
                         ),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(ux(context, 12)),
@@ -1514,7 +1498,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     );
   }
 
-  /// Flying `PowerUp_TimeFreeze.png` clock from bottom button (`X = +118.4`) to top-center timer
+  /// Flying `PowerUp_TimeFreeze.png` clock from bottom button (`X = +135`) to top-center timer
   /// `ClockTarget` (`X = -86`) + cyan `Explosion_Halo.png` burst upon impact (`t >= 0.66`).
   Widget _buildTimeFreezeFlightFx(BuildContext context, double t) {
     final screen = MediaQuery.sizeOf(context);
@@ -1524,11 +1508,15 @@ class _GameplayScreenState extends State<GameplayScreen>
           ux(context, UnityPowerUpHudButton.horizontalOffsetUnity),
       screen.height -
           pad.bottom -
-          ux(context, 10 + UnityPowerUpHudButton.scaledUnitySize * 0.5),
+          ux(
+            context,
+            UnityPowerUpHudButton.bottomOffsetUnity +
+                UnityPowerUpHudButton.scaledUnitySize * 0.5,
+          ),
     );
     final end = Offset(
       screen.width * 0.5 - ux(context, 86),
-      pad.top + ux(context, 214),
+      pad.top + ux(context, 205),
     );
 
     final flyT = (t / 0.66).clamp(0.0, 1.0);
@@ -1584,234 +1572,209 @@ class _GameplayScreenState extends State<GameplayScreen>
     );
   }
 
-  /// Exact `PauseGameplayView.prefab` + `ref_settings.png` Settings Speed-Dial & Footer.
-  Widget _buildSettingsSpeedDialOverlay(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        widget.audio.playClick();
-        setState(() {
-          _settingsOpen = false;
-          _syncGamePauseState();
-        });
-      },
-      child: Container(
-        color: const Color(0xE00B1837),
-        child: SafeArea(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Bottom-Right Speed-Dial Column (`Replay`, `Haptics`, `Music`, `Sounds`, `Gear`)
-              Positioned(
-                right: ux(context, 26),
-                bottom: ux(context, 44),
-                child: ListenableBuilder(
-                  listenable: widget.audio,
-                  builder: (context, _) {
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _SpeedDialUnityButton(
-                          bgAsset: 'assets/images/Button_Circle_Red.png',
-                          iconAsset: 'assets/images/Icon_Replay.png',
-                          iconUnitySize: 78,
-                          isEnabled: true,
-                          showDisabledSlash: false,
-                          delayMs: 90,
-                          onTap: _handleRequestReplayFromSettings,
-                        ),
-                        SizedBox(height: ux(context, 34)),
-                        _SpeedDialUnityButton(
-                          bgAsset: 'assets/images/Button_Circle_Green.png',
-                          iconAsset: 'assets/images/Icon_Haptics.png',
-                          iconUnitySize: 80,
-                          isEnabled: widget.audio.hapticsEnabled,
-                          showDisabledSlash: true,
-                          delayMs: 60,
-                          onTap: widget.audio.toggleHaptics,
-                        ),
-                        SizedBox(height: ux(context, 34)),
-                        _SpeedDialUnityButton(
-                          bgAsset: 'assets/images/Button_Circle_Green.png',
-                          iconAsset: 'assets/images/Icon_Music.png',
-                          iconUnitySize: 72,
-                          isEnabled: widget.audio.musicEnabled,
-                          showDisabledSlash: true,
-                          delayMs: 30,
-                          onTap: widget.audio.toggleMusic,
-                        ),
-                        SizedBox(height: ux(context, 34)),
-                        _SpeedDialUnityButton(
-                          bgAsset: 'assets/images/Button_Circle_Green.png',
-                          iconAsset: 'assets/images/Icon_Sounds.png',
-                          iconUnitySize: 76,
-                          isEnabled: widget.audio.soundEnabled,
-                          showDisabledSlash: true,
-                          delayMs: 0,
-                          onTap: widget.audio.toggleSound,
-                        ),
-                        SizedBox(height: ux(context, 42)),
-                        UnitySpriteButton(
-                          asset: 'Icon_Settings.png',
-                          unitySize: 84,
-                          onTap: () {
-                            widget.audio.playClick();
-                            setState(() {
-                              _settingsOpen = false;
-                              _syncGamePauseState();
-                            });
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
+  void _closeSettingsPopup() {
+    widget.audio.playClick();
+    setState(() {
+      _settingsOpen = false;
+      _syncGamePauseState();
+    });
+  }
 
-              // Bottom IDFV / IDFA / Version + `Button_Setting_Smallest.png` (`T&C`, `Privacy`)
-              Positioned(
-                left: ux(context, 16),
-                right: ux(context, 16),
-                bottom: ux(context, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IgnorePointer(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+  /// Centered Settings Modal Popup matching `PopUp_Setting.png` (`884x969` Unity px):
+  /// - `Background_Popup.png` (`884x931`) + `Frame_Popup_Title.png` (`558x143`, `"Setting"`)
+  /// - Top-right `Button_Close.png` (`139x139`)
+  /// - `Panel_Popup.png` (`784x676`) with 3 circle toggles (`Sound`, `Music`, `Vibration`),
+  ///   `"Restart"` `Button_CTA.png` (`499x221`), and `'v.1.0.6'` version label.
+  Widget _buildSettingsPopupOverlay(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _closeSettingsPopup,
+      child: Container(
+        color: const Color(0xCC0D0622),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: ux(context, 24)),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.88, end: 1.0),
+                  duration: const Duration(milliseconds: 210),
+                  curve: Curves.easeOutBack,
+                  builder: (context, scale, child) => Transform.scale(
+                    scale: scale,
+                    child: child,
+                  ),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {},
+                    child: SizedBox(
+                      width: ux(context, 896),
+                      height: ux(context, 969),
+                      child: Stack(
+                        clipBehavior: Clip.none,
                         children: [
-                          Text(
-                            'IDFV: 24f01d1c42b37604b18fd2f9fae93dae',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: 'Baloo2',
-                              fontSize: ux(context, 34),
-                              fontWeight: FontWeight.w600,
-                              fontVariations: const [FontVariation('wght', 600)],
-                              color: const Color(0xFFD8E7FF),
-                              height: 1.25,
+                          // 1. Gold-Rimmed Blue Popup Shell (`Background_Popup.png`, `884x931`)
+                          Positioned(
+                            left: 0,
+                            top: ux(context, 38),
+                            width: ux(context, 884),
+                            height: ux(context, 931),
+                            child: const UnityNineSlice(
+                              sprite: 'Background_Popup.png',
                             ),
                           ),
-                          SizedBox(height: ux(context, 14)),
-                          Text(
-                            'IDFA: 995fac9a-0019-4055-9363-65384720a1c8',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: 'Baloo2',
-                              fontSize: ux(context, 34),
-                              fontWeight: FontWeight.w600,
-                              fontVariations: const [FontVariation('wght', 600)],
-                              color: const Color(0xFFD8E7FF),
-                              height: 1.25,
+
+                          // 2. Cream Inner Content Well (`Panel_Popup.png`, `784x676`)
+                          Positioned(
+                            left: ux(context, 50),
+                            top: ux(context, 184),
+                            width: ux(context, 784),
+                            height: ux(context, 676),
+                            child: UnityNineSlice(
+                              sprite: 'Panel_Popup.png',
+                              child: ListenableBuilder(
+                                listenable: widget.audio,
+                                builder: (context, _) {
+                                  return Stack(
+                                    alignment: Alignment.topCenter,
+                                    children: [
+                                      // Row of 3 Circle Toggle Buttons (`Sound`, `Music`, `Vibration`)
+                                      Positioned(
+                                        top: ux(context, 48),
+                                        left: 0,
+                                        right: 0,
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            _SettingsCircleToggleButton(
+                                              isEnabled:
+                                                  widget.audio.soundEnabled,
+                                              enabledIconAsset:
+                                                  'assets/images/Icon_Sounds.png',
+                                              disabledIconAsset:
+                                                  'assets/images/Icon_Sounds_Off.png',
+                                              iconUnityWidth: 99,
+                                              iconUnityHeight: 85,
+                                              onTap: widget.audio.toggleSound,
+                                            ),
+                                            SizedBox(width: ux(context, 24)),
+                                            _SettingsCircleToggleButton(
+                                              isEnabled:
+                                                  widget.audio.musicEnabled,
+                                              enabledIconAsset:
+                                                  'assets/images/Icon_Music.png',
+                                              disabledIconAsset:
+                                                  'assets/images/Icon_Music_Off.png',
+                                              iconUnityWidth: 82,
+                                              iconUnityHeight: 97,
+                                              onTap: widget.audio.toggleMusic,
+                                            ),
+                                            SizedBox(width: ux(context, 24)),
+                                            _SettingsCircleToggleButton(
+                                              isEnabled:
+                                                  widget.audio.hapticsEnabled,
+                                              enabledIconAsset:
+                                                  'assets/images/Icon_Haptics.png',
+                                              disabledIconAsset:
+                                                  'assets/images/Icon_Haptics_Off.png',
+                                              iconUnityWidth: 83,
+                                              iconUnityHeight: 108,
+                                              onTap: widget.audio.toggleHaptics,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      // Centered `"Restart"` Pill Button (`Button_CTA.png`, `499x221`)
+                                      Positioned(
+                                        top: ux(context, 332),
+                                        child: UnityCtaButton(
+                                          label: 'Restart',
+                                          unityWidth: 499,
+                                          unityHeight: 221,
+                                          unityFontSize: 68,
+                                          onTap:
+                                              _handleRequestReplayFromSettings,
+                                        ),
+                                      ),
+
+                                      // Bottom Version Text (`v.1.0.6`)
+                                      Positioned(
+                                        bottom: ux(context, 28),
+                                        child: IgnorePointer(
+                                          child: Text(
+                                            'v.1.0.6',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontFamily: 'Baloo2',
+                                              fontSize: ux(context, 42),
+                                              fontWeight: FontWeight.w800,
+                                              fontVariations: const [
+                                                FontVariation('wght', 800),
+                                              ],
+                                              color: const Color(0xFF9C5B40),
+                                              height: 1.0,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+
+                          // 3. Top Header Ribbon (`Frame_Popup_Title.png`, `558x143`, `"Setting"`)
+                          Positioned(
+                            left: ux(context, (884 - 558) * 0.5),
+                            top: 0,
+                            width: ux(context, 558),
+                            height: ux(context, 143),
+                            child: IgnorePointer(
+                              child: UnityNineSlice(
+                                sprite: 'Frame_Popup_Title.png',
+                                padding: EdgeInsets.fromLTRB(
+                                  ux(context, 42),
+                                  ux(context, 8),
+                                  ux(context, 42),
+                                  ux(context, 16),
+                                ),
+                                child: const FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: UnitySdfText(
+                                    'Setting',
+                                    unityFontSize: 70,
+                                    material: UnityTextMaterial.popupTitle,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // 4. Top-Right Red-Gold Close Button (`Button_Close.png`, `139x139`)
+                          Positioned(
+                            right: 0,
+                            top: ux(context, 8),
+                            width: ux(context, 139),
+                            height: ux(context, 139),
+                            child: UnitySpriteButton(
+                              asset: 'Button_Close.png',
+                              unitySize: 139,
+                              onTap: _closeSettingsPopup,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    SizedBox(height: ux(context, 14)),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        _SmallestLegalButton(
-                          label: 'T&C',
-                          onTap: () {
-                            widget.audio.playClick();
-                            _showUnityBannerToast('Terms & Conditions');
-                          },
-                        ),
-                        IgnorePointer(
-                          child: Text(
-                            '0.05.00 (63)',
-                            style: TextStyle(
-                              fontFamily: 'Baloo2',
-                              fontSize: ux(context, 34),
-                              fontWeight: FontWeight.w600,
-                              fontVariations: const [FontVariation('wght', 600)],
-                              color: const Color(0xFFD8E7FF),
-                            ),
-                          ),
-                        ),
-                        _SmallestLegalButton(
-                          label: 'Privacy',
-                          onTap: () {
-                            widget.audio.playClick();
-                            _showUnityBannerToast('Privacy Policy');
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Exact multi-radial Unity gameplay background sampled from `ref_gameplay.png`:
-/// - Base royal electric cobalt `#0330AC`
-/// - Top-left electric violet glow `#6E2FF9` -> `#492FD4` -> `#0330AC`
-/// - Top-right cerulean glow `#2F72E4` -> `#1E55C7` -> `#0330AC`
-/// - Bottom-center cyan-cobalt glow `#0366B2` -> `#0330AC`
-class _UnityGameplayBackground extends StatelessWidget {
-  const _UnityGameplayBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const ColoredBox(color: Color(0xFF0330AC)),
-          // Top-Right Cerulean Glow
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(0.96, -1.00),
-                radius: 0.95,
-                colors: [
-                  Color(0xFF2F72E4),
-                  Color(0x881E55C7),
-                  Color(0x000330AC),
-                ],
-                stops: [0.0, 0.52, 1.0],
-              ),
-            ),
-          ),
-          // Top-Left Electric Violet-Purple Glow
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(-0.80, -1.04),
-                radius: 1.32,
-                colors: [
-                  Color(0xFF6E2FF9),
-                  Color(0xCC492FD4),
-                  Color(0x552230BE),
-                  Color(0x000330AC),
-                ],
-                stops: [0.0, 0.34, 0.68, 1.0],
-              ),
-            ),
-          ),
-          // Bottom-Center Soft Cyan-Cobalt Glow
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(0.0, 1.06),
-                radius: 0.76,
-                colors: [
-                  Color(0xAA0366B2),
-                  Color(0x000330AC),
-                ],
-                stops: [0.0, 1.0],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1906,123 +1869,39 @@ class _TimeFreezeFrostStaticLayer extends StatelessWidget {
   }
 }
 
-
-/// Authentic Speed-Dial Circle Button (`ref_settings.png` + `PauseGameplayView.prefab`):
-/// Includes `#000000(a=0.45)` dim + rotated `Element_Disabled.png` slash when toggled OFF.
-class _SpeedDialUnityButton extends StatefulWidget {
-  final String bgAsset;
-  final String iconAsset;
-  final double iconUnitySize;
+/// Circular Sound / Music / Vibration Toggle Button inside `PopUp_Setting.png`:
+/// - ON: `Button_Circle_Blue.png` + `Icon_*.png`
+/// - OFF: `Button_Circle_Gray.png` + `Icon_*_Off.png`
+class _SettingsCircleToggleButton extends StatefulWidget {
   final bool isEnabled;
-  final bool showDisabledSlash;
-  final int delayMs;
+  final String enabledIconAsset;
+  final String disabledIconAsset;
+  final double iconUnityWidth;
+  final double iconUnityHeight;
   final VoidCallback onTap;
 
-  const _SpeedDialUnityButton({
-    required this.bgAsset,
-    required this.iconAsset,
-    required this.iconUnitySize,
+  const _SettingsCircleToggleButton({
     required this.isEnabled,
-    required this.showDisabledSlash,
-    required this.delayMs,
+    required this.enabledIconAsset,
+    required this.disabledIconAsset,
+    required this.iconUnityWidth,
+    required this.iconUnityHeight,
     required this.onTap,
   });
 
   @override
-  State<_SpeedDialUnityButton> createState() => _SpeedDialUnityButtonState();
+  State<_SettingsCircleToggleButton> createState() =>
+      _SettingsCircleToggleButtonState();
 }
 
-class _SpeedDialUnityButtonState extends State<_SpeedDialUnityButton> {
+class _SettingsCircleToggleButtonState
+    extends State<_SettingsCircleToggleButton> {
   bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    final sz = ux(context, 134);
-
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 210 + widget.delayMs),
-      curve: Curves.easeOutBack,
-      builder: (context, val, child) => Transform.scale(
-        scale: val,
-        child: child,
-      ),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) {
-          setState(() => _pressed = false);
-          widget.onTap();
-        },
-        onTapCancel: () => setState(() => _pressed = false),
-        child: AnimatedScale(
-          scale: _pressed ? 0.90 : 1.0,
-          duration: const Duration(milliseconds: 80),
-          child: SizedBox(
-            width: sz,
-            height: sz,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Image.asset(
-                  widget.bgAsset,
-                  width: sz,
-                  height: sz,
-                ),
-                Image.asset(
-                  widget.iconAsset,
-                  width: ux(context, widget.iconUnitySize),
-                  height: ux(context, widget.iconUnitySize),
-                  fit: BoxFit.contain,
-                ),
-                if (!widget.isEnabled && widget.showDisabledSlash) ...[
-                  Container(
-                    width: sz * 0.92,
-                    height: sz * 0.92,
-                    decoration: const BoxDecoration(
-                      color: Color(0x73000000),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  Transform.rotate(
-                    angle: -math.pi / 4,
-                    child: UnityNineSlice(
-                      sprite: 'Element_Disabled.png',
-                      width: ux(context, 92),
-                      height: ux(context, 18),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bottom-left `T&C` and bottom-right `Privacy` buttons (`Button_Setting_Smallest.png` in `ref_settings.png`).
-class _SmallestLegalButton extends StatefulWidget {
-  final String label;
-  final VoidCallback onTap;
-
-  const _SmallestLegalButton({
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  State<_SmallestLegalButton> createState() => _SmallestLegalButtonState();
-}
-
-class _SmallestLegalButtonState extends State<_SmallestLegalButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final w = ux(context, 202);
-    final h = ux(context, 76);
+    final w = ux(context, 212);
+    final h = ux(context, 213);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -2033,8 +1912,9 @@ class _SmallestLegalButtonState extends State<_SmallestLegalButton> {
       },
       onTapCancel: () => setState(() => _pressed = false),
       child: AnimatedScale(
-        scale: _pressed ? 0.92 : 1.0,
+        scale: _pressed ? 0.91 : 1.0,
         duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOutCubic,
         child: SizedBox(
           width: w,
           height: h,
@@ -2042,21 +1922,20 @@ class _SmallestLegalButtonState extends State<_SmallestLegalButton> {
             alignment: Alignment.center,
             children: [
               Image.asset(
-                'assets/images/Button_Setting_Smallest.png',
+                widget.isEnabled
+                    ? 'assets/images/Button_Circle_Blue.png'
+                    : 'assets/images/Button_Circle_Gray.png',
                 width: w,
                 height: h,
-                fit: BoxFit.fill,
+                fit: BoxFit.contain,
               ),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  fontFamily: 'Baloo2',
-                  fontSize: ux(context, 38),
-                  fontWeight: FontWeight.w700,
-                  fontVariations: const [FontVariation('wght', 700)],
-                  color: const Color(0xFFDCE8FF),
-                  height: 1.0,
-                ),
+              Image.asset(
+                widget.isEnabled
+                    ? widget.enabledIconAsset
+                    : widget.disabledIconAsset,
+                width: ux(context, widget.iconUnityWidth),
+                height: ux(context, widget.iconUnityHeight),
+                fit: BoxFit.contain,
               ),
             ],
           ),

@@ -29,9 +29,6 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <meta-data
-            android:name="applovin.sdk.key"
-            android:value="UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CARLzgqBOMc7n1ollcWugw3gexsimiopaBhA55sNDfZQq0LCI" />
 
         <!-- Prevent Facebook SDK from auto-init and crashing on startup when App ID is not configured -->
         <provider

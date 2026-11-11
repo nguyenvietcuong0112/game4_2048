@@ -65,8 +65,8 @@
         }
       },
       "primaryProvider": 0,
-      "max_sdk_key": "UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CARLzgqBOMc7n1ollcWugw3gexsimiopaBhA55sNDfZQq0LCI",
-      "max_ad_review_key": "qRZzTMEyyQ0xxLqyERK6esE2su_KclIRQ1FAqWCTxoo0bTSiVBtlwzyHEEmQd4WdqgOU8BkmpP2M7isrUS50p4f",
+      "max_sdk_key": "UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CArLZgqBOMc7n1olIcWugw3gexsimiopaBhA55sNDfZQq0LCl",
+      "max_ad_review_key": "qRZzTMEyyQ0xxLqyERK6esE2su_KcIIRQ1FAqWCTxoo0bTSiVBtIwzyHEEmQd4WdqgOU8BkmP2M7isrUS50p4f",
       "google_admob_app_id": "ca-app-pub-6221062690273747~1313970600"
     },
     "facebook_configs": {
@@ -151,8 +151,8 @@
         }
       },
       "primaryProvider": 0,
-      "max_sdk_key": "UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CARLzgqBOMc7n1ollcWugw3gexsimiopaBhA55sNDfZQq0LCI",
-      "max_ad_review_key": "qRZzTMEyyQ0xxLqyERK6esE2su_KclIRQ1FAqWCTxoo0bTSiVBtlwzyHEEmQd4WdqgOU8BkmpP2M7isrUS50p4f",
+      "max_sdk_key": "UveqekOCl9KX2vr_pPcKksAfavCvdDo6SKup4CArLZgqBOMc7n1olIcWugw3gexsimiopaBhA55sNDfZQq0LCl",
+      "max_ad_review_key": "qRZzTMEyyQ0xxLqyERK6esE2su_KcIIRQ1FAqWCTxoo0bTSiVBtIwzyHEEmQd4WdqgOU8BkmP2M7isrUS50p4f",
       "google_admob_app_id": "ca-app-pub-6221062690273747~7578454064"
     },
     "facebook_configs": {

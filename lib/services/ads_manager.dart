@@ -44,6 +44,12 @@ class AdsManager {
     RemoteConfigService.listenToUpdates();
     RemoteConfigService.fetchConfigs();
 
+    FGSDK.isInit().then((ready) {
+      debugPrint('[AdsManager] 🟢 FGSDK.isInit() status -> $ready');
+    }).catchError((e) {
+      debugPrint('[AdsManager] 🔴 FGSDK.isInit() error -> $e');
+    });
+
     for (final s in _subscriptions) {
       s.cancel();
     }
@@ -51,59 +57,87 @@ class AdsManager {
 
     // Track ad clicks to prevent App Resume ad collision when returning from external store
     _subscriptions.add(FGSDK.onInterstitialClicked.listen((info) {
-      debugPrint('[AdsManager] onInterstitialClicked: placement=${info.placement} -> marking _adWasClicked = true');
+      debugPrint('[AdsManager] 👆 onInterstitialClicked: placement=${info.placement} -> marking _adWasClicked = true');
       _adWasClicked = true;
     }));
     _subscriptions.add(FGSDK.onAppOpenClicked.listen((info) {
-      debugPrint('[AdsManager] onAppOpenClicked: placement=${info.placement} -> marking _adWasClicked = true');
+      debugPrint('[AdsManager] 👆 onAppOpenClicked: placement=${info.placement} -> marking _adWasClicked = true');
       _adWasClicked = true;
     }));
     _subscriptions.add(FGSDK.onRewardedClicked.listen((info) {
-      debugPrint('[AdsManager] onRewardedClicked: placement=${info.placement} -> marking _adWasClicked = true');
+      debugPrint('[AdsManager] 👆 onRewardedClicked: placement=${info.placement} -> marking _adWasClicked = true');
       _adWasClicked = true;
     }));
 
     // Track rewarded ad loading lifecycle
+    _subscriptions.add(FGSDK.onRewardedRequest.listen((placement) {
+      debugPrint('[AdsManager] 🔄 onRewardedRequest: placement=$placement');
+    }));
     _subscriptions.add(FGSDK.onRewardedLoaded.listen((info) {
-      debugPrint('[AdsManager] onRewardedLoaded: placement=${info.placement}');
+      debugPrint('[AdsManager] ✅ onRewardedLoaded: placement=${info.placement}, network=${info.networkName}');
       _isRewardedLoaded = true;
       _cancelRetryTimer();
     }));
     _subscriptions.add(FGSDK.onRewardedFailedToLoad.listen((info) {
-      debugPrint('[AdsManager] onRewardedFailedToLoad: placement=${info.placement}');
+      debugPrint('[AdsManager] ❌ onRewardedFailedToLoad: placement=${info.placement}, network=${info.networkName}');
       _isRewardedLoaded = false;
       _scheduleRewardedRetry();
     }));
+    _subscriptions.add(FGSDK.onRewardedShown.listen((info) {
+      debugPrint('[AdsManager] 📺 onRewardedShown: placement=${info.placement}, network=${info.networkName}');
+    }));
+    _subscriptions.add(FGSDK.onRewardedFailedToShow.listen((info) {
+      debugPrint('[AdsManager] ⚠️ onRewardedFailedToShow: placement=${info.placement}, network=${info.networkName}');
+    }));
     _subscriptions.add(FGSDK.onRewardedClosed.listen((info) {
+      debugPrint('[AdsManager] 🚪 onRewardedClosed: placement=${info.placement}');
       _isRewardedLoaded = false;
       preloadRewarded();
     }));
 
     // Track AppOpen loading lifecycle
+    _subscriptions.add(FGSDK.onAppOpenRequest.listen((placement) {
+      debugPrint('[AdsManager] 🔄 onAppOpenRequest: placement=$placement');
+    }));
     _subscriptions.add(FGSDK.onAppOpenLoaded.listen((info) {
-      debugPrint('[AdsManager] onAppOpenLoaded: placement=${info.placement}');
+      debugPrint('[AdsManager] ✅ onAppOpenLoaded: placement=${info.placement}, network=${info.networkName}');
       _isAppOpenLoaded = true;
     }));
     _subscriptions.add(FGSDK.onAppOpenFailedToLoad.listen((info) {
-      debugPrint('[AdsManager] onAppOpenFailedToLoad: placement=${info.placement}');
+      debugPrint('[AdsManager] ❌ onAppOpenFailedToLoad: placement=${info.placement}, network=${info.networkName}');
       _isAppOpenLoaded = false;
     }));
+    _subscriptions.add(FGSDK.onAppOpenShown.listen((info) {
+      debugPrint('[AdsManager] 📺 onAppOpenShown: placement=${info.placement}, network=${info.networkName}');
+    }));
+    _subscriptions.add(FGSDK.onAppOpenFailedToShow.listen((info) {
+      debugPrint('[AdsManager] ⚠️ onAppOpenFailedToShow: placement=${info.placement}, network=${info.networkName}');
+    }));
     _subscriptions.add(FGSDK.onAppOpenClosed.listen((info) {
-      debugPrint('[AdsManager] onAppOpenClosed: placement=${info.placement}');
+      debugPrint('[AdsManager] 🚪 onAppOpenClosed: placement=${info.placement}');
       _isAppOpenLoaded = false;
     }));
 
     // Track Interstitial loading lifecycle
+    _subscriptions.add(FGSDK.onInterstitialRequest.listen((placement) {
+      debugPrint('[AdsManager] 🔄 onInterstitialRequest: placement=$placement');
+    }));
     _subscriptions.add(FGSDK.onInterstitialLoaded.listen((info) {
-      debugPrint('[AdsManager] onInterstitialLoaded: placement=${info.placement}');
+      debugPrint('[AdsManager] ✅ onInterstitialLoaded: placement=${info.placement}, network=${info.networkName}');
       _isInterLoaded = true;
     }));
     _subscriptions.add(FGSDK.onInterstitialFailedToLoad.listen((info) {
-      debugPrint('[AdsManager] onInterstitialFailedToLoad: placement=${info.placement}');
+      debugPrint('[AdsManager] ❌ onInterstitialFailedToLoad: placement=${info.placement}, network=${info.networkName}');
       _isInterLoaded = false;
     }));
+    _subscriptions.add(FGSDK.onInterstitialShown.listen((info) {
+      debugPrint('[AdsManager] 📺 onInterstitialShown: placement=${info.placement}, network=${info.networkName}');
+    }));
+    _subscriptions.add(FGSDK.onInterstitialFailedToShow.listen((info) {
+      debugPrint('[AdsManager] ⚠️ onInterstitialFailedToShow: placement=${info.placement}, network=${info.networkName}');
+    }));
     _subscriptions.add(FGSDK.onInterstitialClosed.listen((info) {
-      debugPrint('[AdsManager] onInterstitialClosed: placement=${info.placement}');
+      debugPrint('[AdsManager] 🚪 onInterstitialClosed: placement=${info.placement}');
       _isInterLoaded = false;
     }));
 
@@ -166,18 +200,32 @@ class AdsManager {
 
     debugPrint(
       '[AdsManager] showInterEndgame -> Level: $levelNumber (req >= $threshold: $isLevelEligible), '
-      'Cooldown passed: $isIntervalPassed',
+      'Cooldown passed: $isIntervalPassed, isInterLoaded: $_isInterLoaded',
     );
 
     if (!isLevelEligible || !isIntervalPassed || _isShowingAd) {
+      if (!isLevelEligible) {
+        debugPrint('[AdsManager] ℹ️ Interstitial gated: Level $levelNumber < threshold $threshold');
+      } else if (!isIntervalPassed) {
+        final elapsed = _lastInterOrResumeTime == null
+            ? 0
+            : DateTime.now().difference(_lastInterOrResumeTime!).inSeconds;
+        debugPrint(
+          '[AdsManager] ℹ️ Interstitial gated: Cooldown active (${elapsed}s / ${RemoteConfigService.adsInterval}s)',
+        );
+      } else if (_isShowingAd) {
+        debugPrint('[AdsManager] ℹ️ Interstitial gated: Another ad is currently displaying.');
+      }
       onCompleted();
       return;
     }
 
     _isShowingAd = true;
     _adWasClicked = false;
+    bool adShownSuccessfully = false;
 
     final completer = Completer<void>();
+    StreamSubscription? showSub;
     StreamSubscription? closeSub;
     StreamSubscription? failSub;
 
@@ -187,8 +235,20 @@ class AdsManager {
       }
     }
 
-    closeSub = FGSDK.onInterstitialClosed.listen((_) => finishAd());
-    failSub = FGSDK.onInterstitialFailedToShow.listen((_) => finishAd());
+    showSub = FGSDK.onInterstitialShown.listen((info) {
+      debugPrint('[AdsManager] 📺 Interstitial displayed on screen! placement=${info.placement}, network=${info.networkName}');
+      adShownSuccessfully = true;
+    });
+
+    closeSub = FGSDK.onInterstitialClosed.listen((info) {
+      debugPrint('[AdsManager] 🚪 Interstitial closed by user. placement=${info.placement}');
+      finishAd();
+    });
+
+    failSub = FGSDK.onInterstitialFailedToShow.listen((info) {
+      debugPrint('[AdsManager] ⚠️ Interstitial failed to show! placement=${info.placement}, network=${info.networkName}');
+      finishAd();
+    });
 
     try {
       AnalyticsService.logAfIntersLogicGame();
@@ -197,10 +257,16 @@ class AdsManager {
         FGSDK.showInterstitial('endgame', 'classic', levelNumber),
         completer.future,
       ]);
-      _recordAdCompleted();
+      debugPrint('[AdsManager] showInterstitial call completed (adShownSuccessfully: $adShownSuccessfully)');
+      if (adShownSuccessfully) {
+        _recordAdCompleted();
+      } else {
+        debugPrint('[AdsManager] ⚠️ Ad did not actually appear on screen. Cooldown will NOT be penalized.');
+      }
     } catch (e) {
-      debugPrint('[AdsManager] Error showing endgame inter: $e');
+      debugPrint('[AdsManager] ❌ Error showing endgame inter: $e');
     } finally {
+      await showSub.cancel();
       await closeSub.cancel();
       await failSub.cancel();
       _isShowingAd = false;

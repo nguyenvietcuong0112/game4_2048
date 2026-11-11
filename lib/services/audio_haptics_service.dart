@@ -95,11 +95,16 @@ class AudioHapticsService extends ChangeNotifier {
               maxPlayers: entry.value.$2,
             );
             _pools[entry.key] = pool;
+            // ignore: invalid_use_of_visible_for_testing_member
+            for (final p in pool.availablePlayers) {
+              p.positionUpdater = _DisabledPositionUpdater();
+            }
           } catch (_) {}
         }),
       );
 
       FlameAudio.bgm.initialize();
+      FlameAudio.bgm.audioPlayer.positionUpdater = _DisabledPositionUpdater();
       if (_musicEnabled) {
         unawaited(startBgm());
       }
@@ -112,7 +117,9 @@ class AudioHapticsService extends ChangeNotifier {
     if (!_musicEnabled || _bgmPlaying) return;
     try {
       _bgmPlaying = true;
+      FlameAudio.bgm.audioPlayer.positionUpdater = _DisabledPositionUpdater();
       await FlameAudio.bgm.play('bgm_gameplay.wav', volume: _bgmVolume);
+      FlameAudio.bgm.audioPlayer.positionUpdater = _DisabledPositionUpdater();
     } catch (_) {
       _bgmPlaying = false;
     }
@@ -346,3 +353,16 @@ class AudioHapticsService extends ChangeNotifier {
     _triggerHaptic('lightImpact', HapticFeedback.lightImpact);
   }
 }
+
+/// No-op position updater that eliminates high-frequency (60fps) JNI polling
+/// (`V/MediaPlayer-JNI: getCurrentPosition: ...`) on Android devices.
+class _DisabledPositionUpdater extends PositionUpdater {
+  _DisabledPositionUpdater() : super(getPosition: () async => null);
+
+  @override
+  void start() {}
+
+  @override
+  void stop() {}
+}
+

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "864000720270",
+    "project_id": "fw37-mobgame",
+    "storage_bucket": "fw37-mobgame.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:864000720270:android:bd3b6004b9aa30f6a2f8df",
+        "android_client_info": {
+          "package_name": "com.fw.water.block.number.merge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAr49EudcTXGJXMan0FT7O6vgCy6uBgAIs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

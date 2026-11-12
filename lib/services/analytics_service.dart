@@ -1,4 +1,3 @@
-import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -6,12 +5,27 @@ import 'package:funtap_global_sdk/funtap_global_sdk.dart';
 import '../firebase_options.dart';
 
 /// Centralized Analytics & Crashlytics Service for Block Order 2048.
-/// Strict adherence to Funtap Client Event Tracking Specification (matching FW27):
-/// - Events are routed through FGSDK native pipeline (AppsFlyer / MAX)
-/// - Events are simultaneously dispatched directly to Firebase Analytics
+/// Strict adherence to Funtap Client Event Tracking Specification (FW37):
+/// - `FGSDK` (`funtap_global_sdk`) natively dispatches directly to Firebase Analytics
+///   (`FGFirebaseProvider` — including early-boot event buffering before SDK ready)
+///   and automatically mirrors MAX / AppLovin events (`FGAppLovinEventMapper`).
+/// - Do NOT call `FirebaseAnalytics.instance.logEvent` alongside `FGSDK`, otherwise
+///   every event is logged twice in Firebase DebugView!
 class AnalyticsService {
   static bool _isInitialized = false;
   static bool get isInitialized => _isInitialized;
+
+  /// Optional test observer invoked synchronously whenever an analytics event is emitted.
+  @visibleForTesting
+  static void Function(String eventName, Map<String, Object?> params)?
+      debugEventObserver;
+
+  static void _notifyDebugObserver(
+    String eventName,
+    Map<String, Object?> params,
+  ) {
+    debugEventObserver?.call(eventName, Map<String, Object?>.unmodifiable(params));
+  }
 
   /// Initialize Firebase Core & Crashlytics for error reporting.
   static Future<void> initialize() async {
@@ -33,35 +47,11 @@ class AnalyticsService {
       };
 
       _isInitialized = true;
-      debugPrint('[AnalyticsService] Initialized Firebase & Crashlytics successfully.');
+      debugPrint(
+        '[AnalyticsService] Initialized Firebase Core & Crashlytics successfully.',
+      );
     } catch (e, stack) {
       debugPrint('[AnalyticsService] Init failed: $e\n$stack');
-    }
-  }
-
-  /// Dispatches an event directly to Firebase Analytics
-  static void _logToFirebase(String name, [Map<String, Object>? parameters]) {
-    if (!_isInitialized) return;
-    try {
-      Map<String, Object>? cleanedParams;
-      if (parameters != null) {
-        cleanedParams = {};
-        parameters.forEach((key, value) {
-          if (value is String || value is num) {
-            cleanedParams![key] = value;
-          } else if (value is bool) {
-            cleanedParams![key] = value ? 1 : 0;
-          } else {
-            cleanedParams![key] = value.toString();
-          }
-        });
-      }
-      FirebaseAnalytics.instance.logEvent(
-        name: name,
-        parameters: cleanedParams,
-      );
-    } catch (e) {
-      debugPrint('[FirebaseAnalytics] Error logging $name: $e');
     }
   }
 
@@ -70,10 +60,8 @@ class AnalyticsService {
   static void logLoadingStart({String placement = 'splash'}) {
     try {
       debugPrint('[Analytics] loading_start: placement=$placement');
+      _notifyDebugObserver('loading_start', {'placement': placement});
       FGSDK.logLoadingStart(placement);
-      _logToFirebase('loading_start', {
-        'placement': placement,
-      });
     } catch (e) {
       debugPrint('[Analytics] logLoadingStart error: $e');
     }
@@ -87,21 +75,23 @@ class AnalyticsService {
     required double value,
   }) {
     try {
-      debugPrint('[Analytics] loading_finish: placement=$placement, success=$success, value=${value.toStringAsFixed(2)}s');
+      debugPrint(
+        '[Analytics] loading_finish: placement=$placement, success=$success, value=${value.toStringAsFixed(2)}s',
+      );
+      _notifyDebugObserver('loading_finish', {
+        'placement': placement,
+        'is_load': success ? 1 : 0,
+        'success': success.toString(),
+        'value': value,
+      });
       FGSDK.logLoadingEnd(
         placement,
         success,
         value,
         extra: {
           'success': success.toString(),
-          'value': value,
         },
       );
-      _logToFirebase('loading_finish', {
-        'placement': placement,
-        'success': success ? 1 : 0,
-        'value': value,
-      });
     } catch (e) {
       debugPrint('[Analytics] logLoadingFinish error: $e');
     }
@@ -117,25 +107,21 @@ class AnalyticsService {
     String playMode = 'default',
   }) {
     try {
-      debugPrint('[Analytics] logLevelStart: level=$level, playCount=$playCount, loseCount=$loseCount, mode=$playMode');
-      FGSDK.logLevelStart(
-        level,
-        playCount,
-        loseCount,
-        playMode,
-        extra: {
-          'level': level,
-          'play_count': playCount,
-          'lose_count': loseCount,
-          'play_mode': playMode,
-        },
+      debugPrint(
+        '[Analytics] logLevelStart: level=$level, playCount=$playCount, loseCount=$loseCount, mode=$playMode',
       );
-      _logToFirebase('level_start', {
+      _notifyDebugObserver('level_start', {
         'level': level,
         'play_count': playCount,
         'lose_count': loseCount,
         'play_mode': playMode,
       });
+      FGSDK.logLevelStart(
+        level,
+        playCount,
+        loseCount,
+        playMode,
+      );
     } catch (e) {
       debugPrint('[Analytics] logLevelStart error: $e');
     }
@@ -157,7 +143,23 @@ class AnalyticsService {
     String playMode = 'default',
   }) {
     try {
-      debugPrint('[Analytics] logLevelEnd: level=$level, success=$success, duration=${playDuration.toStringAsFixed(1)}s, reason=$reason');
+      debugPrint(
+        '[Analytics] logLevelEnd: level=$level, success=$success, duration=${playDuration.toStringAsFixed(1)}s, reason=$reason',
+      );
+      _notifyDebugObserver('level_end', {
+        'level': level,
+        'play_mode': playMode,
+        'play_count': playCount,
+        'lose_count': loseCount,
+        'play_duration': playDuration.toInt(),
+        'total_items': totalItems,
+        'cleared_items': clearedItems,
+        'success': success.toString(),
+        'reason': reason,
+        'ad_duration': adDuration.toInt(),
+      });
+      // Keep native `success` string ("true"/"false") intact so `FGAppLovinEventMapper`
+      // derives `level_complete` on win!
       FGSDK.logLevelEnd(
         level,
         playCount,
@@ -167,30 +169,12 @@ class AnalyticsService {
         success,
         reason,
         extra: {
-          'level': level,
-          'play_mode': playMode,
-          'play_count': playCount,
-          'lose_count': loseCount,
           'play_duration': playDuration.toInt(),
           'total_items': totalItems,
           'cleared_items': clearedItems,
-          'success': success,
-          'reason': reason,
           'ad_duration': adDuration.toInt(),
         },
       );
-      _logToFirebase('level_end', {
-        'level': level,
-        'play_mode': playMode,
-        'play_count': playCount,
-        'lose_count': loseCount,
-        'play_duration': playDuration.toInt(),
-        'total_items': totalItems,
-        'cleared_items': clearedItems,
-        'success': success ? 1 : 0,
-        'reason': reason,
-        'ad_duration': adDuration.toInt(),
-      });
     } catch (e) {
       debugPrint('[Analytics] logLevelEnd error: $e');
     }
@@ -209,8 +193,10 @@ class AnalyticsService {
     String playMode = 'default',
   }) {
     try {
-      debugPrint('[Analytics] logLevelExit: level=$level, reason=$reason, duration=${playDuration.toStringAsFixed(1)}s');
-      FGSDK.logEvent('level_exit', params: {
+      debugPrint(
+        '[Analytics] logLevelExit: level=$level, reason=$reason, duration=${playDuration.toStringAsFixed(1)}s',
+      );
+      final params = <String, Object>{
         'level': level,
         'play_mode': playMode,
         'play_count': playCount,
@@ -219,17 +205,9 @@ class AnalyticsService {
         'total_items': totalItems,
         'cleared_items': clearedItems,
         'reason': reason,
-      });
-      _logToFirebase('level_exit', {
-        'level': level,
-        'play_mode': playMode,
-        'play_count': playCount,
-        'lose_count': loseCount,
-        'play_duration': playDuration.toInt(),
-        'total_items': totalItems,
-        'cleared_items': clearedItems,
-        'reason': reason,
-      });
+      };
+      _notifyDebugObserver('level_exit', params);
+      FGSDK.logEvent('level_exit', params: params);
     } catch (e) {
       debugPrint('[Analytics] logLevelExit error: $e');
     }
@@ -239,8 +217,8 @@ class AnalyticsService {
   static void logLevelRetry({required int level}) {
     try {
       debugPrint('[Analytics] logLevelRetry: level=$level');
+      _notifyDebugObserver('level_retry', {'level': level});
       FGSDK.logEvent('level_retry', params: {'level': level});
-      _logToFirebase('level_retry', {'level': level});
     } catch (e) {
       debugPrint('[Analytics] logLevelRetry error: $e');
     }
@@ -258,29 +236,25 @@ class AnalyticsService {
     String playMode = 'default',
   }) {
     try {
-      debugPrint('[Analytics] logLevelReopen: level=$level, items=$clearedItems/$totalItems');
-      FGSDK.logEvent('level_reopen', params: {
+      debugPrint(
+        '[Analytics] logLevelReopen: level=$level, items=$clearedItems/$totalItems',
+      );
+      final params = <String, Object>{
         'level': level,
         'play_mode': playMode,
         'play_count': playCount,
         'lose_count': loseCount,
         'total_items': totalItems,
         'cleared_items': clearedItems,
-      });
-      _logToFirebase('level_reopen', {
-        'level': level,
-        'play_mode': playMode,
-        'play_count': playCount,
-        'lose_count': loseCount,
-        'total_items': totalItems,
-        'cleared_items': clearedItems,
-      });
+      };
+      _notifyDebugObserver('level_reopen', params);
+      FGSDK.logEvent('level_reopen', params: params);
     } catch (e) {
       debugPrint('[Analytics] logLevelReopen error: $e');
     }
   }
 
-  // ── 7. resource_source ────────────────────────────────────────────────────
+  // ── 8. resource_source ────────────────────────────────────────────────────
   /// Trigger khi user nhận được tài nguyên bất kỳ.
   /// Params: play_mode, level, type (currency / booster), name (coins, level_up, time_freeze), amount, reason (win_level, rewarded_ad, buy_pack), balance
   static void logEarnResource({
@@ -297,7 +271,18 @@ class AnalyticsService {
       final actualName = name ?? 'coins';
       final actualReason = reason.isNotEmpty ? reason : 'win_level';
 
-      debugPrint('[Analytics] resource_source: +$amount $actualName (type=$actualType, reason=$actualReason, balance=$balance)');
+      debugPrint(
+        '[Analytics] resource_source: +$amount $actualName (type=$actualType, reason=$actualReason, balance=$balance)',
+      );
+      _notifyDebugObserver('resource_source', {
+        'play_mode': playMode,
+        'level': level,
+        'type': actualType,
+        'name': actualName,
+        'amount': amount,
+        'reason': actualReason,
+        'balance': balance,
+      });
       FGSDK.logEarnResource(
         playMode,
         level,
@@ -310,21 +295,12 @@ class AnalyticsService {
         balance,
         extra: {'reason': actualReason, 'type': actualType},
       );
-      _logToFirebase('resource_source', {
-        'play_mode': playMode,
-        'level': level,
-        'type': actualType,
-        'name': actualName,
-        'amount': amount,
-        'reason': actualReason,
-        'balance': balance,
-      });
     } catch (e) {
       debugPrint('[Analytics] logEarnResource error: $e');
     }
   }
 
-  // ── 8. resource_sink ──────────────────────────────────────────────────────
+  // ── 9. resource_sink ──────────────────────────────────────────────────────
   /// Trigger khi user sử dụng tài nguyên bất kỳ.
   /// Params: play_mode, level, type (currency / booster), name (coins, level_up, time_freeze), amount, reason (gameplay, buy_booster_pack, play_on), balance
   static void logSpendResource({
@@ -341,7 +317,18 @@ class AnalyticsService {
       final actualName = name ?? 'coins';
       final actualReason = reason.isNotEmpty ? reason : 'gameplay';
 
-      debugPrint('[Analytics] resource_sink: -$amount $actualName (type=$actualType, reason=$actualReason, balance=$balance)');
+      debugPrint(
+        '[Analytics] resource_sink: -$amount $actualName (type=$actualType, reason=$actualReason, balance=$balance)',
+      );
+      _notifyDebugObserver('resource_sink', {
+        'play_mode': playMode,
+        'level': level,
+        'type': actualType,
+        'name': actualName,
+        'amount': amount,
+        'reason': actualReason,
+        'balance': balance,
+      });
       FGSDK.logSpendResource(
         playMode,
         level,
@@ -355,64 +342,64 @@ class AnalyticsService {
         balance,
         extra: {'reason': actualReason, 'type': actualType},
       );
-      _logToFirebase('resource_sink', {
-        'play_mode': playMode,
-        'level': level,
-        'type': actualType,
-        'name': actualName,
-        'amount': amount,
-        'reason': actualReason,
-        'balance': balance,
-      });
     } catch (e) {
       debugPrint('[Analytics] logSpendResource error: $e');
     }
   }
 
-  // ── 9. tut_action ─────────────────────────────────────────────────────────
-  /// Trigger khi user thực hiện action theo tutorial:
-  /// name: tut_start (1), action_1 (2), tut_finish (3)
+  // ── 10. tut_action ────────────────────────────────────────────────────────
+  /// Trigger theo đúng thứ tự phễu FTUE (First-Time User Experience):
+  /// - `ftue_loading_start` (1) -> `ftue_loading_finish` (2) -> `tut_start` (3)
+  ///   -> `action_1` (4) -> `action_2` (5) -> `action_3` (6) -> `tut_finish` (7)
   static void logTutorial({
     required String name,
     required int value,
   }) {
     try {
       debugPrint('[Analytics] tut_action: name=$name, value=$value');
-      FGSDK.logTutorial(name, value.toString(), extra: {'name': name, 'value': value});
-      _logToFirebase('tut_action', {
-        'name': name,
-        'value': value,
-      });
+      _notifyDebugObserver('tut_action', {'name': name, 'value': value});
+      FGSDK.logTutorial(
+        name,
+        value.toString(),
+        extra: {'value': value},
+      );
     } catch (e) {
       debugPrint('[Analytics] logTutorial error: $e');
     }
   }
 
-  // ── 10. mechanic_unlock ───────────────────────────────────────────────────
-  static void logMechanicUnlock({required String mechanicId, required int level}) {
+  // ── 11. mechanic_unlock ───────────────────────────────────────────────────
+  static void logMechanicUnlock({
+    required String mechanicId,
+    required int level,
+  }) {
     try {
       debugPrint('[Analytics] mechanic_unlock: id=$mechanicId, level=$level');
-      FGSDK.logEvent('mechanic_unlock', params: {'mechanic_id': mechanicId, 'level': level});
-      _logToFirebase('mechanic_unlock', {'mechanic_id': mechanicId, 'level': level});
+      final params = <String, Object>{
+        'mechanic_id': mechanicId,
+        'level': level,
+      };
+      _notifyDebugObserver('mechanic_unlock', params);
+      FGSDK.logEvent('mechanic_unlock', params: params);
     } catch (e) {
       debugPrint('[Analytics] logMechanicUnlock error: $e');
     }
   }
 
-  // ── 11. popup_show ────────────────────────────────────────────────────────
+  // ── 12. popup_show ────────────────────────────────────────────────────────
   static void logPopupShow({required String name, required int level}) {
     try {
       debugPrint('[Analytics] popup_show: name=$name, level=$level');
-      FGSDK.logEvent('popup_show', params: {'name': name, 'level': level});
-      _logToFirebase('popup_show', {'name': name, 'level': level});
+      final params = <String, Object>{'name': name, 'level': level};
+      _notifyDebugObserver('popup_show', params);
+      FGSDK.logEvent('popup_show', params: params);
     } catch (e) {
       debugPrint('[Analytics] logPopupShow error: $e');
     }
   }
 
-  // ── 12. User Properties ───────────────────────────────────────────────────
-  /// Cập nhật User Properties theo chuẩn Sheet FW27:
-  /// - current_level, current_mode, connection_type, is_iap_user_n, iap_count_n, balance_coin_n
+  // ── 13. User Properties ───────────────────────────────────────────────────
+  /// Cập nhật User Properties qua `FGSDK.setUserProperties` (tự động set lên Firebase).
   static void updateUserProperties({
     int? currentLevel,
     int? highestLevel,
@@ -421,7 +408,7 @@ class AnalyticsService {
     int loseStreak = 0,
   }) {
     try {
-      final props = {
+      final props = <String, Object>{
         'current_level': currentLevel ?? 1,
         'current_mode': 'default',
         'connection_type': 'online',
@@ -434,14 +421,6 @@ class AnalyticsService {
 
       debugPrint('[Analytics] setUserProperties: $props');
       FGSDK.setUserProperties(props);
-      if (_isInitialized) {
-        props.forEach((key, value) {
-          FirebaseAnalytics.instance.setUserProperty(
-            name: key,
-            value: value.toString(),
-          );
-        });
-      }
     } catch (e) {
       debugPrint('[Analytics] updateUserProperties error: $e');
     }
@@ -452,11 +431,11 @@ class AnalyticsService {
   static void logAfIntersLogicGame() {
     try {
       debugPrint('[Analytics] af_inters_logicgame (AppsFlyer)');
+      _notifyDebugObserver('af_inters_logicgame', const {});
       FGSDK.logEvent(
         'af_inters_logicgame',
         providers: [FGProviderType.appsFlyer],
       );
-      _logToFirebase('af_inters_logicgame');
     } catch (e) {
       debugPrint('[Analytics] logAfIntersLogicGame error: $e');
     }
@@ -466,11 +445,11 @@ class AnalyticsService {
   static void logAfRewardedLogicGame() {
     try {
       debugPrint('[Analytics] af_rewarded_logicgame (AppsFlyer)');
+      _notifyDebugObserver('af_rewarded_logicgame', const {});
       FGSDK.logEvent(
         'af_rewarded_logicgame',
         providers: [FGProviderType.appsFlyer],
       );
-      _logToFirebase('af_rewarded_logicgame');
     } catch (e) {
       debugPrint('[Analytics] logAfRewardedLogicGame error: $e');
     }
@@ -480,12 +459,13 @@ class AnalyticsService {
   static void logAfLevelAchieved({required int level}) {
     try {
       debugPrint('[Analytics] af_level_achieved: level=$level (AppsFlyer)');
+      final params = <String, Object>{'level': level, 'af_level': level};
+      _notifyDebugObserver('af_level_achieved', params);
       FGSDK.logEvent(
         'af_level_achieved',
-        params: {'level': level, 'af_level': level},
+        params: params,
         providers: [FGProviderType.appsFlyer],
       );
-      _logToFirebase('af_level_achieved', {'level': level});
     } catch (e) {
       debugPrint('[Analytics] logAfLevelAchieved error: $e');
     }

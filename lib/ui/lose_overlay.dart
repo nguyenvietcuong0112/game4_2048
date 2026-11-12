@@ -34,6 +34,7 @@ class LoseOverlay extends StatefulWidget {
   final int playOnCost;
   final int extraSeconds;
   final VoidCallback onPlayOnCoins;
+  final VoidCallback? onInsufficientCoins;
   final VoidCallback onPlayOnAd;
   final VoidCallback? onEnterFailedStage;
   final ValueChanged<bool>? onPeekingChanged;
@@ -47,6 +48,7 @@ class LoseOverlay extends StatefulWidget {
     this.playOnCost = 450,
     this.extraSeconds = 30,
     required this.onPlayOnCoins,
+    this.onInsufficientCoins,
     required this.onPlayOnAd,
     this.onEnterFailedStage,
     this.onPeekingChanged,
@@ -323,6 +325,7 @@ class _LoseOverlayState extends State<LoseOverlay>
               cost: widget.playOnCost,
               enabled: canAfford,
               onTap: canAfford ? widget.onPlayOnCoins : null,
+              onDisabledTap: canAfford ? null : widget.onInsufficientCoins,
             ),
           ),
 
@@ -595,11 +598,13 @@ class _PlayOnCoinsButton extends StatefulWidget {
   final int cost;
   final bool enabled;
   final VoidCallback? onTap;
+  final VoidCallback? onDisabledTap;
 
   const _PlayOnCoinsButton({
     required this.cost,
     required this.enabled,
     required this.onTap,
+    this.onDisabledTap,
   });
 
   @override
@@ -612,6 +617,7 @@ class _PlayOnCoinsButtonState extends State<_PlayOnCoinsButton> {
   @override
   Widget build(BuildContext context) {
     final active = widget.enabled && widget.onTap != null;
+    final interactive = active || widget.onDisabledTap != null;
     final textMat =
         active ? UnityTextMaterial.ctaGreen : UnityTextMaterial.ctaGray;
 
@@ -663,16 +669,20 @@ class _PlayOnCoinsButtonState extends State<_PlayOnCoinsButton> {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: active ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: active
+      onTapDown: interactive ? (_) => setState(() => _pressed = true) : null,
+      onTapUp: interactive
           ? (_) {
               setState(() => _pressed = false);
-              widget.onTap?.call();
+              if (active) {
+                widget.onTap?.call();
+              } else {
+                widget.onDisabledTap?.call();
+              }
             }
           : null,
-      onTapCancel: active ? () => setState(() => _pressed = false) : null,
+      onTapCancel: interactive ? () => setState(() => _pressed = false) : null,
       child: AnimatedScale(
-        scale: _pressed && active ? 0.94 : 1.0,
+        scale: _pressed ? (active ? 0.94 : 0.97) : 1.0,
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOutCubic,
         child: buttonBody,

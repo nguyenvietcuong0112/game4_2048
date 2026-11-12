@@ -19,6 +19,7 @@ class PowerUpBuyPopup extends StatelessWidget {
   final int playerCoins;
   final int? packCost;
   final VoidCallback onBuyPack;
+  final VoidCallback? onInsufficientCoins;
   final VoidCallback onWatchAd;
   final VoidCallback onClose;
 
@@ -28,6 +29,7 @@ class PowerUpBuyPopup extends StatelessWidget {
     required this.playerCoins,
     this.packCost,
     required this.onBuyPack,
+    this.onInsufficientCoins,
     required this.onWatchAd,
     required this.onClose,
   });
@@ -152,6 +154,8 @@ class PowerUpBuyPopup extends StatelessWidget {
                                 coinPrice: resolvedCost,
                                 enabled: canAfford,
                                 onTap: canAfford ? onBuyPack : null,
+                                onDisabledTap:
+                                    canAfford ? null : onInsufficientCoins,
                               ),
                             ),
                           ),
@@ -258,12 +262,14 @@ class _PowerUpStackedBuyButton extends StatefulWidget {
   final int coinPrice;
   final bool enabled;
   final VoidCallback? onTap;
+  final VoidCallback? onDisabledTap;
 
   const _PowerUpStackedBuyButton({
     required this.label,
     required this.coinPrice,
     required this.enabled,
     required this.onTap,
+    this.onDisabledTap,
   });
 
   @override
@@ -277,21 +283,26 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.enabled && widget.onTap != null;
+    final interactive = enabled || widget.onDisabledTap != null;
     final textMat =
         enabled ? UnityTextMaterial.ctaGreen : UnityTextMaterial.ctaGray;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: enabled
+      onTapDown: interactive ? (_) => setState(() => _pressed = true) : null,
+      onTapUp: interactive
           ? (_) {
               setState(() => _pressed = false);
-              widget.onTap?.call();
+              if (enabled) {
+                widget.onTap?.call();
+              } else {
+                widget.onDisabledTap?.call();
+              }
             }
           : null,
-      onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+      onTapCancel: interactive ? () => setState(() => _pressed = false) : null,
       child: AnimatedScale(
-        scale: _pressed && enabled ? 0.94 : 1.0,
+        scale: _pressed ? (enabled ? 0.94 : 0.97) : 1.0,
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOutCubic,
         child: UnityNineSlice(

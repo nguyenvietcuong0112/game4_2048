@@ -1,8 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:funtap_global_sdk/funtap_global_sdk.dart';
 import 'analytics_service.dart';
 import 'remote_config_service.dart';
+
+/// Specific reason why a Rewarded Ad did not grant a reward, allowing UI layers
+/// to surface accurate feedback (`No internet connection!` vs `No ads available!`).
+enum RewardedAdFailReason {
+  none,
+  noInternet,
+  noAdsAvailable,
+  closedEarly,
+  alreadyShowing,
+}
 
 /// Central Ad Manager for Block Order 2048.
 /// Handles Interstitial, Rewarded, AppOpen (AOA), and Banner ads
@@ -15,6 +26,12 @@ class AdsManager {
 
   @visibleForTesting
   static bool? mockRewardResult;
+
+  @visibleForTesting
+  static RewardedAdFailReason? mockRewardFailReason;
+
+  @visibleForTesting
+  static Future<bool> Function()? mockInternetCheck;
 
   static DateTime? _lastInterOrResumeTime;
   static bool _isShowingAd = false;
@@ -274,12 +291,32 @@ class AdsManager {
     }
   }
 
+  // ── Network Reachability Check ───────────────────────────────────────────
+  /// Fast internet connectivity check (`< 30ms` when Wi-Fi / Mobile Data is off,
+  /// bounded by `1500ms` timeout when on a dead router).
+  static Future<bool> checkHasInternet() async {
+    if (mockInternetCheck != null) {
+      return mockInternetCheck!();
+    }
+    if (kIsWeb) return true;
+    try {
+      final result = await Future.any([
+        InternetAddress.lookup('google.com'),
+        InternetAddress.lookup('one.one.one.one'),
+      ]).timeout(const Duration(milliseconds: 1500));
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── Rewarded Ads ───────────────────────────────────────────────────────────
   /// Shows Rewarded ad for Watch Ad in PowerUpBuyPopup or LoseOverlay Continue.
   static Future<void> showRewardedAd({
     required String placement,
     required int levelNumber,
     required Function(bool success) onRewardResult,
+    void Function(RewardedAdFailReason reason)? onAdFailed,
   }) async {
     if (!enableAds) {
       debugPrint('[AdsManager] Ads disabled (enableAds = false) -> granting reward directly for $placement.');
@@ -288,13 +325,32 @@ class AdsManager {
       return;
     }
 
-    if (mockRewardResult != null) {
-      debugPrint('[AdsManager] mockRewardResult is set ($mockRewardResult) -> granting mock reward result.');
-      if (mockRewardResult == true) {
-        _recordAdCompleted();
+    if (mockRewardResult != null || mockRewardFailReason != null || mockInternetCheck != null) {
+      if (mockInternetCheck != null && !(await mockInternetCheck!())) {
+        debugPrint('[AdsManager] mockInternetCheck returned false -> reporting noInternet.');
+        onAdFailed?.call(RewardedAdFailReason.noInternet);
+        onRewardResult(false);
+        return;
       }
-      onRewardResult(mockRewardResult!);
-      return;
+      if (mockRewardResult != null) {
+        debugPrint('[AdsManager] mockRewardResult is set ($mockRewardResult) -> granting mock reward result.');
+        if (mockRewardResult == true) {
+          _recordAdCompleted();
+          onRewardResult(true);
+        } else {
+          onAdFailed?.call(
+            mockRewardFailReason ?? RewardedAdFailReason.noAdsAvailable,
+          );
+          onRewardResult(false);
+        }
+        return;
+      }
+      if (mockRewardFailReason != null &&
+          mockRewardFailReason != RewardedAdFailReason.none) {
+        onAdFailed?.call(mockRewardFailReason!);
+        onRewardResult(false);
+        return;
+      }
     }
 
     // 1. Anti-deadlock guard
@@ -305,6 +361,7 @@ class AdsManager {
         _isShowingAd = false;
       } else {
         debugPrint('[AdsManager] Ad is already displaying or loading. Ignoring call.');
+        onAdFailed?.call(RewardedAdFailReason.alreadyShowing);
         onRewardResult(false);
         return;
       }
@@ -314,9 +371,20 @@ class AdsManager {
     _showingAdStartTime = DateTime.now();
     _adWasClicked = false;
 
+    // 2. Verify active internet connection immediately so offline taps give instant feedback
+    final hasInternet = await checkHasInternet();
+    if (!hasInternet) {
+      debugPrint('[AdsManager] Device is offline -> aborting Rewarded ad with noInternet.');
+      _isShowingAd = false;
+      _showingAdStartTime = null;
+      onAdFailed?.call(RewardedAdFailReason.noInternet);
+      onRewardResult(false);
+      return;
+    }
+
     AnalyticsService.logAfRewardedLogicGame();
 
-    // 2. Check if Rewarded Ad is already loaded and ready
+    // 3. Check if Rewarded Ad is already loaded and ready
     bool isReady = false;
     try {
       isReady = await FGSDK.isRewardedReady().timeout(
@@ -327,29 +395,44 @@ class AdsManager {
       isReady = false;
     }
 
-    // 3. If not ready, request on-demand load and wait up to 8 seconds
+    // 4. If not ready, request on-demand load and race Loaded vs FailedToLoad (up to 5s)
     if (!isReady) {
-      debugPrint('[AdsManager] Rewarded ad not ready. Requesting on-demand load & waiting up to 8s...');
+      debugPrint('[AdsManager] Rewarded ad not ready. Requesting on-demand load & waiting up to 5s...');
       preloadRewarded();
       try {
-        await FGSDK.onRewardedLoaded.first.timeout(const Duration(seconds: 8));
-        isReady = true;
-        debugPrint('[AdsManager] Rewarded ad loaded successfully on-demand!');
+        isReady = await Future.any<bool>([
+          FGSDK.onRewardedLoaded.first.then((_) => true),
+          FGSDK.onRewardedFailedToLoad.first.then((_) => false),
+        ]).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => false,
+        );
+        if (isReady) {
+          debugPrint('[AdsManager] Rewarded ad loaded successfully on-demand!');
+        }
       } catch (e) {
         debugPrint('[AdsManager] On-demand ad load timed out or failed: $e');
+        isReady = false;
       }
     }
 
-    // 4. If still not ready after waiting
+    // 5. If still not ready after waiting -> distinguish offline drop vs no ad fill
     if (!isReady) {
-      debugPrint('[AdsManager] Rewarded ad unavailable (offline or load failed). Releasing state.');
+      final stillOnline = await checkHasInternet();
+      final failReason = stillOnline
+          ? RewardedAdFailReason.noAdsAvailable
+          : RewardedAdFailReason.noInternet;
+      debugPrint('[AdsManager] Rewarded ad unavailable ($failReason). Releasing state.');
       _isShowingAd = false;
       _showingAdStartTime = null;
+      onAdFailed?.call(failReason);
       onRewardResult(false);
       return;
     }
 
     bool rewardEarned = false;
+    bool adShown = false;
+    bool failedToShow = false;
     final completer = Completer<void>();
     StreamSubscription? closeSub;
     StreamSubscription? failSub;
@@ -365,18 +448,23 @@ class AdsManager {
     }
 
     closeSub = FGSDK.onRewardedClosed.listen((_) => finishAd());
-    failSub = FGSDK.onRewardedFailedToShow.listen((_) => finishAd());
+    failSub = FGSDK.onRewardedFailedToShow.listen((_) {
+      failedToShow = true;
+      finishAd();
+    });
     rewardSub = FGSDK.onRewardedCompleted.listen((_) {
       rewardEarned = true;
     });
 
     watchdogTimer = Timer(const Duration(seconds: 6), () {
       debugPrint('[AdsManager] Watchdog: Rewarded ad did not display within 6s. Aborting.');
+      failedToShow = true;
       finishAd();
     });
 
     showSub = FGSDK.onRewardedShown.listen((_) {
       debugPrint('[AdsManager] onRewardedShown: Ad started playing.');
+      adShown = true;
       watchdogTimer?.cancel();
       watchdogTimer = Timer(const Duration(seconds: 120), () {
         debugPrint('[AdsManager] Watchdog: Rewarded ad playback exceeded 120s.');
@@ -392,6 +480,7 @@ class AdsManager {
       ]);
     } catch (e) {
       debugPrint('[AdsManager] Error showing rewarded ad: $e');
+      failedToShow = true;
     } finally {
       watchdogTimer?.cancel();
       await closeSub.cancel();
@@ -403,8 +492,14 @@ class AdsManager {
 
       if (rewardEarned) {
         _recordAdCompleted();
+        onRewardResult(true);
+      } else {
+        final reason = (failedToShow || !adShown)
+            ? RewardedAdFailReason.noAdsAvailable
+            : RewardedAdFailReason.closedEarly;
+        onAdFailed?.call(reason);
+        onRewardResult(false);
       }
-      onRewardResult(rewardEarned);
 
       // Preload next rewarded ad in background
       preloadRewarded();

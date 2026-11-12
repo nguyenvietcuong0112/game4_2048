@@ -684,6 +684,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   final VoidCallback onLevelWon;
   final VoidCallback onTimeExpired;
   final VoidCallback? onFirstAction;
+  final ValueChanged<int>? onTutorialMergeStep;
 
   LevelDefinition _level;
   LevelDefinition get currentLevel => _level;
@@ -712,6 +713,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   bool _hasWon = false;
   bool _hasLost = false;
   bool _firstActionTriggered = false;
+  int _tutorialMergeStep = 0;
   double _winSequenceElapsed = -1.0;
   bool _winSandStreamSpawned = false;
   bool _winJarOpened = false;
@@ -814,6 +816,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     required this.onLevelWon,
     required this.onTimeExpired,
     this.onFirstAction,
+    this.onTutorialMergeStep,
   }) : _level = initialLevel {
     remainingSecondsNotifier.value = initialLevel.timeSeconds;
     isSpotlightTutorialActiveNotifier.value =
@@ -934,11 +937,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     }
   }
 
-  /// Exact `GameplayPresenter.DoesGameStatePermitUsage(PowerUpType.TimeFreeze)`:
-  /// Timed level, timer has started (`GameplayTimer.IsStarted`), and not already frozen.
+  /// Whether `Time Freeze` Power-Up can be activated right now:
+  /// Timed level (including immediately upon entering the level before the first move!)
+  /// and not already frozen or resolving win/lose.
   bool get canUseTimeFreeze =>
       !_level.timerDisabled &&
-      isTimerStartedNotifier.value &&
       !isTimeFrozen &&
       !isTimeFreezeIntroInFlight &&
       !_hasWon &&
@@ -1109,6 +1112,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     highestCombo = 0;
     _elapsedGameTime = 0.0;
     _firstActionTriggered = false;
+    _tutorialMergeStep = 0;
     isTimerStartedNotifier.value = false;
     isTimeFreezeIntroInFlight = false;
     _countdownFrac = 0.0;
@@ -2725,6 +2729,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _refreshCanLevelUp();
     _checkWinCondition();
     _syncSpotlightTutorialState();
+    if (!_level.isBonus && _level.number == 1) {
+      _tutorialMergeStep++;
+      onTutorialMergeStep?.call(_tutorialMergeStep);
+    }
   }
 
   /// Advances consecutive merge combo (`x1, x2, x3...`), resets the `3.5s` countdown window,
@@ -2919,10 +2927,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   }
 
   /// Triggers the `Time Freeze` Power-Up (`20s` icy timer pause).
-  /// On normal gameplay (`allowBeforeTimerStarted == false`), requires `canUseTimeFreeze`
-  /// (`GameplayTimer.IsStarted && !isTimeFrozen`). During Level 27 FTUE free execution
-  /// (`allowBeforeTimerStarted == true`), starts the timer immediately in frozen mode.
-  bool triggerTimeFreezePowerUp({bool allowBeforeTimerStarted = false}) {
+  /// Permitted immediately upon entering any timed level (even before the first move),
+  /// engaging the timer directly in 20s frozen mode.
+  bool triggerTimeFreezePowerUp({bool allowBeforeTimerStarted = true}) {
     if (_hasWon || _hasLost || _level.timerDisabled) return false;
     if (!allowBeforeTimerStarted && !isTimerStartedNotifier.value) {
       return false;
@@ -3477,6 +3484,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _refreshCanLevelUp();
     _checkWinCondition();
     _syncSpotlightTutorialState();
+    if (!_level.isBonus && _level.number == 1) {
+      _tutorialMergeStep++;
+      onTutorialMergeStep?.call(_tutorialMergeStep);
+    }
   }
 
   // ── Cheat / QA Helpers (Gated by `RemoteConfigService.cheatEnable`) ────────

@@ -65,6 +65,10 @@ class _GameplayScreenState extends State<GameplayScreen>
   String? _lockedToastMessage;
   Timer? _lockedToastTimer;
   double _lockedToastOpacity = 0.0;
+  int _lastLoggedTutMergeStep = 0;
+
+  bool _shouldTrackFtueForLevel(LevelDefinition level) =>
+      !level.isBonus && level.number == 1 && !widget.progress.isFtueCompleted;
 
   /// Exact shipped `game_end_flow.play_on` pricing (`price_coins = 450`, `price_increment = 150`).
   int get _currentPlayOnCost => 450 + 150 * _playOnsUsedInAttempt;
@@ -98,9 +102,14 @@ class _GameplayScreenState extends State<GameplayScreen>
       audio: widget.audio,
       onLevelWon: _handleLevelWon,
       onTimeExpired: _handleTimeExpired,
-      onFirstAction: () {
-        if (_activeLevel.number == 1 && !_activeLevel.isBonus) {
-          AnalyticsService.logTutorial(name: 'action_1', value: 2);
+      onTutorialMergeStep: (step) {
+        if (_shouldTrackFtueForLevel(_activeLevel) &&
+            step > _lastLoggedTutMergeStep) {
+          _lastLoggedTutMergeStep = step;
+          AnalyticsService.logTutorial(
+            name: 'action_$step',
+            value: 3 + step,
+          );
         }
       },
     );
@@ -114,6 +123,10 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
 
     AnalyticsService.logLevelStart(level: _activeLevel.number);
+    if (_shouldTrackFtueForLevel(_activeLevel)) {
+      _lastLoggedTutMergeStep = 0;
+      AnalyticsService.logTutorial(name: 'tut_start', value: 3);
+    }
   }
 
   @override
@@ -250,15 +263,20 @@ class _GameplayScreenState extends State<GameplayScreen>
       highestLevel: widget.progress.highestLevel,
       coins: widget.progress.coins,
     );
-    if (level.number == 1 && !level.isBonus) {
-      AnalyticsService.logTutorial(name: 'tut_start', value: 1);
+    if (_shouldTrackFtueForLevel(level)) {
+      _lastLoggedTutMergeStep = 0;
+      AnalyticsService.logTutorial(name: 'tut_start', value: 3);
     }
   }
 
   void _handleLevelWon() {
     if (!mounted) return;
-    if (_activeLevel.number == 1 && !_activeLevel.isBonus) {
-      AnalyticsService.logTutorial(name: 'tut_finish', value: 3);
+    if (_shouldTrackFtueForLevel(_activeLevel)) {
+      AnalyticsService.logTutorial(
+        name: 'tut_finish',
+        value: 4 + _lastLoggedTutMergeStep,
+      );
+      widget.progress.markFtueCompleted();
     }
     AnalyticsService.logLevelEnd(
       level: _activeLevel.number,
@@ -337,7 +355,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   void _handlePlayOnCoins() {
     final cost = _currentPlayOnCost;
     if (!widget.progress.spendCoins(cost)) {
-      widget.audio.hapticBlocked();
+      _handleInsufficientCoins();
       return;
     }
     widget.audio.playClick();
@@ -363,6 +381,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     AdsManager.showRewardedAd(
       placement: 'lose_continue',
       levelNumber: _activeLevel.number,
+      onAdFailed: _handleRewardedAdFailed,
       onRewardResult: (success) {
         if (success && mounted) {
           widget.audio.playClick();
@@ -413,6 +432,10 @@ class _GameplayScreenState extends State<GameplayScreen>
           _syncGamePauseState();
         });
         _game.restartLevel();
+        AnalyticsService.logLevelStart(level: currentLv);
+        if (_shouldTrackFtueForLevel(_activeLevel)) {
+          _lastLoggedTutMergeStep = 0;
+        }
       },
     );
   }
@@ -443,20 +466,44 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool get _isTimeFreezeUnlocked =>
       widget.progress.isTimeFreezeUnlockedForLevel(_activeLevel.number);
 
-  void _showLockedBoosterToast(int unlockLevel) {
-    widget.audio.hapticBlocked();
+  void _showGameplayToast(String message, {bool blockedHaptic = true}) {
+    if (blockedHaptic) {
+      widget.audio.hapticBlocked();
+    }
     _lockedToastTimer?.cancel();
     setState(() {
-      _lockedToastMessage = 'Unlock at level $unlockLevel!';
+      _lockedToastMessage = message;
       _lockedToastOpacity = 1.0;
     });
-    _lockedToastTimer = Timer(const Duration(milliseconds: 1800), () {
+    _lockedToastTimer = Timer(const Duration(milliseconds: 1900), () {
       if (mounted) {
         setState(() {
           _lockedToastOpacity = 0.0;
         });
       }
     });
+  }
+
+  void _showLockedBoosterToast(int unlockLevel) {
+    _showGameplayToast('Unlock at level $unlockLevel!');
+  }
+
+  void _handleInsufficientCoins() {
+    _showGameplayToast('Not enough coins!');
+  }
+
+  void _handleRewardedAdFailed(RewardedAdFailReason reason) {
+    if (!mounted) return;
+    switch (reason) {
+      case RewardedAdFailReason.noInternet:
+        _showGameplayToast('No internet connection!');
+      case RewardedAdFailReason.noAdsAvailable:
+        _showGameplayToast('No ads available right now!');
+      case RewardedAdFailReason.closedEarly:
+      case RewardedAdFailReason.alreadyShowing:
+      case RewardedAdFailReason.none:
+        break;
+    }
   }
 
   /// Exact `GameplayPresenter.OnClickedPowerUp(PowerUpType.LevelUp)` order:
@@ -535,12 +582,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       return;
     }
 
-    final permitted = isFree
-        ? (!_activeLevel.timerDisabled &&
-            !_game.isTimeFrozen &&
-            !_game.isTimeFreezeIntroInFlight)
-        : _game.canUseTimeFreeze;
-    if (!permitted) {
+    if (!_game.canUseTimeFreeze) {
       widget.audio.hapticBlocked();
       return;
     }
@@ -561,7 +603,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     );
 
     widget.audio.playPowerUpSelect();
-    _runTimeFreezeIntroAndEngage(allowBeforeTimerStarted: isFree);
+    _runTimeFreezeIntroAndEngage(allowBeforeTimerStarted: true);
   }
 
   void _runTimeFreezeIntroAndEngage({required bool allowBeforeTimerStarted}) {
@@ -1230,6 +1272,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                   isLevelUp: isLvUp,
                   playerCoins: widget.progress.coins,
                   packCost: packCost,
+                  onInsufficientCoins: _handleInsufficientCoins,
                   onBuyPack: () {
                     if (widget.progress.buyPowerUpPack(
                       isLevelUp: isLvUp,
@@ -1261,13 +1304,14 @@ class _GameplayScreenState extends State<GameplayScreen>
                         _syncGamePauseState();
                       });
                     } else {
-                      widget.audio.hapticBlocked();
+                      _handleInsufficientCoins();
                     }
                   },
                   onWatchAd: () {
                     AdsManager.showRewardedAd(
                       placement: isLvUp ? 'booster_levelup' : 'booster_timefreeze',
                       levelNumber: _activeLevel.number,
+                      onAdFailed: _handleRewardedAdFailed,
                       onRewardResult: (success) {
                         if (success && mounted) {
                           widget.audio.playCoinCollect();
@@ -1388,6 +1432,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                   playOnCost: _currentPlayOnCost,
                   extraSeconds: 30,
                   onPlayOnCoins: _handlePlayOnCoins,
+                  onInsufficientCoins: _handleInsufficientCoins,
                   onPlayOnAd: _handlePlayOnAd,
                   onEnterFailedStage: _handleEnterFailedStage,
                   onPeekingChanged: (peeking) {
@@ -1426,7 +1471,7 @@ class _GameplayScreenState extends State<GameplayScreen>
               ),
             ),
 
-          // 15. Floating "Unlock at level X!" toast banner matching media_1794198573830.png
+          // 15. Floating Gameplay Toast Banner (locked boosters, insufficient coins, offline / no ads)
           if (_lockedToastMessage != null)
             Positioned.fill(
               child: IgnorePointer(
@@ -1443,22 +1488,23 @@ class _GameplayScreenState extends State<GameplayScreen>
                       }
                     },
                     child: Container(
+                      key: const ValueKey('gameplay_toast_banner'),
                       margin: EdgeInsets.symmetric(horizontal: ux(context, 80)),
                       padding: EdgeInsets.symmetric(
                         horizontal: ux(context, 48),
                         vertical: ux(context, 26),
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xB3000000),
+                        color: const Color(0xDE0B0820),
                         borderRadius: BorderRadius.circular(ux(context, 34)),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          width: ux(context, 1.5),
+                          color: Colors.white.withValues(alpha: 0.24),
+                          width: ux(context, 1.8),
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.40),
-                            blurRadius: ux(context, 20),
+                            color: Colors.black.withValues(alpha: 0.50),
+                            blurRadius: ux(context, 22),
                             offset: Offset(0, ux(context, 8)),
                           ),
                         ],
@@ -2101,10 +2147,14 @@ class _TimeFreezeFrostStaticLayer extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // 9-Slice `Frost_Gradient.png` icy vignette frame
-        const UnityNineSlice(
+        // 9-Slice `Frost_Gradient.png` R8 mask icy vignette frame (`R = 0` center -> `alpha = 0` crystal clear!)
+        UnityNineSlice(
+          key: const ValueKey('time_freeze_frost_vignette'),
           sprite: 'Frost_Gradient.png',
-          tint: Color(0xCC99F0FF),
+          colorFilter: UnityChannelMaskFilters.redChannelAlphaTint(
+            const Color(0xCC99F0FF),
+            alphaScale: 1.15,
+          ),
         ),
         // Top & Bottom Ice Strips
         Align(

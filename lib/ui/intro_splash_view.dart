@@ -24,11 +24,43 @@ class IntroSplashView extends StatelessWidget {
     final inset = ux(context, 13);
     final fillH = ux(context, 60);
     final maxFillW = math.max(0.0, barOuterW - inset * 2);
-    // Keep fill wide enough for clean 3-slice rounded caps once started
+    // Smoothly grow the green fill bar from 0% -> 100%, clipping cleanly below `minCapW`
+    // so early progress (`1%..8%`) visibly animates instead of snapping straight to `minCapW`.
     final minCapW = ux(context, 60);
-    final fillW = clamped <= 0.01
-        ? 0.0
-        : math.max(minCapW, maxFillW * clamped).clamp(0.0, maxFillW);
+    final rawFillW = (maxFillW * clamped).clamp(0.0, maxFillW);
+
+    Widget? fillBarChild;
+    if (rawFillW > 1.0) {
+      if (rawFillW >= minCapW) {
+        fillBarChild = UnityNineSlice(
+          key: const ValueKey('intro_loading_progress_fill'),
+          sprite: 'Loading_Progress.png',
+          width: rawFillW,
+          height: fillH,
+        );
+      } else {
+        fillBarChild = ClipRRect(
+          borderRadius: BorderRadius.circular(fillH * 0.5),
+          child: SizedBox(
+            key: const ValueKey('intro_loading_progress_fill'),
+            width: rawFillW,
+            height: fillH,
+            child: OverflowBox(
+              alignment: Alignment.centerLeft,
+              minWidth: minCapW,
+              maxWidth: minCapW,
+              minHeight: fillH,
+              maxHeight: fillH,
+              child: UnityNineSlice(
+                sprite: 'Loading_Progress.png',
+                width: minCapW,
+                height: fillH,
+              ),
+            ),
+          ),
+        );
+      }
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A32B8),
@@ -76,14 +108,10 @@ class IntroSplashView extends StatelessWidget {
                         width: barOuterW,
                         height: barOuterH,
                       ),
-                      if (fillW > 1.0)
+                      if (fillBarChild != null)
                         Padding(
                           padding: EdgeInsets.symmetric(horizontal: inset),
-                          child: UnityNineSlice(
-                            sprite: 'Loading_Progress.png',
-                            width: fillW,
-                            height: fillH,
-                          ),
+                          child: fillBarChild,
                         ),
                     ],
                   ),

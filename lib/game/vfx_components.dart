@@ -50,6 +50,24 @@ class UnityChannelMaskFilters {
     ]);
   }
 
+  /// Maps an opaque-black `R8` mask (`R` = intensity `0..255`, `A = 255`, such as
+  /// `Frost_Gradient.png`) to a luminous unpremultiplied `color` whose alpha is
+  /// driven purely by `R` (`R = 0` at center -> `A = 0` 100% transparent; `R > 0`
+  /// at edges -> bright `color` without dark RGB premultiplication).
+  static ColorFilter redChannelAlphaTint(
+    Color color, {
+    double opacity = 1.0,
+    double alphaScale = 1.0,
+  }) {
+    final a = (color.a * opacity * alphaScale).clamp(0.0, 2.5);
+    return ColorFilter.matrix(<double>[
+      0, 0, 0, 0, color.r * 255.0,
+      0, 0, 0, 0, color.g * 255.0,
+      0, 0, 0, 0, color.b * 255.0,
+      a, 0, 0, 0, 0,
+    ]);
+  }
+
   /// Maps an opaque-black `RG8` dual-channel Unity particle mask (`R` = hot white core,
   /// `G` = outer colored bloom, `B = 0`, `A = 255`) to a white-cored glowing sprite
   /// with zero black-box or red/green channel artifacts.

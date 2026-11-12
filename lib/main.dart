@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,6 +39,10 @@ Future<void> main() async {
 }
 
 class BlockOrder2048App extends StatefulWidget {
+  /// Minimum visual duration for the boot loading bar to smoothly fill `0% -> 100%`
+  /// so the player sees a pleasant, deliberate loading animation instead of an abrupt jump.
+  static Duration minSplashDuration = const Duration(milliseconds: 1550);
+
   const BlockOrder2048App({super.key});
 
   @override
@@ -161,50 +166,105 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
 
   Future<void> _initializeAll() async {
     final splashWatch = Stopwatch()..start();
-    AnalyticsService.logLoadingStart(placement: 'splash');
+    // Initialize persisted player progress upfront (< 3ms) so FTUE status is known
+    // before emitting `loading_start` and `ftue_loading_start`.
     try {
-      final minSplashFuture =
-          Future<void>.delayed(const Duration(milliseconds: 700));
+      await _progress.init();
+    } catch (_) {}
+    final logFtueLoading = _progress.consumeFtueLoadingIfPending();
+    AnalyticsService.logLoadingStart(placement: 'splash');
+    if (logFtueLoading) {
+      AnalyticsService.logTutorial(name: 'ftue_loading_start', value: 1);
+    }
+    try {
       // Preload critical splash bar 9-slice sprites first so the splash bar renders crisply immediately
       await Future.wait([
         UnitySpriteRegistry.loadOne('Loading_BG.png'),
         UnitySpriteRegistry.loadOne('Loading_Progress.png'),
       ]);
-      _loadProgress.value = 0.16;
+      _loadProgress.value = 0.04;
 
+      double realAssetProgress = 0.04;
       final spriteFuture = UnitySpriteRegistry.preloadAll(
         onProgress: (p) {
-          final mapped = 0.16 + p * 0.68;
-          if (mapped > _loadProgress.value) {
-            _loadProgress.value = mapped;
+          final mapped = 0.08 + p * 0.78;
+          if (mapped > realAssetProgress) {
+            realAssetProgress = mapped;
           }
         },
       );
 
-      final results = await Future.wait([
-        LevelRepository.loadFromAssets(),
-        BlockOrderPalette.loadFromAssets(),
-        PieceVisualSettings.loadFromAssets(),
-        _progress.init(),
-        _audio.init(),
-        spriteFuture,
-        _prewarmUiImageCache(),
-      ]);
+      bool assetsDone = false;
+      Object? loadError;
+      List<Object?>? results;
+
+      unawaited(
+        Future.wait([
+          LevelRepository.loadFromAssets(),
+          BlockOrderPalette.loadFromAssets(),
+          PieceVisualSettings.loadFromAssets(),
+          _audio.init(),
+          spriteFuture,
+          _prewarmUiImageCache(),
+        ]).then((loaded) {
+          results = loaded;
+          realAssetProgress = 1.0;
+          assetsDone = true;
+        }).catchError((Object e) {
+          loadError = e;
+          assetsDone = true;
+        }),
+      );
+
+      final targetMs = math.max(
+        1,
+        BlockOrder2048App.minSplashDuration.inMilliseconds,
+      );
+
+      // Drive a smooth 60fps progress fill (`0% -> 100%`) so the green capsule bar
+      // visibly animates instead of snapping instantaneously to 100%.
+      while (mounted &&
+          (!assetsDone || splashWatch.elapsedMilliseconds < targetMs)) {
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+        if (loadError != null) break;
+
+        final elapsedFraction =
+            (splashWatch.elapsedMilliseconds / targetMs).clamp(0.0, 1.0);
+        final timeCurve = Curves.easeInOutCubic.transform(elapsedFraction);
+        final visualTarget = assetsDone
+            ? timeCurve
+            : math.min(0.92, math.max(timeCurve * 0.92, realAssetProgress * 0.90));
+        if (visualTarget > _loadProgress.value) {
+          _loadProgress.value = visualTarget;
+        }
+      }
+
+      if (loadError != null) {
+        throw loadError!;
+      }
+      if (!mounted || results == null) return;
 
       _loadProgress.value = 1.0;
-      await minSplashFuture;
+      // Hold briefly at 100% so the completed green bar registers visually before cross-fading
+      if (targetMs >= 400) {
+        await Future<void>.delayed(const Duration(milliseconds: 160));
+      }
+
       AnalyticsService.logLoadingFinish(
         placement: 'splash',
         success: true,
         value: splashWatch.elapsedMilliseconds / 1000.0,
       );
+      if (logFtueLoading) {
+        AnalyticsService.logTutorial(name: 'ftue_loading_finish', value: 2);
+      }
       AdsManager.init();
       if (!mounted) return;
       setState(() {
         _bundle = _BootBundle(
-          repository: results[0] as LevelRepository,
-          palette: results[1] as BlockOrderPalette,
-          visualSettings: results[2] as PieceVisualSettings,
+          repository: results![0] as LevelRepository,
+          palette: results![1] as BlockOrderPalette,
+          visualSettings: results![2] as PieceVisualSettings,
         );
       });
       unawaited(AdsManager.showSplashAd());

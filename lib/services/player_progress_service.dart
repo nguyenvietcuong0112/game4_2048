@@ -10,6 +10,8 @@ class PlayerProgressService extends ChangeNotifier {
   static const _kTimeFreezeCount = 'bo_pu_time_freeze';
   static const _kSeenMechanics = 'bo_seen_mechanics';
   static const _kFreePowerUpsPending = 'bo_free_pu_pending';
+  static const _kFtueLoadingLogged = 'bo_ftue_loading_logged';
+  static const _kFtueCompleted = 'bo_ftue_completed';
 
   static const int maxLives = 5;
 
@@ -33,6 +35,8 @@ class PlayerProgressService extends ChangeNotifier {
   int _pendingWinCoins = 0;
   Set<String> _seenMechanics = {};
   Set<String> _freePowerUpsPending = {};
+  bool _ftueLoadingLogged = false;
+  bool _ftueCompleted = false;
 
   int get currentLevel => _currentLevel;
   int get highestLevel => _highestLevel;
@@ -41,6 +45,7 @@ class PlayerProgressService extends ChangeNotifier {
   int get levelUpCount => _levelUpCount;
   int get timeFreezeCount => _timeFreezeCount;
   int get pendingWinCoins => _pendingWinCoins;
+  bool get isFtueCompleted => _ftueCompleted;
 
   /// Exact `PowerUpService.IsUnlockLevelReached(type)` checked against active campaign level
   /// (`levelNumber >= 17` for `LevelUp`, `levelNumber >= 27` for `TimeFreeze`).
@@ -70,6 +75,34 @@ class PlayerProgressService extends ChangeNotifier {
     _seenMechanics = (_prefs?.getStringList(_kSeenMechanics) ?? []).toSet();
     _freePowerUpsPending =
         (_prefs?.getStringList(_kFreePowerUpsPending) ?? []).toSet();
+    _ftueCompleted =
+        (_prefs?.getBool(_kFtueCompleted) ?? false) || _highestLevel > 1;
+    _ftueLoadingLogged =
+        (_prefs?.getBool(_kFtueLoadingLogged) ?? false) || _ftueCompleted;
+    notifyListeners();
+  }
+
+  /// Marks first-time boot loading (`ftue_loading_start` / `ftue_loading_finish`) as claimed
+  /// and returns `true` iff this session is the player's FTUE splash load.
+  bool consumeFtueLoadingIfPending() {
+    if (_ftueCompleted ||
+        _ftueLoadingLogged ||
+        _currentLevel != 1 ||
+        _highestLevel > 1) {
+      return false;
+    }
+    _ftueLoadingLogged = true;
+    _prefs?.setBool(_kFtueLoadingLogged, true);
+    return true;
+  }
+
+  /// Marks Level 1 FTUE tutorial completed so `tut_action` does not re-fire on later sessions.
+  void markFtueCompleted() {
+    if (_ftueCompleted) return;
+    _ftueCompleted = true;
+    _ftueLoadingLogged = true;
+    _prefs?.setBool(_kFtueCompleted, true);
+    _prefs?.setBool(_kFtueLoadingLogged, true);
     notifyListeners();
   }
 

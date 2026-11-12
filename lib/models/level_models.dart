@@ -456,7 +456,8 @@ class LevelRepository {
   }
 
   /// Mirrors live chapter_set 150 behavior:
-  /// Levels 1..121 play directly; Level 122+ loops Chapter 2 (Levels 11..121).
+  /// Levels 1..122 play directly (Level 1 = Spotlight Tutorial + Levels 2..122 = Campaign);
+  /// Level 123+ loops Chapter 2 (Levels 12..122).
   LevelDefinition getCampaignLevel(int displayLevelNumber) {
     if (campaignLevels.isEmpty) {
       throw StateError('No campaign levels loaded');
@@ -465,10 +466,10 @@ class LevelRepository {
       final idx = (displayLevelNumber - 1).clamp(0, campaignLevels.length - 1);
       return campaignLevels[idx];
     }
-    // Loop levels 11..121 (indices 10..120, length 111)
-    if (campaignLevels.length > 10) {
-      final loopLen = campaignLevels.length - 10;
-      final loopIdx = 10 + ((displayLevelNumber - 11) % loopLen);
+    // Loop levels 12..122 (indices 11..121, length 111)
+    if (campaignLevels.length > 11) {
+      final loopLen = campaignLevels.length - 11;
+      final loopIdx = 11 + ((displayLevelNumber - 12) % loopLen);
       final base = campaignLevels[loopIdx];
       return LevelDefinition(
         number: displayLevelNumber,

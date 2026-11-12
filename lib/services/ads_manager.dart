@@ -36,13 +36,13 @@ class AdsManager {
 
   /// Initializes AdsManager, listens to reward completions and remote config updates
   static void init() {
+    // Always initialize RemoteConfigService (including `cheat_enable`) even when `enableAds == false`!
+    RemoteConfigService.init();
+
     if (!enableAds) {
       debugPrint('[AdsManager] Ads are disabled (enableAds = false). Skipping ads initialization.');
       return;
     }
-
-    RemoteConfigService.listenToUpdates();
-    RemoteConfigService.fetchConfigs();
 
     FGSDK.isInit().then((ready) {
       debugPrint('[AdsManager] 🟢 FGSDK.isInit() status -> $ready');

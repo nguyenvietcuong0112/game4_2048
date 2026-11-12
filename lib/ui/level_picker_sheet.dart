@@ -4,7 +4,7 @@ import 'unity_ui_kit.dart';
 
 /// Native Unity-styled Level Selector Popup (`Background_Popup.png` + `Panel_Popup.png` +
 /// `Button_Close.png` + 9-slice `Button_CTA.png` / `Button_Blue.png` tiles) allowing instant
-/// jump across all 121 Campaign levels and 25 Bonus levels.
+/// jump across all 122 Campaign levels and 25 Bonus levels.
 class LevelPickerSheet extends StatefulWidget {
   final LevelRepository repository;
   final int activeLevelNumber;

@@ -72,6 +72,15 @@ class UnitySpriteRegistry {
     'Frost_Gradient.png': UnitySliceSpec(51, 53, 51, 53),
     'Element_Disabled.png': UnitySliceSpec(14, 0, 14, 0),
     'Panel_SpeechBubble.png': UnitySliceSpec(61, 67, 59, 48),
+    'progress_combo_bg.png': UnitySliceSpec(26, 0, 26, 0),
+    'progress_combo_fg.png': UnitySliceSpec(16, 0, 16, 0),
+    'Loading_BG.png': UnitySliceSpec(43, 0, 43, 0),
+    'Loading_Progress.png': UnitySliceSpec(30, 0, 30, 0),
+    'popup_bg.png': UnitySliceSpec(175, 175, 175, 175),
+    'frame_content.png': UnitySliceSpec(56, 56, 56, 56),
+    'Button_Green.png': UnitySliceSpec(110, 0, 110, 0),
+    'Button_Yellow.png': UnitySliceSpec(110, 0, 110, 0),
+    'btn_green.png': UnitySliceSpec(110, 0, 110, 0),
   };
 
   static ui.Image? get(String spriteName) => _cache[spriteName];
@@ -533,6 +542,27 @@ class UnityTextMaterial {
     underlayColor: Color(0x88000000),
     underlayYRatio: 0.06,
   );
+
+  /// Top-Center Combo Progress Bar label (`Combo x1` on `progress_combo_bg.png` / `progress_combo_fg.png`)
+  static const comboBarText = UnityTextMaterial(
+    faceTop: Color(0xFFFFFFFF),
+    faceBottom: Color(0xFFFFFFFF),
+    strokeColor: Color(0xFF04143D),
+    strokeRatio: 0.19,
+    underlayColor: Color(0xCC000824),
+    underlayYRatio: 0.08,
+    letterSpacing: 0.2,
+  );
+
+  /// Golden-orange CTA button text (`"Continue"` on `Button_Yellow.png` in `Out of time.png`)
+  static const ctaYellowButton = UnityTextMaterial(
+    faceTop: Color(0xFFFFFFFF),
+    faceBottom: Color(0xFFFFFFFF),
+    strokeColor: Color(0xFF8B4200),
+    strokeRatio: 0.165,
+    underlayColor: Color(0xFF6B3100),
+    underlayYRatio: 0.095,
+  );
 }
 
 /// Multi-layer SDF Text widget replicating Unity's TextMeshPro SDF shaders (multi-outline,
@@ -691,6 +721,24 @@ class UnityButtonColorFilters {
     0.28, 0.58, 0.14, 0, 12,
     0.28, 0.58, 0.14, 0, 14,
     0.28, 0.58, 0.14, 0, 18,
+    0.00, 0.00, 0.00, 1, 0,
+  ]);
+
+  /// Shifts dark-blue inner body of `WidgetBase.png` (`Frame_Coin.png`) into urgent crimson red
+  /// while keeping its `#FFB715` golden outer rim pure gold.
+  static const ColorFilter widgetBaseUrgentRed = ColorFilter.matrix(<double>[
+    1.00, 0.00, 1.45, 0, 0,
+    0.00, 1.00, -0.32, 0, 0,
+    0.00, 0.00, 0.25, 0, 0,
+    0.00, 0.00, 0.00, 1, 0,
+  ]);
+
+  /// Shifts dark-blue inner body of `WidgetBase.png` (`Frame_Coin.png`) into frosty ice-cyan
+  /// while keeping its `#FFB715` golden outer rim intact.
+  static const ColorFilter widgetBaseFrozenIce = ColorFilter.matrix(<double>[
+    1.00, 0.00, 0.18, 0, 0,
+    0.00, 1.00, 1.05, 0, 0,
+    0.00, 0.00, 1.85, 0, 0,
     0.00, 0.00, 0.00, 1, 0,
   ]);
 
@@ -1194,8 +1242,8 @@ class _UnityPopupCtaButtonState extends State<UnityPopupCtaButton> {
 /// - `Icon_Coin.png` (`97x101` golden crown coin on the left)
 /// - `PowerUp_Plus.png` (`46x46` green `+` badge at bottom-right of the coin icon)
 class UnityCoinsWidget extends StatelessWidget {
-  static const double hudLeftUnity = 42.0;
-  static const double hudTopUnity = 18.0;
+  static const double hudLeftUnity = 58.0;
+  static const double hudTopUnity = 21.0;
   static const double widthUnity = 286.0;
   static const double heightUnity = 108.0;
   static const double coinCenterXUnity = hudLeftUnity + 48.5;

@@ -333,8 +333,12 @@ class PieceComponent extends PositionComponent {
   // Level-Up cyan target aura (`LevelUpVisualConfig.json`: `GlowColor: #00BFFF`)
   double levelUpTargetGlow = 0.0;
 
-  // Swallowed / Level-Up flight override
+  // Swallowed / Level-Up flight / Level 1 Spotlight Tutorial override
+  bool isSuperseded = false;
   bool isFlyingOrSwallowed = false;
+  bool isSpotlightHighlighted = false;
+  bool isElevatedForSpotlight = false;
+  Path? _cachedSpotlightOutlinePath;
   double visualScale = 1.0;
   double visualScaleXMultiplier = 1.0;
   double visualScaleYMultiplier = 1.0;
@@ -539,6 +543,14 @@ class PieceComponent extends PositionComponent {
   }
 
   @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    if (isSuperseded) {
+      removeFromParent();
+    }
+  }
+
+  @override
   void onRemove() {
     // `_bakedShadowImage` is owned by `_sharedGeometryCache` (LRU-managed).
     _bakedShadowImage = null;
@@ -702,6 +714,7 @@ class PieceComponent extends PositionComponent {
     _cachedBaseLabelLayout = null;
     _cachedPreviewLabelLayout = null;
     _cachedBodyStyleKey = null;
+    _cachedSpotlightOutlinePath = null;
   }
 
   void refreshGeometryForMovement() {
@@ -1249,6 +1262,10 @@ class PieceComponent extends PositionComponent {
   @override
   void update(double dt) {
     super.update(dt);
+    if (isSuperseded) {
+      removeFromParent();
+      return;
+    }
 
     // Fast-path for completely settled idle pieces: zero spring sub-steps or Vector2 allocations!
     if (isVisuallyAtRest) {
@@ -1270,7 +1287,8 @@ class PieceComponent extends PositionComponent {
           ..y = gy;
       }
       final bottomRow = (model.row + model.heightRows - 1).clamp(0, 30);
-      final targetPriority = 10 + bottomRow * 2;
+      final basePrio = isElevatedForSpotlight ? 120 : 10;
+      final targetPriority = basePrio + bottomRow * 2;
       if (priority != targetPriority) {
         priority = targetPriority;
       }
@@ -1336,11 +1354,11 @@ class PieceComponent extends PositionComponent {
       final bottomRow =
           (_visualGridPos.y + model.heightRows - 1.0).round().clamp(0, 30);
       if (isDragging) {
-        priority = 95;
+        priority = isElevatedForSpotlight ? 138 : 95;
       } else if (isSurvivorCandidate) {
-        priority = 11 + bottomRow * 2;
+        priority = (isElevatedForSpotlight ? 121 : 11) + bottomRow * 2;
       } else {
-        priority = 10 + bottomRow * 2;
+        priority = (isElevatedForSpotlight ? 120 : 10) + bottomRow * 2;
       }
     }
 
@@ -1624,7 +1642,7 @@ class PieceComponent extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
-    if (visualOpacity <= 0.01 || visualScale <= 0.005) {
+    if (isSuperseded || visualOpacity <= 0.01 || visualScale <= 0.005) {
       _usedStaticSpriteLastRender = false;
       return;
     }
@@ -1655,6 +1673,9 @@ class PieceComponent extends PositionComponent {
           _drawCrystalGlassForeground(canvas, baseStyle);
           // 4. Crisp pre-baked number / arrows / pins submerged cleanly inside the liquid
           _drawPieceTopFaceRiders(canvas, baseStyle, Offset.zero);
+        }
+        if (isSpotlightHighlighted) {
+          _drawSpotlightWhiteHighlightBorder(canvas, 0.0, Offset.zero);
         }
         return;
       }
@@ -1977,9 +1998,52 @@ class PieceComponent extends PositionComponent {
       }
     }
 
+    if (isSpotlightHighlighted &&
+        !_isBakingGlassShellOnly &&
+        !_areComponentsRemovedForAbsorb) {
+      _drawSpotlightWhiteHighlightBorder(canvas, liftPx, topJellyShift);
+    }
+
     if (visualOpacity < 0.999) {
       canvas.restore();
     }
+    canvas.restore();
+  }
+
+  /// Crisp glowing white outer spotlight frame around active Level 1 tutorial target blocks
+  /// (`media_1794470719753_5ac9cf67.jpg`).
+  void _drawSpotlightWhiteHighlightBorder(
+    Canvas canvas,
+    double liftPx,
+    Offset topShift,
+  ) {
+    final fullSilhouette = _cachedSpotlightOutlinePath ??= Path.combine(
+      PathOperation.union,
+      _topPath,
+      _topPath.shift(Offset(0, _lipDepth)),
+    );
+    final pulse = 0.88 + 0.12 * math.sin(_sandShimmerClock * 4.2);
+    final strokeW = (cellSize * 0.046).clamp(2.4, 5.2);
+
+    canvas.save();
+    canvas.translate(topShift.dx * 0.5, -liftPx + topShift.dy * 0.5);
+    canvas.drawPath(
+      fullSilhouette,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = strokeW * 2.4
+        ..color = Colors.white.withValues(alpha: (0.34 * pulse).clamp(0.0, 1.0))
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, strokeW * 1.15),
+    );
+    canvas.drawPath(
+      fullSilhouette,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = strokeW
+        ..color = Colors.white.withValues(alpha: (0.96 * pulse).clamp(0.0, 1.0)),
+    );
     canvas.restore();
   }
 

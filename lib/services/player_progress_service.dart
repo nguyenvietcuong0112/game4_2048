@@ -274,4 +274,69 @@ class PlayerProgressService extends ChangeNotifier {
 
   bool buyTimeFreezePack({int cost = timeFreezePackCost, int count = 3}) =>
       buyPowerUpPack(isLevelUp: false, cost: cost, count: count);
+
+  // ── Cheat / QA Helpers (Gated by `RemoteConfigService.cheatEnable`) ────────
+
+  void cheatSetCoins(int amount) {
+    flushPendingWinCoins();
+    _coins = amount.clamp(0, 999999999);
+    _prefs?.setInt(_kCoins, _coins);
+    notifyListeners();
+  }
+
+  void cheatSetPowerUps({int? levelUp, int? timeFreeze}) {
+    if (levelUp != null) {
+      _levelUpCount = levelUp.clamp(0, 9999);
+      _prefs?.setInt(_kLevelUpCount, _levelUpCount);
+    }
+    if (timeFreeze != null) {
+      _timeFreezeCount = timeFreeze.clamp(0, 9999);
+      _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
+    }
+    notifyListeners();
+  }
+
+  void cheatSetLives(int livesCount) {
+    _lives = livesCount.clamp(0, maxLives);
+    _prefs?.setInt(_kLives, _lives);
+    notifyListeners();
+  }
+
+  void cheatUnlockAllBoostersAndMechanics({int minHighestLevel = 50}) {
+    if (_highestLevel < minHighestLevel) {
+      _highestLevel = minHighestLevel;
+      _prefs?.setInt(_kHighestLevel, _highestLevel);
+    }
+    _seenMechanics.addAll(const [
+      'ice',
+      'dud',
+      'pinned',
+      'arrows',
+      'pu_level_up',
+      'pu_time_freeze',
+    ]);
+    _prefs?.setStringList(_kSeenMechanics, _seenMechanics.toList());
+    notifyListeners();
+  }
+
+  Future<void> cheatResetAllProgress() async {
+    flushPendingWinCoins();
+    _currentLevel = 1;
+    _highestLevel = 1;
+    _coins = 875;
+    _lives = maxLives;
+    _levelUpCount = initialPowerUpInventory;
+    _timeFreezeCount = initialPowerUpInventory;
+    _seenMechanics.clear();
+    _freePowerUpsPending.clear();
+    await _prefs?.setInt(_kCurrentLevel, _currentLevel);
+    await _prefs?.setInt(_kHighestLevel, _highestLevel);
+    await _prefs?.setInt(_kCoins, _coins);
+    await _prefs?.setInt(_kLives, _lives);
+    await _prefs?.setInt(_kLevelUpCount, _levelUpCount);
+    await _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
+    await _prefs?.setStringList(_kSeenMechanics, const []);
+    await _prefs?.setStringList(_kFreePowerUpsPending, const []);
+    notifyListeners();
+  }
 }

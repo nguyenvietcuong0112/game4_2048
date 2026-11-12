@@ -11,6 +11,8 @@ import '../services/ads_manager.dart';
 import '../services/analytics_service.dart';
 import '../services/audio_haptics_service.dart';
 import '../services/player_progress_service.dart';
+import '../services/remote_config_service.dart';
+import 'cheat_panel_overlay.dart';
 import 'exit_gameplay_popup.dart';
 import 'lose_overlay.dart';
 import 'mechanic_unlock_dialog.dart';
@@ -55,7 +57,9 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool _showExitRestartPopup = false;
   bool? _buyPopupIsLevelUp; // null = closed, true = Level Up, false = Time Freeze
   bool _settingsOpen = false;
-  int _tutorialBannerAnimEpoch = 0;
+  bool _cheatOpen = false;
+  bool _hideCheatHudButton = false;
+  int _lastDisplayComboCount = 1;
   MechanicUnlockInfo? _activeMechanicModal;
 
   String? _lockedToastMessage;
@@ -162,12 +166,14 @@ class _GameplayScreenState extends State<GameplayScreen>
         _showExitRestartPopup ||
         _buyPopupIsLevelUp != null ||
         _settingsOpen ||
+        _cheatOpen ||
         _activeMechanicModal != null;
     final canSuspendBoard = _showWinOverlay ||
         (_showLoseOverlay && !_losePeekingBoard) ||
         _showExitRestartPopup ||
         _buyPopupIsLevelUp != null ||
-        _settingsOpen;
+        _settingsOpen ||
+        _cheatOpen;
     _game.setModalPauseState(
       modalPaused: modalPaused,
       canSuspendBoard: canSuspendBoard,
@@ -214,6 +220,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   void _startLevel(LevelDefinition level) {
+    FocusManager.instance.primaryFocus?.unfocus();
     if (!level.isBonus) {
       widget.progress.setCurrentLevel(level.number);
     } else {
@@ -231,7 +238,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _showExitRestartPopup = false;
       _buyPopupIsLevelUp = null;
       _settingsOpen = false;
-      _tutorialBannerAnimEpoch++;
+      _cheatOpen = false;
       _activeMechanicModal = null;
       _syncGamePauseState();
     });
@@ -276,6 +283,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     setState(() {
       _showWinOverlay = true;
       _settingsOpen = false;
+      _cheatOpen = false;
       _showExitRestartPopup = false;
       _buyPopupIsLevelUp = null;
       _syncGamePauseState();
@@ -296,6 +304,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _loseInFailedStage = false;
       _losePeekingBoard = false;
       _settingsOpen = false;
+      _cheatOpen = false;
       _showExitRestartPopup = false;
       _buyPopupIsLevelUp = null;
       _syncGamePauseState();
@@ -401,7 +410,6 @@ class _GameplayScreenState extends State<GameplayScreen>
           _showWinOverlay = false;
           _showExitRestartPopup = false;
           _settingsOpen = false;
-          _tutorialBannerAnimEpoch++;
           _syncGamePauseState();
         });
         _game.restartLevel();
@@ -599,9 +607,9 @@ class _GameplayScreenState extends State<GameplayScreen>
   }
 
   String _formatTimer(int totalSeconds) {
-    final m = totalSeconds ~/ 60;
-    final s = totalSeconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
+    final m = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final s = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   void _toggleSettingsPopup() {
@@ -621,9 +629,6 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   @override
   Widget build(BuildContext context) {
-    final tutorialHint = !_activeLevel.isBonus
-        ? widget.repository.tutorialHints[_activeLevel.number]
-        : null;
     final safePadding = MediaQuery.paddingOf(context);
     _game.updateSafeAreaInsets(
       top: safePadding.top,
@@ -636,6 +641,7 @@ class _GameplayScreenState extends State<GameplayScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFF47279B),
+      resizeToAvoidBottomInset: false,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -697,175 +703,110 @@ class _GameplayScreenState extends State<GameplayScreen>
             },
           ),
 
-          // 5. Top HUD (`CoinsWidget` left, `Frame_Level.png` center, `Settings` right, + `TimerGameplayView` below)
+          // 5. Redesigned Top HUD (`Play_Scene.png`: `CoinsWidget` left, `Frame_Level.png` center,
+          //    `TimerGameplayView` right, + `ComboProgressBar` centered right below `Frame_Level.png`)
           SafeArea(
             child: RepaintBoundary(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: ux(context, 144),
-                    child: Stack(
-                      alignment: Alignment.topCenter,
-                      clipBehavior: Clip.none,
-                      children: [
-                        // Top-Left `CoinsWidget` (hidden here when elevated above `WinOverlay`, `PlayOnPopupView`, or `PowerUpBuyPopup`)
-                        Positioned(
-                          left: ux(context, UnityCoinsWidget.hudLeftUnity),
-                          top: ux(context, UnityCoinsWidget.hudTopUnity),
-                          child: Opacity(
-                            opacity: hideBaseCoins ? 0.0 : 1.0,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _game.isSpotlightTutorialActiveNotifier,
+                builder: (context, spotlightActive, hudChild) {
+                  return AnimatedOpacity(
+                    opacity: spotlightActive ? 0.38 : 1.0,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: hudChild,
+                  );
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      height: ux(context, 140),
+                      child: Stack(
+                        alignment: Alignment.topCenter,
+                        clipBehavior: Clip.none,
+                        children: [
+                          // Top-Left `CoinsWidget` (hidden here when elevated above `WinOverlay`, `PlayOnPopupView`, or `PowerUpBuyPopup`)
+                          Positioned(
+                            left: ux(context, UnityCoinsWidget.hudLeftUnity),
+                            top: ux(context, UnityCoinsWidget.hudTopUnity),
+                            child: Opacity(
+                              opacity: hideBaseCoins ? 0.0 : 1.0,
+                              child: IgnorePointer(
+                                ignoring: hideBaseCoins,
+                                child: _buildCoinsWidget(context),
+                              ),
+                            ),
+                          ),
+
+                          // Top-Center `Frame_Level.png` (`Level 15`)
+                          Positioned(
+                            top: ux(context, 10),
                             child: IgnorePointer(
-                              ignoring: hideBaseCoins,
-                              child: _buildCoinsWidget(context),
-                            ),
-                          ),
-                        ),
-
-                        // Top-Center `Frame_Level.png` (`Level 15`)
-                        Positioned(
-                          top: ux(context, 10),
-                          child: IgnorePointer(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minWidth: ux(context, 287),
-                              ),
-                              child: UnityNineSlice(
-                                sprite: 'Frame_Level.png',
-                                height: ux(context, 125),
-                                padding: EdgeInsets.fromLTRB(
-                                  ux(context, 34),
-                                  ux(context, 6),
-                                  ux(context, 34),
-                                  ux(context, 12),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minWidth: ux(context, 287),
                                 ),
-                                child: UnitySdfText(
-                                  _activeLevel.title,
-                                  unityFontSize: 52,
-                                  material: UnityTextMaterial.levelCounter,
+                                child: UnityNineSlice(
+                                  sprite: 'Frame_Level.png',
+                                  height: ux(context, 125),
+                                  padding: EdgeInsets.fromLTRB(
+                                    ux(context, 34),
+                                    ux(context, 6),
+                                    ux(context, 34),
+                                    ux(context, 12),
+                                  ),
+                                  child: UnitySdfText(
+                                    _activeLevel.title,
+                                    unityFontSize: 52,
+                                    material: UnityTextMaterial.levelCounter,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
 
-                        // Top-Right Settings Circle Button (`Button_Circle_Blue.png` + `Icon_Settings.png`)
-                        Positioned(
-                          right: ux(context, 42),
-                          top: ux(context, 6),
-                          child: UnitySpriteButton(
-                            onTap: _toggleSettingsPopup,
-                            child: SizedBox(
-                              width: ux(context, 133),
-                              height: ux(context, 133),
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Image.asset(
-                                    'assets/images/Button_Circle_Blue.png',
-                                    width: ux(context, 133),
-                                    height: ux(context, 133),
-                                    fit: BoxFit.contain,
-                                  ),
-                                  Image.asset(
-                                    'assets/images/Icon_Settings.png',
-                                    width: ux(context, 76),
-                                    height: ux(context, 76),
-                                    fit: BoxFit.contain,
-                                  ),
-                                ],
+                          // Top-Right `TimerGameplayView` (`Icon_Clock.png` + `WidgetBase.png` matching `Play_Scene.png`)
+                          if (!_activeLevel.timerDisabled)
+                            Positioned(
+                              right: ux(context, 57),
+                              top: ux(context, 4),
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    _game.isWinSequenceActiveNotifier,
+                                builder: (context, winActive, child) {
+                                  return AnimatedScale(
+                                    scale: winActive ? 0.65 : 1.0,
+                                    duration: const Duration(milliseconds: 180),
+                                    curve: Curves.easeInBack,
+                                    child: AnimatedOpacity(
+                                      opacity: winActive ? 0.0 : 1.0,
+                                      duration:
+                                          const Duration(milliseconds: 160),
+                                      curve: Curves.easeOut,
+                                      child: IgnorePointer(
+                                        ignoring: winActive,
+                                        child: child,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: _buildTimerGameplayView(context),
                               ),
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Top-Center `TimerGameplayView` (hides immediately on level complete so the Magic Sand Jar appears without overlap!)
-                  if (!_activeLevel.timerDisabled) ...[
-                    SizedBox(height: ux(context, 8)),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _game.isWinSequenceActiveNotifier,
-                      builder: (context, winActive, child) {
-                        return AnimatedScale(
-                          scale: winActive ? 0.65 : 1.0,
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeInBack,
-                          child: AnimatedOpacity(
-                            opacity: winActive ? 0.0 : 1.0,
-                            duration: const Duration(milliseconds: 160),
-                            curve: Curves.easeOut,
-                            child: IgnorePointer(
-                              ignoring: winActive,
-                              child: child,
-                            ),
-                          ),
-                        );
-                      },
-                      child: _buildTimerGameplayView(context),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-
-          // 5b. Top-Anchored `TutorialText` (Levels 1-3).
-          // Stays visible during gameplay on Levels 1-3 and fades out when win sequence starts so the Jar appears cleanly!
-          if (tutorialHint != null)
-            SafeArea(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      top: ux(context, 162),
-                      left: ux(context, 35.26),
-                      right: ux(context, 35.26),
-                    ),
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: _game.isWinSequenceActiveNotifier,
-                      builder: (context, winActive, child) {
-                        return AnimatedOpacity(
-                          opacity: winActive ? 0.0 : 1.0,
-                          duration: const Duration(milliseconds: 160),
-                          curve: Curves.easeOut,
-                          child: child,
-                        );
-                      },
-                      child: TweenAnimationBuilder<double>(
-                        key: ValueKey(
-                          'tut_text_${_activeLevel.number}_$_tutorialBannerAnimEpoch',
-                        ),
-                        tween: Tween(begin: 0.0, end: 1.0),
-                        duration: const Duration(milliseconds: 520),
-                        curve:
-                            const Interval(0.30, 1.0, curve: Curves.easeOutBack),
-                        builder: (context, anim, child) => Transform.scale(
-                          scale: 0.72 + 0.28 * anim,
-                          child: Opacity(
-                            opacity: anim.clamp(0.0, 1.0),
-                            child: child,
-                          ),
-                        ),
-                        child: SizedBox(
-                          height: ux(context, 132),
-                          child: Center(
-                            child: UnitySdfText(
-                              tutorialHint,
-                              unityFontSize: 47.3,
-                              material: UnityTextMaterial.tutorialText,
-                            ),
-                          ),
-                        ),
+                        ],
                       ),
                     ),
-                  ),
+
+                    // Top-Center `ComboProgressBar` (`progress_combo_bg.png` + `progress_combo_fg.png`, `Play_Scene.png`)
+                    SizedBox(height: ux(context, 10)),
+                    _buildComboProgressBar(context),
+                  ],
                 ),
               ),
             ),
+          ),
 
           // 6. Bottom `Frame_Footer.png` Shelf + Straddling Circular `PowerUps` (`Play_Scene.png`)
           Align(
@@ -883,97 +824,255 @@ class _GameplayScreenState extends State<GameplayScreen>
                   alignment: Alignment.bottomCenter,
                   clipBehavior: Clip.none,
                   children: [
-                    // Full-width purple footer shelf with golden top trim (`Frame_Footer.png`)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: safePadding.bottom +
-                          ux(
-                            context,
-                            UnityPowerUpHudButton.footerTopLineUnity,
-                          ),
-                      child: const IgnorePointer(
-                        child: UnityNineSlice(
-                          sprite: 'Frame_Footer.png',
+                    // Dimmed footer & buttons layer during Level 1 Spotlight Tutorial
+                    Positioned.fill(
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _game.isSpotlightTutorialActiveNotifier,
+                        builder: (context, spotlightActive, footerChild) {
+                          return AnimatedOpacity(
+                            opacity: spotlightActive ? 0.36 : 1.0,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                            child: footerChild,
+                          );
+                        },
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          clipBehavior: Clip.none,
+                          children: [
+                            // Full-width purple footer shelf with golden top trim (`Frame_Footer.png`)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              height: safePadding.bottom +
+                                  ux(
+                                    context,
+                                    UnityPowerUpHudButton.footerTopLineUnity,
+                                  ),
+                              child: const IgnorePointer(
+                                child: UnityNineSlice(
+                                  sprite: 'Frame_Footer.png',
+                                ),
+                              ),
+                            ),
+
+                            // Left Power-Up (`LevelUp` at `X = -135` Unity px)
+                            Positioned(
+                              bottom: safePadding.bottom +
+                                  ux(
+                                    context,
+                                    UnityPowerUpHudButton.bottomOffsetUnity,
+                                  ),
+                              child: ListenableBuilder(
+                                listenable: Listenable.merge([
+                                  widget.progress,
+                                  _game.canLevelUpNotifier,
+                                ]),
+                                builder: (context, _) {
+                                  final isFree =
+                                      widget.progress.isFreePowerUpPending(
+                                    MechanicUnlockInfo.levelUpPowerUp.id,
+                                  );
+                                  return Transform.translate(
+                                    offset: Offset(
+                                      -ux(
+                                        context,
+                                        UnityPowerUpHudButton
+                                            .horizontalOffsetUnity,
+                                      ),
+                                      0,
+                                    ),
+                                    child: UnityPowerUpHudButton(
+                                      key: const ValueKey('hud_level_up_btn'),
+                                      isLevelUp: true,
+                                      isUnlocked: _isLevelUpUnlocked,
+                                      isFree: isFree,
+                                      count: widget.progress.levelUpCount,
+                                      isActionable:
+                                          _game.canLevelUpNotifier.value,
+                                      onTap: _handleLevelUpTap,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            // Right Power-Up (`TimeFreeze` at `X = +135` Unity px)
+                            Positioned(
+                              bottom: safePadding.bottom +
+                                  ux(
+                                    context,
+                                    UnityPowerUpHudButton.bottomOffsetUnity,
+                                  ),
+                              child: ListenableBuilder(
+                                listenable: Listenable.merge([
+                                  widget.progress,
+                                  _game.isTimeFrozenNotifier,
+                                  _game.isTimerStartedNotifier,
+                                ]),
+                                builder: (context, _) {
+                                  final isFree =
+                                      widget.progress.isFreePowerUpPending(
+                                    MechanicUnlockInfo.timeFreezePowerUp.id,
+                                  );
+                                  return Transform.translate(
+                                    offset: Offset(
+                                      ux(
+                                        context,
+                                        UnityPowerUpHudButton
+                                            .horizontalOffsetUnity,
+                                      ),
+                                      0,
+                                    ),
+                                    child: UnityPowerUpHudButton(
+                                      key:
+                                          const ValueKey('hud_time_freeze_btn'),
+                                      isLevelUp: false,
+                                      isUnlocked: _isTimeFreezeUnlocked,
+                                      isFree: isFree,
+                                      count: widget.progress.timeFreezeCount,
+                                      isActionable: _game.canUseTimeFreeze,
+                                      onTap: _handleTimeFreezeTap,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            // Bottom-Right Settings Circle Button (`Play_Scene.png`: `137x137`, `right = 58`, straddling golden footer trim)
+                            Positioned(
+                              right: ux(context, 58),
+                              bottom: safePadding.bottom + ux(context, 91.5),
+                              child: UnitySpriteButton(
+                                key: const ValueKey('hud_settings_btn'),
+                                onTap: _toggleSettingsPopup,
+                                child: SizedBox(
+                                  width: ux(context, 137),
+                                  height: ux(context, 137),
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      Image.asset(
+                                        'assets/images/Button_Circle_Blue.png',
+                                        width: ux(context, 137),
+                                        height: ux(context, 137),
+                                        fit: BoxFit.contain,
+                                      ),
+                                      Image.asset(
+                                        'assets/images/Icon_Settings.png',
+                                        width: ux(context, 79),
+                                        height: ux(context, 79),
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
 
-                    // Left Power-Up (`LevelUp` at `X = -135` Unity px)
-                    Positioned(
-                      bottom: safePadding.bottom +
-                          ux(context, UnityPowerUpHudButton.bottomOffsetUnity),
-                      child: ListenableBuilder(
-                        listenable: Listenable.merge([
-                          widget.progress,
-                          _game.canLevelUpNotifier,
-                        ]),
-                        builder: (context, _) {
-                          final isFree = widget.progress.isFreePowerUpPending(
-                            MechanicUnlockInfo.levelUpPowerUp.id,
-                          );
-                          return Transform.translate(
-                            offset: Offset(
-                              -ux(
-                                context,
-                                UnityPowerUpHudButton.horizontalOffsetUnity,
-                              ),
-                              0,
-                            ),
-                            child: UnityPowerUpHudButton(
-                              key: const ValueKey('hud_level_up_btn'),
-                              isLevelUp: true,
-                              isUnlocked: _isLevelUpUnlocked,
-                              isFree: isFree,
-                              count: widget.progress.levelUpCount,
-                              isActionable: _game.canLevelUpNotifier.value,
-                              onTap: _handleLevelUpTap,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-
-                    // Right Power-Up (`TimeFreeze` at `X = +135` Unity px)
-                    Positioned(
-                      bottom: safePadding.bottom +
-                          ux(context, UnityPowerUpHudButton.bottomOffsetUnity),
-                      child: ListenableBuilder(
-                        listenable: Listenable.merge([
-                          widget.progress,
-                          _game.isTimeFrozenNotifier,
-                          _game.isTimerStartedNotifier,
-                        ]),
-                        builder: (context, _) {
-                          final isFree = widget.progress.isFreePowerUpPending(
-                            MechanicUnlockInfo.timeFreezePowerUp.id,
-                          );
-                          return Transform.translate(
-                            offset: Offset(
-                              ux(
-                                context,
-                                UnityPowerUpHudButton.horizontalOffsetUnity,
-                              ),
-                              0,
-                            ),
-                            child: UnityPowerUpHudButton(
-                              key: const ValueKey('hud_time_freeze_btn'),
-                              isLevelUp: false,
-                              isUnlocked: _isTimeFreezeUnlocked,
-                              isFree: isFree,
-                              count: widget.progress.timeFreezeCount,
-                              isActionable: _game.canUseTimeFreeze,
-                              onTap: _handleTimeFreezeTap,
-                            ),
-                          );
-                        },
-                      ),
+                    // Bottom-Left Cheat Button (ONLY rendered when `RemoteConfigService.cheatEnable == true`)
+                    ValueListenableBuilder<bool>(
+                      valueListenable: RemoteConfigService.cheatEnableNotifier,
+                      builder: (context, cheatEnabled, _) {
+                        if (!cheatEnabled || _hideCheatHudButton) {
+                          return const SizedBox.shrink();
+                        }
+                        return Positioned(
+                          left: ux(context, 42),
+                          bottom: safePadding.bottom + ux(context, 122),
+                          child: CheatHudButton(
+                            key: const ValueKey('hud_cheat_btn'),
+                            onTap: () {
+                              widget.audio.playClick();
+                              setState(() {
+                                _cheatOpen = true;
+                                _settingsOpen = false;
+                                _syncGamePauseState();
+                              });
+                            },
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
               ),
             ),
+          ),
+
+          // 6b. Level 1 Step-by-Step Spotlight Tutorial Banner (`"Drag matching blocks to merge!"`)
+          ValueListenableBuilder<bool>(
+            valueListenable: _game.isSpotlightTutorialActiveNotifier,
+            builder: (context, spotlightActive, _) {
+              if (!spotlightActive) {
+                return const SizedBox.shrink();
+              }
+              final screenW = MediaQuery.sizeOf(context).width;
+              final maxBannerW = math.min(
+                ux(context, 650),
+                math.max(200.0, screenW - ux(context, 120)),
+              );
+              return Positioned(
+                left: 0,
+                right: 0,
+                bottom: safePadding.bottom + ux(context, 48),
+                child: IgnorePointer(
+                  child: Center(
+                    child: Container(
+                      key: const ValueKey('level1_spotlight_banner'),
+                      constraints: BoxConstraints(maxWidth: maxBannerW),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ux(context, 44),
+                        vertical: ux(context, 28),
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0xFFFFFCF5),
+                            Color(0xFFF6EAD4),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(ux(context, 40)),
+                        border: Border.all(
+                          color: const Color(0xFF2356F6),
+                          width: ux(context, 10),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xAA030518),
+                            blurRadius: ux(context, 26),
+                            offset: Offset(0, ux(context, 10)),
+                          ),
+                          BoxShadow(
+                            color: const Color(0x664B7CFF),
+                            blurRadius: ux(context, 14),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        'Drag matching blocks to merge!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Baloo2',
+                          fontSize: ux(context, 44),
+                          height: 1.12,
+                          fontWeight: FontWeight.w800,
+                          fontVariations: const [FontVariation('wght', 800)],
+                          color: const Color(0xFF7B3B11),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
 
           // 7. Flying `PowerUp_TimeFreeze.png` Clock-to-Timer Burst Animation (`PlayTimeFreezeIntroAsync`)
@@ -989,6 +1088,121 @@ class _GameplayScreenState extends State<GameplayScreen>
 
           // 8. Redesigned Settings Modal Popup (`PopUp_Setting.png`)
           if (_settingsOpen) _buildSettingsPopupOverlay(context),
+
+          // 8b. Developer / QA Cheat Panel (strictly gated by `RemoteConfigService.cheatEnable`)
+          ValueListenableBuilder<bool>(
+            valueListenable: RemoteConfigService.cheatEnableNotifier,
+            builder: (context, cheatEnabled, _) {
+              if (!cheatEnabled || !_cheatOpen) {
+                return const SizedBox.shrink();
+              }
+              return ValueListenableBuilder<int>(
+                valueListenable: _game.remainingSecondsNotifier,
+                builder: (context, secs, _) {
+                  return CheatPanelOverlay(
+                    key: const ValueKey('cheat_panel_overlay'),
+                    activeLevel: _activeLevel,
+                    repository: widget.repository,
+                    progress: widget.progress,
+                    remainingSeconds: secs,
+                    hideHudButton: _hideCheatHudButton,
+                    onToggleHideHudButton: (val) {
+                      setState(() => _hideCheatHudButton = val);
+                    },
+                    onJumpToLevel: (targetLv) {
+                      widget.audio.playClick();
+                      _startLevel(targetLv);
+                    },
+                    onInstantWinPopup: () {
+                      widget.audio.playClick();
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      _handleLevelWon();
+                    },
+                    onWinWithSandSequence: () {
+                      widget.audio.playClick();
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      _game.cheatWinWithSandSequence();
+                    },
+                    onInstantLoseTimeout: () {
+                      widget.audio.playClick();
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      _handleTimeExpired();
+                    },
+                    onMergeOnePairFree: () {
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      if (_game.triggerLevelUpPowerUp()) {
+                        widget.audio.playPowerUpSelect();
+                      } else {
+                        widget.audio.hapticBlocked();
+                      }
+                    },
+                    onUnlockAllBoardObstacles: () {
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      _game.cheatUnlockAllBoardObstacles();
+                    },
+                    onTriggerComboStep: () {
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      _game.cheatTriggerComboStep();
+                    },
+                    onAddTimeSeconds: (extraSecs) {
+                      widget.audio.playClick();
+                      _game.addExtraTime(extraSecs);
+                    },
+                    onSetTimeSeconds: (targetSecs) {
+                      widget.audio.playClick();
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      _game.cheatSetRemainingSeconds(targetSecs);
+                    },
+                    onTriggerFreeTimeFreeze: () {
+                      widget.audio.playPowerUpSelect();
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                      _runTimeFreezeIntroAndEngage(
+                        allowBeforeTimerStarted: true,
+                      );
+                    },
+                    onResetAllProgress: () async {
+                      widget.audio.playClick();
+                      await widget.progress.cheatResetAllProgress();
+                      if (!mounted) return;
+                      final lv1 = widget.repository.getCampaignLevel(1);
+                      _startLevel(lv1);
+                    },
+                    onClose: () {
+                      widget.audio.playClick();
+                      setState(() {
+                        _cheatOpen = false;
+                        _syncGamePauseState();
+                      });
+                    },
+                  );
+                },
+              );
+            },
+          ),
 
           // 9. `ExitGameplayView.prefab` (`Restart level?` -> `You will lose a life!`)
           if (_showExitRestartPopup)
@@ -1292,10 +1506,121 @@ class _GameplayScreenState extends State<GameplayScreen>
     );
   }
 
-  /// Authentic `TimerGameplayView.prefab`:
-  /// - Normal: `Shadow.png` + `Circle_01.png` tinted `#24115C` + `Icon_Timer.png` + `3:00`
-  /// - Urgent (`<= 10s`): pulsing `Widget_Timer_Set.png` + `Icon_Timer.png` + `0:09`
-  /// - Frozen: `Pill_03.png` + `Snow.png` snow cap + `PowerUp_TimeFreeze.png` + `TimeFreeze_TimerBar.png`
+  /// Redesigned Top-Center Combo Progress Bar (`Play_Scene.png`):
+  /// - Track: `progress_combo_bg.png` (`354x52` gold-rimmed dark-blue capsule)
+  /// - Fill: 3-slice `progress_combo_fg.png` (`maxWidth = 332, height = 30`, inset `11px`)
+  /// - Label: `'Combo x1'`, `'Combo x2'`, ... centered over the bar
+  Widget _buildComboProgressBar(BuildContext context) {
+    return RepaintBoundary(
+      child: IgnorePointer(
+        child: ListenableBuilder(
+          listenable: Listenable.merge([
+            _game.comboCountNotifier,
+            _game.isWinSequenceActiveNotifier,
+          ]),
+          builder: (context, _) {
+            final comboCount = _game.comboCountNotifier.value;
+            final winActive = _game.isWinSequenceActiveNotifier.value;
+            if (comboCount > 0) {
+              _lastDisplayComboCount = comboCount;
+            }
+            final visible = comboCount > 0 && !winActive;
+            final displayCombo =
+                comboCount > 0 ? comboCount : _lastDisplayComboCount;
+
+            final barW = ux(context, 354);
+            final barH = ux(context, 52);
+            final maxFillW = ux(context, 332);
+            final fillH = ux(context, 30);
+
+            Widget barBody = SizedBox(
+              width: barW,
+              height: barH,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  UnityNineSlice(
+                    sprite: 'progress_combo_bg.png',
+                    width: barW,
+                    height: barH,
+                  ),
+                  Positioned(
+                    left: ux(context, 11),
+                    top: ux(context, 11),
+                    width: maxFillW,
+                    height: fillH,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(ux(context, 15)),
+                      child: ValueListenableBuilder<double>(
+                        valueListenable: _game.comboCountdownFractionNotifier,
+                        builder: (context, frac, _) {
+                          final clamped = frac.clamp(0.0, 1.0);
+                          if (clamped <= 0.004) {
+                            return const SizedBox.shrink();
+                          }
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: SizedBox(
+                              width: maxFillW * clamped,
+                              height: fillH,
+                              child: const UnityNineSlice(
+                                sprite: 'progress_combo_fg.png',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  Transform.translate(
+                    offset: Offset(0, -ux(context, 1.5)),
+                    child: UnitySdfText(
+                      'Combo x$displayCombo',
+                      unityFontSize: 29,
+                      material: UnityTextMaterial.comboBarText,
+                    ),
+                  ),
+                ],
+              ),
+            );
+
+            if (comboCount > 0) {
+              barBody = TweenAnimationBuilder<double>(
+                key: ValueKey('combo_bar_pop_$comboCount'),
+                tween: Tween<double>(begin: 1.10, end: 1.0),
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutBack,
+                builder: (context, popScale, child) => Transform.scale(
+                  scale: popScale,
+                  child: child,
+                ),
+                child: barBody,
+              );
+            }
+
+            return AnimatedScale(
+              scale: visible ? 1.0 : 0.82,
+              duration: const Duration(milliseconds: 170),
+              curve: visible ? Curves.easeOutBack : Curves.easeInCubic,
+              child: AnimatedOpacity(
+                opacity: visible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeOut,
+                child: barBody,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Redesigned Top-Right Stopwatch Timer Pill (`Play_Scene.png`):
+  /// - Normal: `WidgetBase.png` (`255x96` on the exact horizontal baseline of `UnityCoinsWidget`)
+  ///   + `Icon_Clock.png` (`96x115` golden stopwatch overlapping the left edge) + `'MM:SS'`
+  /// - Urgent (`<= 10s`): pulsing crimson-tinted `WidgetBase.png` + `Icon_Clock.png`
+  /// - Frozen: ice-tinted `WidgetBase.png` + `Snow.png` snow cap + `PowerUp_TimeFreeze.png` + `TimeFreeze_TimerBar.png`
   Widget _buildTimerGameplayView(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: _game.isTimeFrozenNotifier,
@@ -1304,145 +1629,153 @@ class _GameplayScreenState extends State<GameplayScreen>
           valueListenable: _game.remainingSecondsNotifier,
           builder: (context, secs, _) {
             final isUrgent = secs <= 10 && !isFrozen;
-            final pillW = ux(context, 316);
-            final pillH = ux(context, 106);
+            final boxW = ux(context, 275);
+            final boxH = ux(context, 115);
 
-            Widget pillBody;
-            if (isFrozen) {
-              pillBody = SizedBox(
-                width: pillW,
-                height: pillH + ux(context, 18),
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  clipBehavior: Clip.none,
-                  children: [
-                    UnityNineSlice(
-                      sprite: 'Pill_03.png',
-                      width: pillW,
-                      height: pillH,
-                      tint: const Color(0xFF1A68C7),
+            final ColorFilter? baseFilter = isFrozen
+                ? UnityButtonColorFilters.widgetBaseFrozenIce
+                : isUrgent
+                    ? UnityButtonColorFilters.widgetBaseUrgentRed
+                    : null;
+
+            Widget pillStack = SizedBox(
+              width: boxW,
+              height: boxH,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: ux(context, 20),
+                    top: ux(context, 21),
+                    width: ux(context, 255),
+                    height: ux(context, 96),
+                    child: UnityNineSlice(
+                      sprite: 'WidgetBase.png',
+                      height: ux(context, 96),
+                      colorFilter: baseFilter,
+                      padding: EdgeInsets.only(
+                        left: ux(context, 78),
+                        right: ux(context, 20),
+                        bottom: ux(context, 4),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _formatTimer(secs),
+                          style: TextStyle(
+                            fontFamily: 'Baloo2',
+                            fontSize: ux(context, 48),
+                            fontWeight: FontWeight.w800,
+                            fontVariations: const [FontVariation('wght', 800)],
+                            color: isFrozen
+                                ? const Color(0xFFE6FCFF)
+                                : isUrgent
+                                    ? const Color(0xFFFFE5EA)
+                                    : Colors.white,
+                            letterSpacing: 0.3,
+                            height: 1.0,
+                            shadows: const [
+                              Shadow(
+                                color: Color(0xAA09042E),
+                                offset: Offset(0, 1.5),
+                                blurRadius: 2.5,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                    // `Snow.png` icy snow cap draped across the top of the timer pill
+                  ),
+
+                  if (isFrozen)
                     Positioned(
-                      top: -ux(context, 6),
+                      left: ux(context, 32),
+                      top: ux(context, 13),
                       child: Image.asset(
                         'assets/images/Snow.png',
-                        width: pillW * 0.94,
+                        width: ux(context, 228),
                         fit: BoxFit.contain,
                       ),
                     ),
-                    SizedBox(
-                      width: pillW,
-                      height: pillH,
-                      child: _buildTimerInnerRow(
-                        context: context,
-                        secs: secs,
-                        isFrozen: true,
-                        isUrgent: false,
-                      ),
+
+                  Positioned(
+                    left: 0,
+                    top: isFrozen ? ux(context, 12) : 0,
+                    width: ux(context, isFrozen ? 98 : 96),
+                    height: ux(context, isFrozen ? 98 : 115),
+                    child: Image.asset(
+                      isFrozen
+                          ? 'assets/images/PowerUp_TimeFreeze.png'
+                          : 'assets/images/Icon_Clock.png',
+                      fit: BoxFit.contain,
                     ),
-                  ],
-                ),
-              );
-            } else if (isUrgent) {
-              pillBody = AnimatedBuilder(
+                  ),
+                ],
+              ),
+            );
+
+            if (isUrgent) {
+              pillStack = AnimatedBuilder(
                 animation: _lowTimerPulseCtrl,
                 builder: (context, child) => Transform.scale(
                   scale: 1.0 + 0.055 * _lowTimerPulseCtrl.value,
                   child: child,
                 ),
-                child: UnityNineSlice(
-                  sprite: 'Widget_Timer_Set.png',
-                  width: pillW,
-                  height: pillH,
-                  child: _buildTimerInnerRow(
-                    context: context,
-                    secs: secs,
-                    isFrozen: false,
-                    isUrgent: true,
-                  ),
-                ),
-              );
-            } else {
-              pillBody = SizedBox(
-                width: pillW,
-                height: pillH,
-                child: Stack(
-                  alignment: Alignment.center,
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      top: ux(context, 6),
-                      child: UnityNineSlice(
-                        sprite: 'Shadow.png',
-                        width: pillW,
-                        height: pillH,
-                        tint: const Color(0x55080224),
-                      ),
-                    ),
-                    UnityNineSlice(
-                      sprite: 'Circle_01.png',
-                      width: pillW,
-                      height: pillH,
-                      tint: const Color(0xFF24115C),
-                      child: _buildTimerInnerRow(
-                        context: context,
-                        secs: secs,
-                        isFrozen: false,
-                        isUrgent: false,
-                      ),
-                    ),
-                  ],
-                ),
+                child: pillStack,
               );
             }
 
             return Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                pillBody,
+                pillStack,
                 if (isFrozen) ...[
-                  SizedBox(height: ux(context, 12)),
-                  SizedBox(
-                    width: ux(context, 268),
-                    height: ux(context, 24),
-                    child: Stack(
-                      alignment: Alignment.centerLeft,
-                      children: [
-                        UnityNineSlice(
-                          sprite: 'TimeFreeze_TimerBar.png',
-                          width: ux(context, 268),
-                          height: ux(context, 24),
-                          tint: const Color(0xFF191254),
-                        ),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(ux(context, 12)),
-                          child: ValueListenableBuilder<double>(
-                            valueListenable: _game.timeFreezeNotifier,
-                            child: Container(
-                              width: ux(context, 268),
-                              height: ux(context, 18),
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Color(0xFF67F7FF),
-                                    Color(0xFF1CEFFF),
-                                  ],
+                  SizedBox(height: ux(context, 8)),
+                  Padding(
+                    padding: EdgeInsets.only(right: ux(context, 8)),
+                    child: SizedBox(
+                      width: ux(context, 240),
+                      height: ux(context, 22),
+                      child: Stack(
+                        alignment: Alignment.centerLeft,
+                        children: [
+                          UnityNineSlice(
+                            sprite: 'TimeFreeze_TimerBar.png',
+                            width: ux(context, 240),
+                            height: ux(context, 22),
+                            tint: const Color(0xFF191254),
+                          ),
+                          ClipRRect(
+                            borderRadius:
+                                BorderRadius.circular(ux(context, 11)),
+                            child: ValueListenableBuilder<double>(
+                              valueListenable: _game.timeFreezeNotifier,
+                              child: Container(
+                                width: ux(context, 240),
+                                height: ux(context, 16),
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0xFF67F7FF),
+                                      Color(0xFF1CEFFF),
+                                    ],
+                                  ),
                                 ),
                               ),
+                              builder: (context, freezeLeft, barChild) {
+                                return Align(
+                                  alignment: Alignment.centerLeft,
+                                  widthFactor: (freezeLeft /
+                                          BlockOrderGame.maxTimeFreezeSeconds)
+                                      .clamp(0.0, 1.0),
+                                  child: barChild,
+                                );
+                              },
                             ),
-                            builder: (context, freezeLeft, barChild) {
-                              return Align(
-                                alignment: Alignment.centerLeft,
-                                widthFactor: (freezeLeft /
-                                        BlockOrderGame.maxTimeFreezeSeconds)
-                                    .clamp(0.0, 1.0),
-                                child: barChild,
-                              );
-                            },
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -1454,52 +1787,8 @@ class _GameplayScreenState extends State<GameplayScreen>
     );
   }
 
-  Widget _buildTimerInnerRow({
-    required BuildContext context,
-    required int secs,
-    required bool isFrozen,
-    required bool isUrgent,
-  }) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: ux(context, 18)),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              isFrozen
-                  ? 'assets/images/PowerUp_TimeFreeze.png'
-                  : 'assets/images/Icon_Timer.png',
-              width: ux(context, isFrozen ? 80 : 74),
-              height: ux(context, isFrozen ? 80 : 74),
-            ),
-            SizedBox(width: ux(context, 16)),
-            Text(
-              _formatTimer(secs),
-              style: TextStyle(
-                fontFamily: 'Baloo2',
-                fontSize: ux(context, 68),
-                fontWeight: FontWeight.w800,
-                fontVariations: const [FontVariation('wght', 800)],
-                color: isFrozen
-                    ? const Color(0xFFD9FBFF)
-                    : isUrgent
-                        ? const Color(0xFFFFE5EA)
-                        : Colors.white,
-                letterSpacing: 0.4,
-                height: 1.0,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Flying `PowerUp_TimeFreeze.png` clock from bottom button (`X = +135`) to top-center timer
-  /// `ClockTarget` (`X = -86`) + cyan `Explosion_Halo.png` burst upon impact (`t >= 0.66`).
+  /// Flying `PowerUp_TimeFreeze.png` clock from bottom button (`X = +135`) to top-right
+  /// `Icon_Clock.png` stopwatch target + cyan `Explosion_Halo.png` burst upon impact (`t >= 0.66`).
   Widget _buildTimeFreezeFlightFx(BuildContext context, double t) {
     final screen = MediaQuery.sizeOf(context);
     final pad = MediaQuery.paddingOf(context);
@@ -1515,15 +1804,15 @@ class _GameplayScreenState extends State<GameplayScreen>
           ),
     );
     final end = Offset(
-      screen.width * 0.5 - ux(context, 86),
-      pad.top + ux(context, 205),
+      screen.width - ux(context, 284),
+      pad.top + ux(context, 66),
     );
 
     final flyT = (t / 0.66).clamp(0.0, 1.0);
     final haloT = ((t - 0.60) / 0.40).clamp(0.0, 1.0);
     final eased = Curves.easeInOutCubic.transform(flyT);
 
-    final ctrl = Offset(screen.width * 0.72, screen.height * 0.48);
+    final ctrl = Offset(screen.width * 0.88, screen.height * 0.46);
     final om = 1.0 - eased;
     final px =
         om * om * start.dx + 2 * om * eased * ctrl.dx + eased * eased * end.dx;
@@ -1700,10 +1989,32 @@ class _GameplayScreenState extends State<GameplayScreen>
                                         ),
                                       ),
 
-                                      // Bottom Version Text (`v.1.0.6`)
+                                      // Bottom Version Text (`v.1.0.6` — also acts as secret Cheat Panel trigger when `cheat_enable == true`)
                                       Positioned(
                                         bottom: ux(context, 28),
-                                        child: IgnorePointer(
+                                        child: ValueListenableBuilder<bool>(
+                                          valueListenable: RemoteConfigService
+                                              .cheatEnableNotifier,
+                                          builder: (context, cheatEnabled, child) {
+                                            if (!cheatEnabled) {
+                                              return IgnorePointer(child: child);
+                                            }
+                                            return GestureDetector(
+                                              key: const ValueKey(
+                                                'settings_version_cheat_trigger',
+                                              ),
+                                              behavior: HitTestBehavior.opaque,
+                                              onTap: () {
+                                                widget.audio.playClick();
+                                                setState(() {
+                                                  _settingsOpen = false;
+                                                  _cheatOpen = true;
+                                                  _syncGamePauseState();
+                                                });
+                                              },
+                                              child: child,
+                                            );
+                                          },
                                           child: Text(
                                             'v.1.0.6',
                                             textAlign: TextAlign.center,

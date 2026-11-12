@@ -353,8 +353,8 @@ class _TutorialTrailNode {
 /// - 6. `0.50s` pause before repeating loop
 /// - Permanent `0.30s` `FadeOutAsync` ONLY when a piece actually steps to a new cell or merges!
 class _TutorialHandComponent extends PositionComponent {
-  final Vector2 fromPos;
-  final Vector2 toPos;
+  Vector2 fromPos;
+  Vector2 toPos;
   final double cellSize;
   final bool Function() isPausedProvider;
   ui.Image? _handImg;
@@ -365,6 +365,7 @@ class _TutorialHandComponent extends PositionComponent {
   final List<_TutorialTrailNode> _trail = <_TutorialTrailNode>[];
   double _trailSampleAcc = 0.0;
 
+  bool temporarilyHidden = false;
   bool isFadingOut = false;
   double _dismissFadeElapsed = 0.0;
   static const double _dismissFadeDuration = 0.30;
@@ -395,6 +396,34 @@ class _TutorialHandComponent extends PositionComponent {
     }
   }
 
+  void setTemporarilyHidden(bool value) {
+    if (temporarilyHidden == value) return;
+    temporarilyHidden = value;
+    _trail.clear();
+    _tapBurstAge = -1.0;
+    _trailSampleAcc = 0.0;
+    if (!value) {
+      _elapsed = 0.0;
+      _initialDelayRemaining = 0.08;
+      _tapBurstTriggeredInCycle = false;
+    }
+  }
+
+  void retarget(Vector2 newFrom, Vector2 newTo) {
+    if ((newFrom - fromPos).length <= 6.0 &&
+        (newTo - toPos).length <= 6.0) {
+      return;
+    }
+    fromPos = newFrom.clone();
+    toPos = newTo.clone();
+    _elapsed = 0.0;
+    _initialDelayRemaining = 0.12;
+    _tapBurstTriggeredInCycle = false;
+    _tapBurstAge = -1.0;
+    _trail.clear();
+    _trailSampleAcc = 0.0;
+  }
+
   void fadeOutAndRemove() {
     if (isFadingOut) return;
     isFadingOut = true;
@@ -417,6 +446,11 @@ class _TutorialHandComponent extends PositionComponent {
     }
 
     if (isPausedProvider()) return;
+    if (temporarilyHidden) {
+      if (_trail.isNotEmpty) _trail.clear();
+      _tapBurstAge = -1.0;
+      return;
+    }
 
     if (_initialDelayRemaining > 0.0) {
       _initialDelayRemaining -= dt;
@@ -490,6 +524,7 @@ class _TutorialHandComponent extends PositionComponent {
   @override
   void render(Canvas canvas) {
     final img = _handImg;
+    if (temporarilyHidden && !isFadingOut) return;
     if (_initialDelayRemaining > 0.0 && !isFadingOut) return;
 
     final dismissMul = isFadingOut
@@ -586,6 +621,60 @@ class _TutorialHandComponent extends PositionComponent {
   }
 }
 
+/// Zero-allocation full-stage spotlight dim veil (`priority = 108`) for Level 1 Tutorial:
+/// - Sits strictly ABOVE `BoardComponent` (`1`), `MagicSandJarComponent` (`4`), and non-highlighted
+///   `PieceComponent`s (`10..70`), dimming the background, board cells, jar, and inactive blocks
+///   in a single fast `canvas.drawRect` call (zero `saveLayer` cost at 120Hz!).
+/// - Sits strictly BELOW spotlight-elevated `PieceComponent`s (`118..138`), merge VFX (`200+`),
+///   and `_TutorialHandComponent` (`250`), which render at 100% full brightness.
+class _SpotlightDimVeilComponent extends PositionComponent {
+  static const double _fadeInDuration = 0.20;
+  static const double _fadeOutDuration = 0.26;
+  static const Rect _stageCoverRect = Rect.fromLTWH(-4000, -4000, 8000, 8000);
+
+  double _fadeInElapsed = 0.0;
+  bool isFadingOut = false;
+  double _fadeOutElapsed = 0.0;
+  final Paint _veilPaint = Paint()..style = ui.PaintingStyle.fill;
+
+  _SpotlightDimVeilComponent() : super(priority: 108);
+
+  bool get isAtRest => !isFadingOut && _fadeInElapsed >= _fadeInDuration;
+
+  void fadeOutAndRemove() {
+    if (isFadingOut) return;
+    isFadingOut = true;
+    _fadeOutElapsed = 0.0;
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    if (isFadingOut) {
+      _fadeOutElapsed += dt;
+      if (_fadeOutElapsed >= _fadeOutDuration) {
+        removeFromParent();
+      }
+      return;
+    }
+    if (_fadeInElapsed < _fadeInDuration) {
+      _fadeInElapsed = math.min(_fadeInDuration, _fadeInElapsed + dt);
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final fadeInMul = (_fadeInElapsed / _fadeInDuration).clamp(0.0, 1.0);
+    final fadeOutMul = isFadingOut
+        ? (1.0 - (_fadeOutElapsed / _fadeOutDuration)).clamp(0.0, 1.0)
+        : 1.0;
+    final alpha = (0.72 * fadeInMul * fadeOutMul).clamp(0.0, 1.0);
+    if (alpha <= 0.005) return;
+    _veilPaint.color = Color.fromRGBO(6, 3, 20, alpha);
+    canvas.drawRect(_stageCoverRect, _veilPaint);
+  }
+}
+
 class BlockOrderGame extends FlameGame with DragCallbacks {
   static const double _absorbDurationSeconds = 0.28;
 
@@ -613,6 +702,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   final ValueNotifier<int> comboCountNotifier = ValueNotifier<int>(0);
   final ValueNotifier<double> comboCountdownFractionNotifier =
       ValueNotifier<double>(0.0);
+  final ValueNotifier<bool> isSpotlightTutorialActiveNotifier =
+      ValueNotifier<bool>(false);
 
   bool isModalPaused = false;
   bool allowEngineSleepBehindModal = false;
@@ -649,9 +740,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
   // Stage & board layout
   final PositionComponent _boardStage = PositionComponent(priority: 5);
+  final List<Component> _stagedBoardComponents = <Component>[];
   final List<PieceComponent> _pieces = [];
   final List<(PieceComponent, int)> _pendingNumberPrewarms = [];
   _TutorialHandComponent? _tutorialHand;
+  _SpotlightDimVeilComponent? _spotlightVeil;
+  _SpotlightDimVeilComponent? _fadingSpotlightVeil;
   MagicSandJarComponent? _sandJar;
   BoardSandStreamToJarVfx? _activeWinWaterStream;
   JarOpenAndFullscreenLightWaveVfx? _jarOpenWaveVfx;
@@ -722,6 +816,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     this.onFirstAction,
   }) : _level = initialLevel {
     remainingSecondsNotifier.value = initialLevel.timeSeconds;
+    isSpotlightTutorialActiveNotifier.value =
+        !initialLevel.isBonus && initialLevel.number == 1;
   }
 
   @override
@@ -787,6 +883,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     for (final child in _boardStage.children) {
       if (child is PieceComponent) {
         if (!child.isVisuallyAtRest) return false;
+      } else if (child is _SpotlightDimVeilComponent) {
+        if (!child.isAtRest) return false;
       } else if (child is! BoardComponent &&
           child is! _TutorialHandComponent &&
           child is! MagicSandJarComponent) {
@@ -867,10 +965,29 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   List<PieceComponent> get debugPieces => List.unmodifiable(_pieces);
 
   @visibleForTesting
+  int get debugMountedStagePieceCount => _boardStage.children
+      .whereType<PieceComponent>()
+      .where((p) => !p.isSuperseded)
+      .length;
+
+  @visibleForTesting
+  int get debugRawStagePieceCount =>
+      _boardStage.children.whereType<PieceComponent>().length;
+
+  @visibleForTesting
   bool get debugHasTutorialHand =>
       _tutorialHand != null &&
       _tutorialHand!.isMounted &&
       !_tutorialHand!.isFadingOut;
+
+  @visibleForTesting
+  bool get debugIsSpotlightTutorialActive =>
+      isSpotlightTutorialActiveNotifier.value;
+
+  @visibleForTesting
+  List<PieceComponent> get debugSpotlightHighlightedPieces => _pieces
+      .where((p) => !p.isFlyingOrSwallowed && p.isSpotlightHighlighted)
+      .toList(growable: false);
 
   @visibleForTesting
   MagicSandJarComponent? get debugSandJar => _sandJar;
@@ -983,6 +1100,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _mergeImpactShakeElapsed = -1.0;
     winScreenFlashNotifier.value = 0.0;
     isWinSequenceActiveNotifier.value = false;
+    isSpotlightTutorialActiveNotifier.value =
+        !newLevel.isBonus && newLevel.number == 1;
+    _spotlightVeil = null;
+    _fadingSpotlightVeil = null;
     _resetComboState();
     movesCount = 0;
     highestCombo = 0;
@@ -1028,6 +1149,41 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     }
   }
 
+  void _addToBoardStage(Component component) {
+    _stagedBoardComponents.removeWhere((c) => c.isRemoved || c.parent == null);
+    _stagedBoardComponents.add(component);
+    _boardStage.add(component);
+  }
+
+  /// Removes BOTH already-mounted children AND same-frame pending `add()` components
+  /// (which are not in `_boardStage.children` yet before Flame's next `updateTree` tick,
+  /// e.g. when closing the Cheat keyboard triggers `loadLevel` + `onGameResize` in one frame).
+  void _clearBoardStage() {
+    for (final c in _stagedBoardComponents) {
+      if (c is PieceComponent) {
+        c.isSuperseded = true;
+      } else if (c is BoardComponent) {
+        c.markSupersededAndDispose();
+      }
+      if (c.parent == _boardStage && !c.isRemoving && !c.isRemoved) {
+        _boardStage.remove(c);
+      }
+    }
+    _stagedBoardComponents.clear();
+
+    if (_boardStage.children.isNotEmpty) {
+      final mounted = _boardStage.children.toList();
+      for (final c in mounted) {
+        if (c is PieceComponent) {
+          c.isSuperseded = true;
+        } else if (c is BoardComponent) {
+          c.markSupersededAndDispose();
+        }
+      }
+      _boardStage.removeAll(mounted);
+    }
+  }
+
   void _buildLevelStage({required bool preserveModels}) {
     _lastLayoutSize = size.clone();
 
@@ -1035,10 +1191,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         ? _pieces.map((p) => p.model.clone()).toList()
         : _level.initialPieces.map((p) => p.clone()).toList();
 
-    _boardStage.removeAll(_boardStage.children.toList());
+    _clearBoardStage();
     _pieces.clear();
     _pendingNumberPrewarms.clear();
     _tutorialHand = null;
+    _spotlightVeil = null;
+    _fadingSpotlightVeil = null;
     _sandJar = null;
     _activeWinWaterStream = null;
     _jarOpenWaveVfx = null;
@@ -1056,7 +1214,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     // `BoardView._bordersScale.y = 1.0376` + `GameCameraView` (`_cameraAngle = 10°`, `framingMargin = 0.30`):
     final u = math.min(size.x / 1080.0, size.y / 1920.0);
     final safeH = (size.y - _safeTop - _safeBottom).clamp(160.0, 4000.0);
-    final isTutorialLevel = !_level.isBonus && _level.number <= 3;
+    final isTutorialLevel = !_level.isBonus && _level.number <= 4;
+    final isSpotlightLevel = !_level.isBonus && _level.number == 1;
 
     final availW = (size.x - 0.40 * u).clamp(120.0, 2400.0);
     final double availH;
@@ -1078,11 +1237,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         .clamp(24.0, 220.0);
 
     // On timed levels (`!_level.timerDisabled`), ensure `[Jar + Board]` fits cleanly
-    // between the bottom of the Timer (`_safeTop + 278*u`) and the top of the bottom Footer + PowerUps
-    // (`size.y - _safeBottom - 272*u`) so BOTH Timer and Jar are always visible without overlapping!
+    // between Top HUD and Bottom Footer; on `isSpotlightLevel`, reserve `296*u` bottom space
+    // so `stageCenterY` keeps the 4x6 board strictly above the Spotlight Tutorial Box.
     final minJarTopScreenY =
-        _safeTop + (_level.timerDisabled ? 150.0 : 278.0) * u;
-    final maxBoardBottomScreenY = size.y - _safeBottom - 272.0 * u;
+        _safeTop + (_level.timerDisabled ? 150.0 : 218.0) * u;
+    final maxBoardBottomScreenY =
+        size.y - _safeBottom - (isSpotlightLevel ? 296.0 : 272.0) * u;
     if (!_level.timerDisabled) {
       final maxTimedSpanH =
           (maxBoardBottomScreenY - minJarTopScreenY).clamp(180.0, 4000.0);
@@ -1129,7 +1289,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       cellSize: _cellSize,
       position: _boardOrigin.clone(),
     );
-    _boardStage.add(board);
+    _addToBoardStage(board);
 
     final targetJarNumber = _level.targetWinNumber;
     final jarStyle = palette.styleFor(
@@ -1146,7 +1306,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       jarHeight: jarHeight,
       initialAppearProgress: 1.0,
     );
-    _boardStage.add(_sandJar!);
+    _addToBoardStage(_sandJar!);
 
     for (final m in savedModels) {
       final comp = PieceComponent(
@@ -1157,7 +1317,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         boardOrigin: _boardOrigin,
       );
       _pieces.add(comp);
-      _boardStage.add(comp);
+      _addToBoardStage(comp);
 
       if (!m.isDud && !m.isFrozen && m.number != null) {
         final n = m.number!;
@@ -1178,31 +1338,144 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       _stageZoom = _introStartZoom;
       _boardStage.scale = Vector2.all(_stageZoom);
     }
-    _maybeSpawnTutorialHand();
+    _syncSpotlightTutorialState();
 
     _refreshCanLevelUp();
   }
 
-  void _maybeSpawnTutorialHand() {
-    if (_level.isBonus || _level.number != 1 || _firstActionTriggered) return;
+  /// Selects the active merge pair for Level 1's Step-by-Step Spotlight Tutorial and orders
+  /// `(fromPiece, toPiece)` ergonomically for the sliding tutorial hand:
+  /// - Same column: lower-down piece (`higher row`) -> upper piece (`lower row`) (slides UP).
+  /// - Same row: right piece (`higher col`) -> left piece (`lower col`) (slides LEFT).
+  (PieceComponent from, PieceComponent to)? _findSpotlightPair() {
     final pair = _findLowestMergeablePair();
-    if (pair == null) return;
-    final hand = _TutorialHandComponent(
-      fromPos: pair.$1.worldCenter,
-      toPos: pair.$2.worldCenter,
-      cellSize: _cellSize,
-      isPausedProvider: () => isModalPaused,
-    );
-    _tutorialHand = hand;
-    _boardStage.add(hand);
+    if (pair == null) return null;
+    final a = pair.$1;
+    final b = pair.$2;
+    if (a.model.col == b.model.col) {
+      return a.model.row >= b.model.row ? (a, b) : (b, a);
+    }
+    if (a.model.row == b.model.row) {
+      return a.model.col >= b.model.col ? (a, b) : (b, a);
+    }
+    return a.model.row >= b.model.row ? (a, b) : (b, a);
+  }
+
+  void _syncPieceRestPriority(PieceComponent p) {
+    if (p.isFlyingOrSwallowed) return;
+    final bottomRow = (p.model.row + p.model.heightRows - 1).clamp(0, 30);
+    if (p.isDragging) {
+      p.priority = p.isElevatedForSpotlight ? 138 : 96;
+    } else if (p.isElevatedForSpotlight) {
+      p.priority = 120 + bottomRow * 2;
+    } else {
+      p.priority = 10 + bottomRow * 2;
+    }
+  }
+
+  /// Drives Level 1's Step-by-Step Spotlight Tutorial (`Tối màn hình + viền sáng + tay chỉ dẫn`):
+  /// - Highlights ONLY the lowest matching pair at each step (`2+2 -> 4+4 -> 8+8`), keeping all
+  ///   other blocks and the board dimmed beneath `_SpotlightDimVeilComponent` (`priority = 108`).
+  /// - Retargets `_TutorialHandComponent` automatically to each successive pair until `_hasWon`!
+  void _syncSpotlightTutorialState() {
+    final isSpotlightLevel = !_level.isBonus && _level.number == 1;
+    final pair =
+        (isSpotlightLevel && !_hasWon && !_hasLost) ? _findSpotlightPair() : null;
+    final active = pair != null;
+
+    if (isSpotlightTutorialActiveNotifier.value != active) {
+      isSpotlightTutorialActiveNotifier.value = active;
+    }
+
+    if (_fadingSpotlightVeil != null &&
+        (_fadingSpotlightVeil!.isRemoved || !_fadingSpotlightVeil!.isMounted)) {
+      _fadingSpotlightVeil = null;
+    }
+
+    if (active) {
+      if (_spotlightVeil == null ||
+          _spotlightVeil!.isRemoved ||
+          _spotlightVeil!.isFadingOut) {
+        final veil = _SpotlightDimVeilComponent();
+        _spotlightVeil = veil;
+        _addToBoardStage(veil);
+      }
+
+      final p1 = pair.$1;
+      final p2 = pair.$2;
+      for (final p in _pieces) {
+        final inPair = identical(p, p1) || identical(p, p2);
+        final inAbsorb = _absorbingAnims.any((a) => identical(a.survivor, p));
+        p.isSpotlightHighlighted = inPair;
+        p.isElevatedForSpotlight = inPair || inAbsorb;
+        _syncPieceRestPriority(p);
+      }
+      for (final anim in _absorbingAnims) {
+        anim.consumed.isSpotlightHighlighted = false;
+        anim.consumed.isElevatedForSpotlight = true;
+        if (anim.consumed.priority < 118) {
+          anim.consumed.priority = 118;
+        }
+      }
+
+      final handShouldHide =
+          _draggedPiece != null || _absorbingAnims.isNotEmpty;
+      final existingHand = _tutorialHand;
+      if (existingHand == null ||
+          existingHand.isRemoved ||
+          existingHand.isFadingOut) {
+        final hand = _TutorialHandComponent(
+          fromPos: p1.worldCenter,
+          toPos: p2.worldCenter,
+          cellSize: _cellSize,
+          isPausedProvider: () => isModalPaused,
+        );
+        hand.setTemporarilyHidden(handShouldHide);
+        _tutorialHand = hand;
+        _addToBoardStage(hand);
+      } else {
+        if (!handShouldHide) {
+          existingHand.retarget(p1.worldCenter, p2.worldCenter);
+        }
+        existingHand.setTemporarilyHidden(handShouldHide);
+      }
+    } else {
+      if (_spotlightVeil != null) {
+        _spotlightVeil!.fadeOutAndRemove();
+        _fadingSpotlightVeil = _spotlightVeil;
+        _spotlightVeil = null;
+      }
+      final keepWinTileAboveFadingVeil = _hasWon &&
+          _fadingSpotlightVeil != null &&
+          !_fadingSpotlightVeil!.isRemoved;
+      for (final p in _pieces) {
+        p.isSpotlightHighlighted = false;
+        p.isElevatedForSpotlight =
+            keepWinTileAboveFadingVeil && identical(p, _finalWinningPiece);
+        _syncPieceRestPriority(p);
+      }
+      for (final anim in _absorbingAnims) {
+        anim.consumed.isSpotlightHighlighted = false;
+        anim.consumed.isElevatedForSpotlight = keepWinTileAboveFadingVeil;
+        if (keepWinTileAboveFadingVeil && anim.consumed.priority < 118) {
+          anim.consumed.priority = 118;
+        }
+      }
+      if (_tutorialHand != null) {
+        _tutorialHand!.fadeOutAndRemove();
+        _tutorialHand = null;
+      }
+    }
   }
 
   void _notifyFirstAction() {
     _startTimerIfNeeded();
     if (_firstActionTriggered) return;
     _firstActionTriggered = true;
-    _tutorialHand?.fadeOutAndRemove();
-    _tutorialHand = null;
+    if (!isSpotlightTutorialActiveNotifier.value) {
+      _tutorialHand?.fadeOutAndRemove();
+      _tutorialHand = null;
+    }
     onFirstAction?.call();
   }
 
@@ -1288,7 +1561,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     audio.hapticBlocked();
     if (piece.model.isFrozen) {
       audio.playIceBreakSmall();
-      _boardStage.add(
+      _addToBoardStage(
         IceChipVfx(
           centerPos: piece.worldCenter,
           cellSize: _cellSize,
@@ -1312,7 +1585,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     final hit = _hitTestPiece(stagePos);
     if (hit == null) return;
 
-    if (!hit.model.canBeDragged) {
+    if (!hit.model.canBeDragged ||
+        (isSpotlightTutorialActiveNotifier.value &&
+            !hit.isSpotlightHighlighted)) {
       _triggerBlockedPieceFeedback(hit);
       return;
     }
@@ -2414,7 +2689,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       splashCenter = sum / splashEdges.length.toDouble();
     }
 
-    _boardStage.add(
+    _addToBoardStage(
       MergeSplashVfx(
         centerPos: splashCenter,
         primaryColor: newStyle.topMid,
@@ -2426,7 +2701,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         mergedNumber: newNumber,
       ),
     );
-    _boardStage.add(
+    _addToBoardStage(
       MergeBlockSparksVfx(
         cellCentersProvider: () =>
             survivor.isMounted ? survivor.worldCellCenters : const <Vector2>[],
@@ -2449,6 +2724,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _unlockEligibleIceBlocks(newNumber);
     _refreshCanLevelUp();
     _checkWinCondition();
+    _syncSpotlightTutorialState();
   }
 
   /// Advances consecutive merge combo (`x1, x2, x3...`), resets the `3.5s` countdown window,
@@ -2479,7 +2755,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       minWorldY: minY,
     );
     _activeComboCallout = callout;
-    _boardStage.add(callout);
+    _addToBoardStage(callout);
 
     if (nextCombo >= 3 && _mergeImpactShakeElapsed < 0) {
       final capped = math.min(nextCombo, 7);
@@ -2547,7 +2823,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         p.beginIceUnlockSequence(
           onShatter: () {
             if (!p.isMounted) return;
-            _boardStage.add(
+            _addToBoardStage(
               IceShatterVfx(
                 centerPos: p.worldCenter,
                 cellSize: _cellSize,
@@ -2619,7 +2895,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     spent.priority = 130;
     kept.levelUpTargetGlow = 1.0;
 
-    _boardStage.add(
+    _addToBoardStage(
       LevelUpRevealArrowVfx(
         targetCenter: kept.worldCenter,
         cellSize: _cellSize,
@@ -2679,6 +2955,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       _finalWinningPiece = finalPiece;
       isWinSequenceActiveNotifier.value = true;
       _refreshCanLevelUp();
+      _syncSpotlightTutorialState();
 
       final winNumber = finalPiece?.model.number ?? _level.targetWinNumber;
       final winStyle = palette.styleFor(
@@ -2691,7 +2968,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
       // Step 1 (`merge thành công số cuối cùng. Tile cuối phát sáng, scale lớn nhẹ và tạo hiệu ứng nổ ánh sáng`):
       finalPiece?.triggerFinalWinHighlight();
-      _boardStage.add(
+      _addToBoardStage(
         FinalTileLightExplosionVfx(
           centerPos: finalPiece?.worldCenter ?? Vector2.zero(),
           style: winStyle,
@@ -2774,38 +3051,38 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
 
-    // 2. 4-Step Potion Pouch Water Jar Win Choreography (`media_1794007349252.png` & `media_1794051150239.png`):
-    // - Step 1 (`0.00s .. 0.34s`): Final block gleams with crystal-aqua halo & morphs its liquid into potion water.
-    // - Step 2 (`0.32s .. 1.76s`): Cream curtains sweep open (`0.26s .. 0.60s`) as ONE unbroken C-arch water stream
-    //   lifts from the smoothly draining glass block (`0.34s .. 1.02s`), arches into the mouth, and plunges to the floor (`0.62s`).
-    // - Step 3 (`0.62s .. 2.58s`): Crystal-aqua water rises inside the jar (`0.62s .. 1.84s`), holds calm & gleaming
-    //   (`1.84s .. 2.10s`), then blooms with crystal-aqua water sparkles & bubbles (`2.10s .. 2.58s`).
-    // - Step 4 (`2.30s .. 3.15s`): Radial crystal-aqua light wave transitions into the `WinOverlay` at `2.62s`.
+    // 2. 4-Step Potion Pouch Water Jar Win Choreography (`~0.52s` snappier `2.10s` timeline):
+    // - Step 1 (`0.00s .. 0.25s`): Final block gleams with crystal-aqua halo & morphs its liquid into potion water.
+    // - Step 2 (`0.24s .. 1.38s`): Cream curtains sweep open (`0.20s .. 0.46s`) as ONE unbroken C-arch water stream
+    //   lifts from the smoothly draining glass block (`0.25s .. 0.80s`), arches into the mouth, and plunges to the floor (`0.48s`).
+    // - Step 3 (`0.48s .. 2.04s`): Crystal-aqua water rises inside the jar (`0.48s .. 1.44s`), gleams briefly (`1.44s .. 1.64s`),
+    //   then blooms with crystal-aqua water sparkles & bubbles (`1.64s .. 2.04s`).
+    // - Step 4 (`1.78s .. 2.50s`): Radial crystal-aqua light wave transitions into the `WinOverlay` at `2.10s`.
     if (_winSequenceElapsed >= 0) {
       _winSequenceElapsed += clampedDt;
 
-      // Step 1b -> Step 2: Final winning block morphs to crystal-aqua (`0.04s .. 0.34s`)
-      // and smoothly drains its water downward (`0.34s .. 1.02s`) as the unbroken water stream lifts off!
+      // Step 1b -> Step 2: Final winning block morphs to crystal-aqua (`0.03s .. 0.25s`)
+      // and smoothly drains its water downward (`0.25s .. 0.80s`) as the unbroken water stream lifts off!
       if (_finalWinningPiece != null && _finalWinningPiece!.isMounted) {
-        if (_winSequenceElapsed < 1.15) {
+        if (_winSequenceElapsed < 0.92) {
           final glowKeep =
-              (1.0 - (_winSequenceElapsed / 1.15) * 0.25).clamp(0.75, 1.0);
+              (1.0 - (_winSequenceElapsed / 0.92) * 0.25).clamp(0.75, 1.0);
           if (_finalWinningPiece!.levelUpTargetGlow < glowKeep) {
             _finalWinningPiece!.levelUpTargetGlow = glowKeep;
           }
         }
         final fractureP =
-            ((_winSequenceElapsed - 0.04) / 0.30).clamp(0.0, 1.0);
+            ((_winSequenceElapsed - 0.03) / 0.22).clamp(0.0, 1.0);
         final crumbleP =
-            ((_winSequenceElapsed - 0.34) / 0.68).clamp(0.0, 1.0);
+            ((_winSequenceElapsed - 0.25) / 0.55).clamp(0.0, 1.0);
         _finalWinningPiece!.setWinCrumbleState(
           fractureProgress: fractureP,
           crumbleProgress: crumbleP,
         );
       }
 
-      // Step 2: Spawn unbroken C-arch crystal-aqua water stream into the Potion Jar (`0.32s`)
-      if (!_winSandStreamSpawned && _winSequenceElapsed >= 0.32) {
+      // Step 2: Spawn unbroken C-arch crystal-aqua water stream into the Potion Jar (`0.24s`)
+      if (!_winSandStreamSpawned && _winSequenceElapsed >= 0.24) {
         _winSandStreamSpawned = true;
         final winPiece = _finalWinningPiece;
         final winNumber = winPiece?.model.number ?? _level.targetWinNumber;
@@ -2833,29 +3110,29 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
           jar: _sandJar,
         );
         _activeWinWaterStream = waterStream;
-        _boardStage.add(waterStream);
+        _addToBoardStage(waterStream);
         audio.playWaterStreamFlow();
         audio.hapticMergeImpact();
       }
 
       if (_activeWinWaterStream != null &&
-          (_activeWinWaterStream!.isRemoved || _winSequenceElapsed >= 1.78)) {
+          (_activeWinWaterStream!.isRemoved || _winSequenceElapsed >= 1.40)) {
         _activeWinWaterStream = null;
       }
 
-      // Step 1 -> Step 3: Curtain parting (`0.26s..0.60s`), lockstep rising water (`0.62s..1.84s` right as stream touches floor!),
-      // crystal-aqua glow, and completion bloom (`2.10s..2.58s`).
+      // Step 1 -> Step 3: Curtain parting (`0.20s..0.46s`), lockstep rising water (`0.48s..1.44s` right as stream touches floor!),
+      // crystal-aqua glow, and completion bloom (`1.64s..2.04s`).
       final curtainOpenP =
-          ((_winSequenceElapsed - 0.26) / 0.34).clamp(0.0, 1.0);
-      final fillP = ((_winSequenceElapsed - 0.62) / 1.22).clamp(0.0, 1.0);
-      final glowP = ((_winSequenceElapsed - 0.46) / 1.15).clamp(0.0, 1.0);
+          ((_winSequenceElapsed - 0.20) / 0.26).clamp(0.0, 1.0);
+      final fillP = ((_winSequenceElapsed - 0.48) / 0.96).clamp(0.0, 1.0);
+      final glowP = ((_winSequenceElapsed - 0.36) / 0.92).clamp(0.0, 1.0);
       final shakeP =
-          (_winSequenceElapsed >= 0.50 && _winSequenceElapsed < 2.08)
+          (_winSequenceElapsed >= 0.40 && _winSequenceElapsed < 1.64)
               ? math
-                  .sin(((_winSequenceElapsed - 0.50) / 1.58) * math.pi)
+                  .sin(((_winSequenceElapsed - 0.40) / 1.24) * math.pi)
                   .clamp(0.0, 1.0)
               : 0.0;
-      final openP = ((_winSequenceElapsed - 2.10) / 0.48).clamp(0.0, 1.0);
+      final openP = ((_winSequenceElapsed - 1.64) / 0.40).clamp(0.0, 1.0);
       final streamActive = _activeWinWaterStream != null;
       _sandJar?.setWinSequenceState(
         appearProgress: 1.0,
@@ -2868,7 +3145,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         externalStreamSideSign: _activeWinWaterStream?.archSideSign ?? 1.0,
       );
 
-      if (!_winJarOpened && _winSequenceElapsed >= 2.10) {
+      if (!_winJarOpened && _winSequenceElapsed >= 1.64) {
         _winJarOpened = true;
         final winStyle = _sandJar?.style ??
             palette.styleFor(
@@ -2881,11 +3158,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
           style: winStyle,
           cellSize: _cellSize,
         );
-        _boardStage.add(_jarOpenWaveVfx!);
+        _addToBoardStage(_jarOpenWaveVfx!);
         audio.hapticMergeImpact();
       }
 
-      // Step 4: Fullscreen light wave bloom & Next Level pop-up trigger at `t = 2.62s`
+      // Step 4: Fullscreen light wave bloom & Next Level pop-up trigger at `t = 2.10s` (~0.52s faster!)
       final waveVfx = _jarOpenWaveVfx;
       if (waveVfx != null && waveVfx.isMounted) {
         final flashVal = waveVfx.currentFullscreenFlashIntensity;
@@ -2897,7 +3174,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         winScreenFlashNotifier.value = 0.0;
       }
 
-      if (!_winCallbackFired && _winSequenceElapsed >= 2.62) {
+      if (!_winCallbackFired && _winSequenceElapsed >= 2.10) {
         _winCallbackFired = true;
         onLevelWon();
       }
@@ -2968,6 +3245,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
           );
         }
       }
+    }
+
+    if ((!_level.isBonus && _level.number == 1) ||
+        isSpotlightTutorialActiveNotifier.value ||
+        _spotlightVeil != null ||
+        _fadingSpotlightVeil != null) {
+      _syncSpotlightTutorialState();
     }
 
     // 5. Tick all 5-stage `_MergeColorTransitionController` radial shader wipes
@@ -3053,7 +3337,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
         if (flight.sparkTimer >= 0.04) {
           flight.sparkTimer = 0.0;
-          _boardStage.add(
+          _addToBoardStage(
             LevelUpSparksVfx(
               pos: flight.spent.worldCenter,
               color: flight.sparkColor,
@@ -3080,7 +3364,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         } else {
           final frac =
               (_comboRemainingSeconds / comboWindowSeconds).clamp(0.0, 1.0);
-          if ((frac - comboCountdownFractionNotifier.value).abs() >= 0.08) {
+          if ((frac - comboCountdownFractionNotifier.value).abs() >= 0.002) {
             comboCountdownFractionNotifier.value = frac;
           }
         }
@@ -3163,7 +3447,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       mergedNumber: newNumber,
     );
 
-    _boardStage.add(
+    _addToBoardStage(
       MergeSplashVfx(
         centerPos: kept.worldCenter,
         primaryColor: newStyle.topMid,
@@ -3173,7 +3457,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         mergedNumber: newNumber,
       ),
     );
-    _boardStage.add(
+    _addToBoardStage(
       MergeBlockSparksVfx(
         cellCentersProvider: () =>
             kept.isMounted ? kept.worldCellCenters : const <Vector2>[],
@@ -3192,5 +3476,106 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _unlockEligibleIceBlocks(newNumber);
     _refreshCanLevelUp();
     _checkWinCondition();
+    _syncSpotlightTutorialState();
+  }
+
+  // ── Cheat / QA Helpers (Gated by `RemoteConfigService.cheatEnable`) ────────
+
+  /// Triggers the authentic 4-step Magic Sand Jar win sequence immediately by leaving a single
+  /// final winning tile on the board and invoking `_checkWinCondition()`.
+  void cheatWinWithSandSequence() {
+    if (_hasWon) return;
+    if (paused) resumeEngine();
+    _hasLost = false;
+    _cancelDrag(silent: true);
+    _absorbingAnims.clear();
+    _levelUpFlight = null;
+    isTimeFreezeIntroInFlight = false;
+
+    PieceComponent? survivor;
+    for (final p in _pieces) {
+      if (!p.isFlyingOrSwallowed && !p.model.isDud) {
+        if (survivor == null ||
+            (p.model.number ?? 0) > (survivor.model.number ?? 0)) {
+          survivor = p;
+        }
+      }
+    }
+
+    for (int i = _pieces.length - 1; i >= 0; i--) {
+      final p = _pieces[i];
+      if (p != survivor && !p.model.isDud) {
+        p.removeFromParent();
+        _pieces.removeAt(i);
+      }
+    }
+
+    if (survivor != null) {
+      survivor.model.iceTarget = null;
+      survivor.model.number = _level.targetWinNumber;
+      survivor.syncAppearanceImmediate();
+    }
+    _syncOccupancyGrid();
+    _checkWinCondition();
+  }
+
+  /// Sets the countdown timer directly (e.g. `5s` to test urgent pulse or `+60s`).
+  void cheatSetRemainingSeconds(int seconds) {
+    if (_hasWon) return;
+    if (paused) resumeEngine();
+    _hasLost = false;
+    _countdownFrac = 0.0;
+    remainingSecondsNotifier.value = seconds.clamp(1, 3600);
+    if (!_level.timerDisabled) {
+      isTimerStartedNotifier.value = true;
+    }
+  }
+
+  /// Unlocks all frozen ice blocks, stationary cages, and directional arrow constraints on the board.
+  int cheatUnlockAllBoardObstacles() {
+    if (paused) resumeEngine();
+    int unlockedCount = 0;
+    for (final p in _pieces) {
+      if (p.isFlyingOrSwallowed) continue;
+      bool changed = false;
+      if (p.model.iceTarget != null) {
+        p.model.iceTarget = null;
+        changed = true;
+      }
+      if (p.model.movement != MovementConstraint.free) {
+        p.model.movement = MovementConstraint.free;
+        changed = true;
+      }
+      if (changed) {
+        unlockedCount++;
+        p.syncAppearanceImmediate();
+      }
+    }
+    if (unlockedCount > 0) {
+      audio.playIceBreak();
+      _refreshCanLevelUp();
+    }
+    return unlockedCount;
+  }
+
+  /// Advances the merge combo by +1 (`Combo x1 -> x2 -> x3...`) and resets its `3.5s` window.
+  void cheatTriggerComboStep() {
+    if (paused) resumeEngine();
+    PieceComponent? target;
+    for (final p in _pieces) {
+      if (!p.isFlyingOrSwallowed && !p.model.isDud) {
+        target = p;
+        break;
+      }
+    }
+    if (target != null) {
+      _advanceMergeComboAndSpawnPraise(target);
+    } else {
+      final nextCombo = comboCountNotifier.value + 1;
+      _comboRemainingSeconds = comboWindowSeconds;
+      comboCountNotifier.value = nextCombo;
+      comboCountdownFractionNotifier.value = 1.0;
+      highestCombo = math.max(highestCombo, nextCombo);
+    }
   }
 }

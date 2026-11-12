@@ -19,6 +19,7 @@ class BoardComponent extends PositionComponent {
   Rect _bakedSrcRect = Rect.zero;
   Rect _bakedDstRect = Rect.zero;
   double _bakePadding = 0.0;
+  bool isSuperseded = false;
   final Paint _imagePaint = Paint()..filterQuality = FilterQuality.low;
 
   BoardComponent({
@@ -33,9 +34,21 @@ class BoardComponent extends PositionComponent {
     _bakeBoardToGpuImageSync();
   }
 
+  void markSupersededAndDispose() {
+    isSuperseded = true;
+    _bakedImage?.dispose();
+    _bakedImage = null;
+  }
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    if (isSuperseded) {
+      _bakedImage?.dispose();
+      _bakedImage = null;
+      removeFromParent();
+      return;
+    }
     if (_bakedImage == null) {
       _bakeBoardToGpuImageSync();
     }
@@ -260,6 +273,7 @@ class BoardComponent extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
+    if (isSuperseded) return;
     final img = _bakedImage;
     if (img != null) {
       canvas.drawImageRect(img, _bakedSrcRect, _bakedDstRect, _imagePaint);

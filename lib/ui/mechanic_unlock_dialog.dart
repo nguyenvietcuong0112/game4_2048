@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../game/vfx_components.dart';
 import 'unity_ui_kit.dart';
 
 class MechanicUnlockInfo {
@@ -70,15 +69,6 @@ class MechanicUnlockInfo {
     isLevelUpPowerUp: false,
   );
 }
-
-const List<(double, double, double, double)> _kFtueSparkles = [
-  (-2.45, 240, 24, 0.0),
-  (-1.75, 214, 18, 0.35),
-  (-1.05, 248, 30, 0.15),
-  (-0.35, 242, 22, 0.65),
-  (0.42, 252, 28, 0.85),
-  (2.55, 248, 26, 0.45),
-];
 
 /// Circular Booster HUD Button (`Play_Scene.png` & `Play_Scene 2.png`):
 /// - Unlocked: `Powerup_Base.png` (`208x208`) + `PowerUp_LevelUp.png` / `PowerUp_TimeFreeze.png`
@@ -274,14 +264,17 @@ class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
   }
 }
 
-/// Exact 1:1 replica of Unity `MechanicFTUE.prefab` (`Ice Blocks` L6, `Dud Blocks` L13,
-/// `Arrow Blocks` L21, `Stationary Blocks` L41):
-/// - Fullscreen `#0F204A` (`98%` alpha = `0xFA0F204A`) dark backdrop
-/// - `SubTitleContainer` is **INACTIVE / HIDDEN** (`active = False` in `MechanicFTUE.prefab`!)
-/// - `TitleContainer` at top (`fontSize = 125.5`, `Baloo2_ExtraBold_CTA_Yellow_Text`)
-/// - `VFX_Group`: pink `Glow_02.png` (`768.7 x 768.7`) + twinkling `Sparkle_01.png` + `361 x 303` `Icon_Mechanic_*.png`
-/// - `InstructionsPanel`: `Box_Text.png` (`897 x 227`) with `#06269A` `Baloo2` (`fontSize = 52`)
-/// - `Button_CTA`: `"Continue"` (`583.4 x 185.0`, `fontSize = 90`)
+/// Redesigned `New mechanic` Unlock Overlay matching `assets/UI Bo Sung/New mechanic/New_feature.png` (`1080x2160`):
+/// - Dark backdrop (`0xE00A051C`)
+/// - Top Header Image: `assets/images/text_newfeature.png` (`756x219`, `"NEW FEATURE\nUnlocked!"`)
+/// - Center Hero Illustration (`_FtueHeroIllustration`):
+///   - `assets/images/effect_outerglow.png` (`1080x1335` purple radial glow)
+///   - `assets/images/effect_star.png` (`703x527` golden 4-point sparkle stars)
+///   - Center `Icon_Mechanic_*.png` (`362x312`)
+/// - Below the Icon:
+///   - Golden-yellow `info.title` (`#FFD11A`, `fontSize = 68`)
+///   - Crisp white `info.note` (`#FFFFFF`, `fontSize = 48`)
+/// - Bottom CTA Button: `btn_green.png` / `UnityCtaButton` (`500 x 221`, `"Continue"`, `fontSize = 68`)
 class MechanicUnlockDialog extends StatefulWidget {
   final MechanicUnlockInfo info;
   final VoidCallback onDismiss;
@@ -320,7 +313,7 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
     final info = widget.info;
 
     return Container(
-      color: const Color(0xFA0F204A),
+      color: const Color(0xE00A051C),
       child: SafeArea(
         child: TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.82, end: 1.0),
@@ -337,59 +330,88 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
             children: [
               const Spacer(flex: 3),
 
-              // 1. `TitleContainer` (`SubTitleContainer` is inactive/hidden in `MechanicFTUE.prefab`!)
+              // 1. Top `"NEW FEATURE / Unlocked!"` Header (`text_newfeature.png`, `756x219`)
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: ux(context, 48)),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: UnitySdfText(
-                    info.title,
-                    unityFontSize: 122,
-                    material: UnityTextMaterial.ctaYellow,
-                  ),
+                padding: EdgeInsets.symmetric(horizontal: ux(context, 64)),
+                child: Image.asset(
+                  'assets/images/text_newfeature.png',
+                  width: ux(context, 756),
+                  height: ux(context, 219),
+                  fit: BoxFit.contain,
                 ),
               ),
 
               const Spacer(flex: 2),
 
-              // 2. `VFX_Group` (`Glow_02.png` `768.7 x 768.7` + `Sparkle_01.png`) + `Mechanic_Icon` (`361 x 303`)
+              // 2. Hero Illustration (`effect_outerglow.png` + `effect_star.png` + `Icon_Mechanic_*.png`)
               _FtueHeroIllustration(
                 controller: _ctrl,
                 iconAsset: info.iconAsset,
                 iconUnityWidth: 362,
-                iconUnityHeight: 312,
+                iconUnityHeight: 332,
               ),
 
-              const Spacer(flex: 2),
+              const Spacer(flex: 1),
 
-              // 3. `InstructionsPanel` (`Box_Text.png`, `897 x 227`, `fontSize = 52`, `#06269A`)
-              UnityNineSlice(
-                sprite: 'Box_Text.png',
-                width: ux(context, 896),
-                padding: EdgeInsets.symmetric(
-                  horizontal: ux(context, 56),
-                  vertical: ux(context, 44),
+              // 3. Golden Mechanic Title (`info.title`, e.g. `"Ice Blocks"` / `"Block Ice"`)
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: ux(context, 64)),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    info.title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Baloo2',
+                      fontSize: ux(context, 72),
+                      fontWeight: FontWeight.w800,
+                      fontVariations: const [FontVariation('wght', 800)],
+                      color: const Color(0xFFFFD11A),
+                      height: 1.08,
+                      shadows: const [
+                        Shadow(
+                          color: Color(0xCC180636),
+                          offset: Offset(0, 3.0),
+                          blurRadius: 6.0,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
+              ),
+
+              SizedBox(height: ux(context, 16)),
+
+              // 4. Crisp White Description Text (`info.note`)
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: ux(context, 96)),
                 child: Text(
                   info.note,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: 'Baloo2',
-                    fontSize: ux(context, 52),
+                    fontSize: ux(context, 48),
                     fontWeight: FontWeight.w700,
                     fontVariations: const [FontVariation('wght', 700)],
-                    color: const Color(0xFF06269A),
+                    color: Colors.white,
                     height: 1.22,
+                    shadows: const [
+                      Shadow(
+                        color: Color(0xCC0D0422),
+                        offset: Offset(0, 2.5),
+                        blurRadius: 5.0,
+                      ),
+                    ],
                   ),
                 ),
               ),
 
-              const Spacer(flex: 3),
+              const Spacer(flex: 2),
 
-              // 4. `Button_CTA` (`499 x 221`, `"Continue"`, `fontSize = 68`)
+              // 5. Green `"Continue"` CTA Button (`500 x 221`, `fontSize = 68`)
               UnityCtaButton(
                 label: 'Continue',
-                unityWidth: 499,
+                unityWidth: 500,
                 unityHeight: 221,
                 unityFontSize: 68,
                 onTap: widget.onDismiss,
@@ -653,54 +675,50 @@ class _FtueHeroIllustration extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        final pulse = 1.0 + 0.04 * math.sin(controller.value * math.pi * 2);
+        final phase = controller.value * math.pi * 2;
+        final pulse = 1.0 + 0.04 * math.sin(phase);
+        final starTwinkle = (0.72 + 0.28 * math.sin(phase * 2.0)).clamp(0.0, 1.0);
         return SizedBox(
-          width: ux(context, 720),
-          height: ux(context, 560),
+          width: ux(context, 820),
+          height: ux(context, 580),
           child: Stack(
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
-              Transform.scale(
-                scale: pulse,
-                child: Image.asset(
-                  'assets/images/Glow_02.png',
-                  width: ux(context, 740),
-                  height: ux(context, 740),
-                  color: const Color(0x94FF82B2),
-                  colorBlendMode: BlendMode.modulate,
+              // 1. Soft Purple Outer Glow (`effect_outerglow.png`, `1080x1335`)
+              Positioned(
+                left: -ux(context, 130),
+                right: -ux(context, 130),
+                top: -ux(context, 240),
+                bottom: -ux(context, 240),
+                child: IgnorePointer(
+                  child: Transform.scale(
+                    scale: pulse,
+                    child: Image.asset(
+                      'assets/images/effect_outerglow.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
               ),
-              for (final (ang, dist, sz, phase) in _kFtueSparkles)
-                Builder(
-                  builder: (_) {
-                    final tw = 0.35 +
-                        0.65 *
-                            (0.5 +
-                                0.5 *
-                                    math.sin(
-                                      (controller.value + phase) * math.pi * 2,
-                                    ));
-                    final r = ux(context, dist);
-                    final s = ux(context, sz * 1.55);
-                    return Transform.translate(
-                      offset: Offset(math.cos(ang) * r, math.sin(ang) * r),
-                      child: Opacity(
-                        opacity: tw.clamp(0.0, 1.0),
-                        child: ColorFiltered(
-                          colorFilter: UnityChannelMaskFilters.rgDualChannelStar(
-                            const Color(0xFFFF9EC6),
-                          ),
-                          child: Image.asset(
-                            'assets/images/Sparkle_01.png',
-                            width: s,
-                            height: s,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+
+              // 2. Golden 4-Point Sparkle Stars (`effect_star.png`, `703x527`)
+              IgnorePointer(
+                child: Opacity(
+                  opacity: starTwinkle,
+                  child: Transform.scale(
+                    scale: 0.97 + 0.05 * math.sin(phase),
+                    child: Image.asset(
+                      'assets/images/effect_star.png',
+                      width: ux(context, 703),
+                      height: ux(context, 527),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
+              ),
+
+              // 3. Center Mechanic / Booster Icon
               Transform.scale(
                 scale: 0.98 + 0.03 * pulse,
                 child: Image.asset(

@@ -3,38 +3,30 @@ import 'package:flutter/material.dart';
 import '../services/player_progress_service.dart';
 import 'unity_ui_kit.dart';
 
-/// 100% Pixel-Exact Two-Stage Replica of Unity `PlayOnPopupView.prefab` -> `LoseGameplayView.prefab`:
+/// Two-Stage `Out of time!` (`assets/UI Bo Sung/Out of time/Out of time.png`) -> `LoseGameplayView.prefab`:
 ///
 /// - **Backdrop (`DarkOverlay`)**: `rgba(0.020, 0.000, 0.051, 0.949)` (`Color.fromRGBO(5, 0, 13, 0.949)`).
-///   Acts as Unity's `_backgroundHoldButton` (`HoldButton`): pressing & holding anywhere outside
-///   `PopupContainer` (including on `"Tap to see the board"`) fades the entire `PlayOnPopupView`
-///   canvas to `alpha = 0.0` (`PlayOn_PeekBoard`), and releasing restores `alpha = 1.0` (`PlayOn_UnpeekBoard`).
+///   Acts as `_backgroundHoldButton` (`HoldButton`): pressing & holding anywhere outside
+///   the popup card (including on `"Hold to see board"`) fades the entire `Out of time!`
+///   canvas to `alpha = 0.0`, and releasing restores `alpha = 1.0`.
 ///
-/// - **Stage 1 (`PlayOnPopupView`, `PlayOn_Open` `0.000s..1.500s`)**:
-///   1. `0.000s..1.333s`: Full-width `Banner_Root` (`sz = (+18.95, 372.70)` at screen center) with
-///      9-slice `Banner.png` + `"OUT OF TIME"` (`sz = 134.1`, `Baloo2_ExtraBold_OutOfTime`),
-///      animated via `UISideSwipeMask_Material` (`rotation = 30°`, `softness = 0.2`) wiping in
-///      `0.00s..0.25s`, holding `0.25s..1.083s`, and wiping out `1.083s..1.333s`.
-///   2. `1.333s..1.500s`: `PopupContainer` (`1106.25 x 1337.91`, `sc = 0.816`, `dy = -34.49` above
-///      `SafeArea` center) and bottom `TapToPeek` (`Icon_Eye.png` + `"Tap to see the board"`) fade in:
-///      - `Header`: `"Continue?"` (`localFontSize = 116.5`) + `CloseButton` (`173.90 x 170.18`).
-///      - `Panel`: `Panel_PlayOn.png` circular badge (`m_Type = Simple`, `PreserveAspect = 1`,
-///        `429.06 x 421.68` local) with `+{extraSeconds}<size=128>s</size>` (`193.3` / `128.0`),
-///        plus `"Add {extraSeconds} seconds to keep playing!"` (`localFontSize = 76.6`, `#07279A`).
-///      - `Footer`: Horizontal pair (`spacing = 30.0`) of `CoinsButton` (`500.00 x 226.79`, top
-///        `"Play On"` `79.4` + bottom `Inset_Button_CTA` `305.55 x 79.18` with `Icon_Coin` `65x65`
-///        & price `82.26`, swapping to `Button_CTA_Disabled` + `Inset_Button_CTA_Red` + `ctaGray`
-///        when `!canAfford`) and `AdsButton` (`500.00 x 226.79`, `Button_Blue`, left `Icon_Ad`
-///        `121.76 x 121.76` at `x = 73.5` + right `"Play On"` `75.91`).
+/// - **Stage 1 (`Out of time!`, `0.000s..1.500s`)**:
+///   1. `0.000s..1.333s`: Full-width `Banner_Root` (`Banner.png` + `"OUT OF TIME"`)
+///      wiping in `0.00s..0.25s`, holding `0.25s..1.083s`, and wiping out `1.083s..1.333s`.
+///   2. `1.333s..1.500s`: Redesigned `Out of time!` popup (`884x1044` in `ux` coordinates)
+///      and bottom `"Hold to see board"` prompt fade in:
+///      - `popup_bg.png` (`884x1021` at `top = 23`)
+///      - `Frame_Popup_Title.png` (`558x143` at `top = 0`) with `"Out of time!"`
+///      - `Button_Close.png` (`139x139` at `right = 14, top = 4`)
+///      - `frame_content.png` (`784x495` at `left = 50, top = 167`):
+///        - `Icon_Clock.png` (`232x278` at `top = 43`) with overlapping `"+30s"` at bottom-right
+///        - `"Add 30 seconds\nto keep playing"` (`#5A270B`, `fontSize = 54`)
+///      - Bottom row at `top = 725`:
+///        - Left `_PlayOnCoinsButton` (`Button_Green.png` `393x221`, `Icon_Coin.png` + `${playOnCost}`)
+///        - Right `_PlayOnAdsButton` (`Button_Yellow.png` `386x221`, `"Continue"` + top-left `Icon_Ads.png` `122x127`)
 ///
 /// - **Stage 2 (`LoseGameplayView` when tapping `CloseButton`)**:
-///   - Centered `PopupContainer` (`1106.25 x 1337.91`, `sc = 0.816`), `CloseButton` hidden (`active = False`):
-///     - `Header`: `"${levelLabel} failed"` (`localFontSize = 137.37`).
-///     - `Panel`: `Icon_BrokenLife.png` (`510.72 x 403.71` at `(0, +90.66)`), overlapping `"-1"`
-///       (`pos = (+103.80, -31.90)`, `localFontSize = 212.2`, `Baloo2_ExtraBold_Navigation_Bar_Label_Brown`),
-///       and 5 `Icon_Life.png` hearts (`878.45 x 124.50` at `(0, -253.00)`, `spacing = -20.4`,
-///       remaining lives `alpha = 1.0`, lost lives `alpha = 0.7` per `LoseGameplayView.DisabledLifeAlpha`).
-///     - `Footer`: Single centered `Button_CTA.png` (`585.20 x 217.44`, `"Try Again"`, `localFontSize = 116.6`).
+///   - Centered `PopupContainer` (`"${levelLabel} failed"`, `Icon_BrokenLife.png`, `"-1"`, 5 hearts, `"Try Again"`).
 class LoseOverlay extends StatefulWidget {
   final String levelLabel;
   final int playerCoins;
@@ -91,7 +83,7 @@ class _LoseOverlayState extends State<LoseOverlay>
 
   void _setPeeking(bool peeking) {
     if (_inFailedStage) return;
-    // Only allow board peek once `PopupContainer` & `TapToPeek` have appeared (`t >= 1.333s`)
+    // Only allow board peek once popup & `"Hold to see board"` have appeared (`t >= 1.333s`)
     if (peeking && _openCtrl.value < (1.333 / 1.500)) return;
     if (_peekingBoard == peeking) return;
     setState(() => _peekingBoard = peeking);
@@ -118,7 +110,8 @@ class _LoseOverlayState extends State<LoseOverlay>
     return _buildStage1PlayOn(context);
   }
 
-  /// Stage 1: Exact `PlayOnPopupView.prefab` + `PlayOn_Open.anim` + `PlayOn_PeekBoard.anim`.
+  /// Stage 1: Redesigned `Out of time!` popup (`assets/UI Bo Sung/Out of time/Out of time.png`)
+  /// + `PlayOn_Open.anim` + `PlayOn_PeekBoard.anim`.
   Widget _buildStage1PlayOn(BuildContext context) {
     final canAfford = widget.playerCoins >= widget.playOnCost;
 
@@ -153,7 +146,7 @@ class _LoseOverlayState extends State<LoseOverlay>
               // 2. `Banner_Root` (`0.000s..1.333s` full-width `"OUT OF TIME"` diagonal side-swipe)
               if (showBanner) _buildOutOfTimeBanner(context, tSec),
 
-              // 3. `SafeArea / PopupContainer` + `TapToPeek` (`1.333s..1.500s` fade-in)
+              // 3. `Out of time!` Popup Card + `"Hold to see board"` (`1.333s..1.500s` fade-in)
               if (showPopup)
                 Opacity(
                   opacity: popupAlpha,
@@ -168,90 +161,222 @@ class _LoseOverlayState extends State<LoseOverlay>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // `SafeArea -> PopupContainer` (`pos = (540, -925.51)` => `-34.49` above center)
+            // Redesigned `Out of time!` Popup Card (`884 x 1044` Unity px)
             SafeArea(
               child: Center(
                 child: Transform.translate(
-                  offset: Offset(0.0, -ux(context, 34.49)),
-                  child: UnityPopupCard(
-                    title: 'Continue?',
-                    localTitleFontSize: 116.5,
-                    animateEntrance: false,
-                    onClose: _goToFailedStage,
-                    panelChild: _buildPlayOnPanel(context),
-                    footerChild: OverflowBox(
-                      maxWidth: ppx(context, 1040.0),
-                      maxHeight: ppx(context, 290.0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _PlayOnCoinsButton(
-                            cost: widget.playOnCost,
-                            enabled: canAfford,
-                            onTap: canAfford ? widget.onPlayOnCoins : null,
-                          ),
-                          SizedBox(width: ppx(context, 30.0)),
-                          _PlayOnAdsButton(
-                            onTap: widget.onPlayOnAd,
-                          ),
-                        ],
-                      ),
+                  offset: Offset(0.0, -ux(context, 24.0)),
+                  child: _buildOutOfTimePopupCard(context, canAfford: canAfford),
+                ),
+              ),
+            ),
+
+            // Bottom `"Hold to see board"` prompt (`Out of time.png`)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: math.max(
+                MediaQuery.paddingOf(context).bottom + ux(context, 48.0),
+                ux(context, 160.0),
+              ),
+              height: ux(context, 84.0),
+              child: IgnorePointer(
+                child: Center(
+                  child: Text(
+                    'Hold to see board',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Baloo2',
+                      fontSize: ux(context, 54.0),
+                      fontWeight: FontWeight.w800,
+                      fontVariations: const [FontVariation('wght', 800)],
+                      color: Colors.white,
+                      height: 1.05,
+                      shadows: const [
+                        Shadow(
+                          color: Color(0xCC000000),
+                          offset: Offset(0, 2.5),
+                          blurRadius: 5.0,
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
 
-            // `Canvas / TapToPeek` (`amin=(0.5,0) pos=(0,212) sz=(1094.05, 237.49) sc=0.816`, `blocksRaycasts=False`)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: math.max(
-                MediaQuery.paddingOf(context).bottom + ux(context, 8.0),
-                ux(context, 212.0) - ppx(context, 237.49 * 0.5),
+  /// Redesigned `Out of time!` Popup Card (`Out of time.png`, `884x1044` Unity px):
+  /// - `popup_bg.png` (`884x1021` at `top = 23`)
+  /// - `Frame_Popup_Title.png` (`558x143` centered at `top = 0`) with `"Out of time!"`
+  /// - `Button_Close.png` (`139x139` at `right = 14, top = 4`)
+  /// - `frame_content.png` (`784x495` at `left = 50, top = 167`):
+  ///   - `Icon_Clock.png` (`232x278` at `top = 43`) + overlapping `"+30s"` at bottom-right
+  ///   - `"Add 30 seconds\nto keep playing"` (`#5A270B`, `fontSize = 54`)
+  /// - Bottom Buttons Row (`top = 725`):
+  ///   - Left `_PlayOnCoinsButton` (`Button_Green.png` `393x221`)
+  ///   - Right `_PlayOnAdsButton` (`Button_Yellow.png` `386x221` + `Icon_Ads.png` `122x127`)
+  Widget _buildOutOfTimePopupCard(
+    BuildContext context, {
+    required bool canAfford,
+  }) {
+    return SizedBox(
+      key: const ValueKey('out_of_time_popup_card'),
+      width: ux(context, 884),
+      height: ux(context, 1044),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 1. Main Gold-Rimmed Blue Popup Body (`popup_bg.png`, `884x1021` at `top = 23`)
+          // Absorbs pointer hits inside the card so taps never leak to `DarkOverlay` hold-to-peek!
+          Positioned(
+            left: 0,
+            right: 0,
+            top: ux(context, 23),
+            height: ux(context, 1021),
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              child: Image.asset(
+                'assets/images/popup_bg.png',
+                width: ux(context, 884),
+                height: ux(context, 1021),
+                fit: BoxFit.fill,
               ),
-              height: ppx(context, 237.49),
-              child: IgnorePointer(
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    // `EyeIcon`: `amin=(0.5,0) piv=(0.5,0) pos=(0, 132.70) sz=(111.31, 80.00)`
-                    Positioned(
-                      bottom: ppx(context, 132.70),
-                      width: ppx(context, 111.31),
-                      height: ppx(context, 80.00),
-                      child: Image.asset(
-                        'assets/images/Icon_Eye.png',
-                        fit: BoxFit.contain,
-                      ),
-                    ),
+            ),
+          ),
 
-                    // `TapToPeekText`: `amin=(0.5,0) piv=(0.5,0) pos=(0, 40.00) sz=(900.00, 80.00)`
-                    Positioned(
-                      bottom: ppx(context, 40.00),
-                      width: ppx(context, 900.00),
-                      height: ppx(context, 80.00),
-                      child: Center(
-                        child: Text(
-                          'Tap to see the board',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Baloo2',
-                            fontSize: ppx(context, 60.31),
-                            fontWeight: FontWeight.w800,
-                            fontVariations: const [FontVariation('wght', 800)],
-                            color: Colors.white,
-                            height: 1.05,
-                          ),
-                        ),
+          // 2. Cream Inner Content Well (`frame_content.png`, `784x495` at `left = 50, top = 167`)
+          Positioned(
+            left: ux(context, 50),
+            top: ux(context, 167),
+            width: ux(context, 784),
+            height: ux(context, 495),
+            child: IgnorePointer(
+              child: Stack(
+                alignment: Alignment.topCenter,
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/frame_content.png',
+                      fit: BoxFit.fill,
+                    ),
+                  ),
+
+                  // Stopwatch Icon (`Icon_Clock.png`, `232x278` at `top = 43`)
+                  Positioned(
+                    top: ux(context, 43),
+                    width: ux(context, 232),
+                    height: ux(context, 278),
+                    child: Image.asset(
+                      'assets/images/Icon_Clock.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+
+                  // Overlapping `"+30s"` at bottom-right of the stopwatch (`Out of time.png`)
+                  Positioned(
+                    left: ux(context, 372),
+                    top: ux(context, 224),
+                    child: UnitySdfText(
+                      '+${widget.extraSeconds}s',
+                      unityFontSize: 82,
+                      material: UnityTextMaterial.winCoinAmount,
+                    ),
+                  ),
+
+                  // Dark brown description (`"Add 30 seconds\nto keep playing"`, `#5A270B`)
+                  Positioned(
+                    left: ux(context, 40),
+                    right: ux(context, 40),
+                    bottom: ux(context, 26),
+                    child: Text(
+                      'Add ${widget.extraSeconds} seconds\nto keep playing',
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      style: TextStyle(
+                        fontFamily: 'Baloo2',
+                        fontSize: ux(context, 56),
+                        fontWeight: FontWeight.w800,
+                        fontVariations: const [FontVariation('wght', 800)],
+                        color: const Color(0xFF5A270B),
+                        height: 1.08,
                       ),
                     ),
-                  ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 3. Bottom Left Coin Button (`Button_Green.png`, `393x221` at `left = 51, top = 727`)
+          Positioned(
+            left: ux(context, 51),
+            top: ux(context, 727),
+            width: ux(context, 393),
+            height: ux(context, 221),
+            child: _PlayOnCoinsButton(
+              cost: widget.playOnCost,
+              enabled: canAfford,
+              onTap: canAfford ? widget.onPlayOnCoins : null,
+            ),
+          ),
+
+          // 4. Bottom Right Ad Continue Button (`Button_Yellow.png`, `386x221` at `right = 45, top = 725`)
+          Positioned(
+            right: ux(context, 45),
+            top: ux(context, 725),
+            width: ux(context, 386),
+            height: ux(context, 221),
+            child: _PlayOnAdsButton(
+              onTap: widget.onPlayOnAd,
+            ),
+          ),
+
+          // 5. Top Header Ribbon (`Frame_Popup_Title.png`, `558x143` centered at `top = 0`, `"Out of time!"`)
+          Positioned(
+            left: ux(context, (884 - 558) * 0.5),
+            top: 0,
+            width: ux(context, 558),
+            height: ux(context, 143),
+            child: IgnorePointer(
+              child: UnityNineSlice(
+                sprite: 'Frame_Popup_Title.png',
+                padding: EdgeInsets.fromLTRB(
+                  ux(context, 40),
+                  ux(context, 8),
+                  ux(context, 40),
+                  ux(context, 16),
+                ),
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: UnitySdfText(
+                    'Out of time!',
+                    unityFontSize: 64,
+                    material: UnityTextMaterial.popupTitle,
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+
+          // 6. Top-Right Red-Gold Close Button (`Button_Close.png`, `139x139` at `right = 14, top = 4`)
+          Positioned(
+            right: ux(context, 14),
+            top: ux(context, 4),
+            width: ux(context, 139),
+            height: ux(context, 139),
+            child: UnitySpriteButton(
+              asset: 'Button_Close.png',
+              unitySize: 139,
+              onTap: _goToFailedStage,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -354,102 +479,6 @@ class _LoseOverlayState extends State<LoseOverlay>
           child: banner,
         ),
       ),
-    );
-  }
-
-  /// Exact `PlayOnPopupView` `Panel` (`1026.50 x 734.23` local, center `(513.25, 367.115)`):
-  /// - `RewardItem` (`pos = (0.12, +80.21)`, `sz = (826.25, 325.00)`):
-  ///   - `Background`: `Panel_PlayOn.png` (`m_Type = 0` Simple, `PreserveAspect = 1`,
-  ///     `pos = (0, +23.03)`, `sz = (+24.00, +96.68)` -> `850.25 x 421.68` box -> `429.06 x 421.68` circle)
-  ///   - `Text`: `+{extraSeconds}<size=128>s</size>` (`fontSize = 193.3`, `'s'` `= 128.0`, `pos = (0, +23.00)`)
-  /// - `RewardDescription` (`pos = (0.12, -216.00)`, `sz = (565.69, 180.74)`):
-  ///   `"Add 30 seconds to keep playing!"` (`fontSize = 76.6`, `lineSpacing = -38.0`, `#07279A`).
-  Widget _buildPlayOnPanel(BuildContext context) {
-    const double panelCx = UnityPopupCard.localInnerWidth * 0.5; // 513.25
-    const double panelCy = UnityPopupCard.localPanelHeight * 0.5; // 367.115
-
-    // Circle center in Panel: `panelCy - 80.21 - 23.03 = 263.875`
-    const double circleCx = panelCx + 0.12;
-    const double circleCy = panelCy - 80.21 - 23.03;
-    const double circleW = 850.25;
-    const double circleH = 421.68;
-
-    // Description center in Panel: `panelCy + 216.00 = 583.115`
-    const double descCx = panelCx + 0.12;
-    const double descCy = panelCy + 216.00;
-    const double descW = 580.0;
-    const double descH = 186.0;
-
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        // 1. `RewardItem / Background` (`Panel_PlayOn.png` glossy blue circle, NOT 9-sliced!)
-        Positioned(
-          left: ppx(context, circleCx - circleW * 0.5),
-          top: ppx(context, circleCy - circleH * 0.5),
-          width: ppx(context, circleW),
-          height: ppx(context, circleH),
-          child: Image.asset(
-            'assets/images/Panel_PlayOn.png',
-            fit: BoxFit.contain,
-          ),
-        ),
-
-        // 2. `RewardItem / Text` (`+30<size=128>s</size>` centered inside the circle)
-        Positioned(
-          left: ppx(context, circleCx - 210.0),
-          top: ppx(context, (panelCy - 80.21 - 23.00) - 130.0),
-          width: ppx(context, 420.0),
-          height: ppx(context, 260.0),
-          child: Center(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  UnitySdfText(
-                    '+${widget.extraSeconds}',
-                    unityFontSize: 193.3 * kUnityPopupScale,
-                    material: UnityTextMaterial.popupTitle,
-                  ),
-                  Padding(
-                    padding: EdgeInsets.only(bottom: ppx(context, 15.0)),
-                    child: UnitySdfText(
-                      's',
-                      unityFontSize: 128.0 * kUnityPopupScale,
-                      material: UnityTextMaterial.popupTitle,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        // 3. `RewardDescription` (`"Add 30 seconds to keep playing!"`, `76.6`, `#07279A`)
-        Positioned(
-          left: ppx(context, descCx - descW * 0.5),
-          top: ppx(context, descCy - descH * 0.5),
-          width: ppx(context, descW),
-          height: ppx(context, descH),
-          child: Center(
-            child: Text(
-              'Add ${widget.extraSeconds} seconds to keep playing!',
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              style: TextStyle(
-                fontFamily: 'Baloo2',
-                fontSize: ppx(context, 76.6),
-                fontWeight: FontWeight.w800,
-                fontVariations: const [FontVariation('wght', 800)],
-                color: const Color(0xFF07279A),
-                height: 0.98,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -559,14 +588,9 @@ class _LoseOverlayState extends State<LoseOverlay>
   }
 }
 
-/// Exact `PlayOnPopupView` `CoinsButton` (`sz = (500.00, 226.79)` inside `0.816` `PopupContainer`):
-/// - `Background`: `Button_CTA.png` (`ppuMult = 0.82`) or `Button_CTA_Disabled.png`,
-///   `pos = (0, -10), sz = (+20, +20)` (`left=-10, right=-10, top=0, bottom=-20`).
-/// - `Label`: `"Play On"` (`fontSize = 79.4`, `pos = (4.79, +41.80)` -> upper half).
-/// - `Inset`: `amin=(0.5, 0) pos=(0, 72.96) sz=(305.55, 79.18)`:
-///   - `Background`: `Inset_Button_CTA.png` (`Interactive`) or `Inset_Button_CTA_Red.png`
-///     (`Noninteractive`), `ppuMult = 0.80`, `pos=(0, -0.5) sz=(+4, +5)`.
-///   - `Content`: `pos=(0, -3.0)`, `Spacing = 21.2`, `Icon_Coin.png` (`65x65`) + `Price` (`82.26`).
+/// Redesigned `Out of time!` Left Coin Button (`Button_Green.png`, `393x221` in `Out of time.png`):
+/// - Single horizontal row with `Icon_Coin.png` (`76x79`) + `${cost}` (`unityFontSize = 72`).
+/// - Uses `UnityButtonColorFilters.disabledSilver` + `ctaGray` when unaffordable.
 class _PlayOnCoinsButton extends StatefulWidget {
   final int cost;
   final bool enabled;
@@ -588,10 +612,54 @@ class _PlayOnCoinsButtonState extends State<_PlayOnCoinsButton> {
   @override
   Widget build(BuildContext context) {
     final active = widget.enabled && widget.onTap != null;
-    final insetSprite =
-        active ? 'Inset_Button_CTA.png' : 'Inset_Button_CTA_Red.png';
     final textMat =
         active ? UnityTextMaterial.ctaGreen : UnityTextMaterial.ctaGray;
+
+    Widget buttonBody = Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/Button_Green.png',
+            fit: BoxFit.fill,
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.only(
+            left: ux(context, 34),
+            right: ux(context, 34),
+            bottom: ux(context, 12),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/images/Icon_Coin.png',
+                  width: ux(context, 76),
+                  height: ux(context, 79),
+                  fit: BoxFit.contain,
+                ),
+                SizedBox(width: ux(context, 16)),
+                UnitySdfText(
+                  '${widget.cost}',
+                  unityFontSize: 72,
+                  material: textMat,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (!active) {
+      buttonBody = ColorFiltered(
+        colorFilter: UnityButtonColorFilters.disabledSilver,
+        child: buttonBody,
+      );
+    }
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -604,120 +672,19 @@ class _PlayOnCoinsButtonState extends State<_PlayOnCoinsButton> {
           : null,
       onTapCancel: active ? () => setState(() => _pressed = false) : null,
       child: AnimatedScale(
-        scale: _pressed && active ? 0.95 : 1.0,
+        scale: _pressed && active ? 0.94 : 1.0,
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOutCubic,
-        child: SizedBox(
-          width: ppx(context, 500.00),
-          height: ppx(context, 226.79),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // 1. Gold-rimmed pill background (`Button_CTA.png`)
-              Positioned(
-                left: ppx(context, -6.0),
-                right: ppx(context, -6.0),
-                top: 0.0,
-                bottom: ppx(context, -16.0),
-                child: IgnorePointer(
-                  child: UnityNineSlice(
-                    sprite: 'Button_CTA.png',
-                    colorFilter: active
-                        ? null
-                        : UnityButtonColorFilters.disabledSilver,
-                    pixelMultiplier: kUnityPopupScale,
-                  ),
-                ),
-              ),
-
-              // 2. Top `Label` (`"Play On"`, `pos=(4.79, +41.80) sz=(-38.42, -118.00)`)
-              Positioned(
-                left: ppx(context, 19.21 + 4.79),
-                right: ppx(context, 19.21 - 4.79),
-                top: ppx(context, 59.00 - 41.80),
-                height: ppx(context, 108.79),
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: UnitySdfText(
-                      'Play On',
-                      unityFontSize: 79.4 * kUnityPopupScale,
-                      material: textMat,
-                    ),
-                  ),
-                ),
-              ),
-
-              // 3. Bottom `Inset` (`amin=(0.5,0) pos=(0, 72.96) sz=(305.55, 79.18)`)
-              Positioned(
-                left: ppx(context, (500.00 - 305.55) * 0.5),
-                bottom: ppx(context, 72.96 - 79.18 * 0.5),
-                width: ppx(context, 305.55),
-                height: ppx(context, 79.18),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // `Inset/Background` (`pos=(0,-0.5) sz=(+4,+5)`, `ppuMult = 0.80`)
-                    Positioned(
-                      left: ppx(context, -2.0),
-                      right: ppx(context, -2.0),
-                      top: ppx(context, -2.0),
-                      bottom: ppx(context, -3.0),
-                      child: IgnorePointer(
-                        child: UnityNineSlice(
-                          sprite: insetSprite,
-                          pixelMultiplier: kUnityPopupScale / 0.80,
-                        ),
-                      ),
-                    ),
-
-                    // `Inset/Content` (`pos=(0,-3.0)`, `Spacing = 21.2`, `Coin` `65x65` + `Price` `82.26`)
-                    Positioned.fill(
-                      top: ppx(context, 3.0),
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: ppx(context, 14.0),
-                          ),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset(
-                                  'assets/images/Icon_Coin.png',
-                                  width: ppx(context, 65.0),
-                                  height: ppx(context, 65.0),
-                                  fit: BoxFit.contain,
-                                ),
-                                SizedBox(width: ppx(context, 21.2)),
-                                UnitySdfText(
-                                  '${widget.cost}',
-                                  unityFontSize: 82.26 * kUnityPopupScale,
-                                  letterSpacing: ppx(context, -1.2),
-                                  material: textMat,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+        child: buttonBody,
       ),
     );
   }
 }
 
-/// Exact `PlayOnPopupView` `AdsButton` (`sz = (500.00, 226.79)` inside `0.816` `PopupContainer`):
-/// - `Background`: `Button_Blue.png` (`ppuMult = 0.82`), `left=-10, right=-10, top=0, bottom=-20`.
-/// - `Icon_Ad`: `Icon_Ad.png`, `amin=(0, 0.5) pos=(73.50, 0) sz=(121.76, 121.76)`.
-/// - `Label`: `"Play On"`, `pos=(+50.35, -4.20) sz=(-124.00, -56.39)`, `fontSize = 75.91`, `charSpacing = 1.0`.
+/// Redesigned `Out of time!` Right Ad Continue Button (`Button_Yellow.png`, `386x221` in `Out of time.png`):
+/// - Golden-orange pill (`Button_Yellow.png`)
+/// - Centered `"Continue"` (`unityFontSize = 62`, `ctaYellowButton`)
+/// - Overlapping top-left clapperboard badge `assets/images/Icon_Ads.png` (`122x127` at `left = -8, top = -42`)!
 class _PlayOnAdsButton extends StatefulWidget {
   final VoidCallback? onTap;
 
@@ -745,66 +712,52 @@ class _PlayOnAdsButtonState extends State<_PlayOnAdsButton> {
           : null,
       onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
       child: AnimatedScale(
-        scale: _pressed && enabled ? 0.95 : 1.0,
+        scale: _pressed && enabled ? 0.94 : 1.0,
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOutCubic,
-        child: SizedBox(
-          width: ppx(context, 500.00),
-          height: ppx(context, 226.79),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // 1. Gold-rimmed royal-blue pill background (`Button_CTA.png` + `blueWithGoldRim`)
-              Positioned(
-                left: ppx(context, -6.0),
-                right: ppx(context, -6.0),
-                top: 0.0,
-                bottom: ppx(context, -16.0),
-                child: IgnorePointer(
-                  child: UnityNineSlice(
-                    sprite: 'Button_CTA.png',
-                    colorFilter: enabled
-                        ? UnityButtonColorFilters.blueWithGoldRim
-                        : UnityButtonColorFilters.disabledSilver,
-                    pixelMultiplier: kUnityPopupScale,
-                  ),
-                ),
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            // 1. Golden-orange pill (`Button_Yellow.png`, `386x221`)
+            Positioned.fill(
+              child: Image.asset(
+                'assets/images/Button_Yellow.png',
+                fit: BoxFit.fill,
               ),
+            ),
 
-              // 2. `Icon_Ad`
-              Positioned(
-                left: ppx(context, 48.0),
-                top: ppx(context, (226.79 - 106.0) * 0.5),
-                width: ppx(context, 106.0),
-                height: ppx(context, 106.0),
-                child: Image.asset(
-                  'assets/images/Icon_Ad.png',
-                  fit: BoxFit.contain,
+            // 2. Centered `"Continue"` label
+            Padding(
+              padding: EdgeInsets.only(
+                left: ux(context, 44),
+                right: ux(context, 36),
+                bottom: ux(context, 10),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: UnitySdfText(
+                  'Continue',
+                  unityFontSize: 62,
+                  material: enabled
+                      ? UnityTextMaterial.ctaYellowButton
+                      : UnityTextMaterial.ctaGray,
                 ),
               ),
+            ),
 
-              // 3. `Label` (`"Play On"`)
-              Positioned(
-                left: ppx(context, 162.0),
-                right: ppx(context, 40.0),
-                top: ppx(context, 28.0),
-                bottom: ppx(context, 28.0),
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: UnitySdfText(
-                      'Play On',
-                      unityFontSize: 75.91 * kUnityPopupScale,
-                      letterSpacing: ppx(context, 0.6),
-                      material: enabled
-                          ? UnityTextMaterial.ctaBlue
-                          : UnityTextMaterial.ctaGray,
-                    ),
-                  ),
-                ),
+            // 3. Top-Left Overlapping Clapperboard Badge (`Icon_Ads.png`, `122x127` at `left = -8, top = -42`)
+            Positioned(
+              left: -ux(context, 8),
+              top: -ux(context, 42),
+              width: ux(context, 122),
+              height: ux(context, 127),
+              child: Image.asset(
+                'assets/images/Icon_Ads.png',
+                fit: BoxFit.contain,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -2,11 +2,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'unity_ui_kit.dart';
 
-/// Authentic replica of Unity `IntroView.prefab` & `TransitionView.prefab`:
-/// - `Splash_Background.png` full-bleed cover
-/// - `Blocked-In_Logo.png` hero title logo
-/// - 9-slice `Splash_Socket_ProgressBar.png` + `Splash_Fill_ProgressBar.png`
-/// - `Baloo2_ExtraBold_DarkStroke` `"Loading  XX%"`
+/// Redesigned Loading Screen matching `assets/UI Bo Sung/Loading Screen/Loading Screen.png` (`1080x2160`):
+/// - Full-bleed background: `assets/images/BG.png` (`1080x2160` Water Block character merging `1024 + 1024 -> 2048`)
+/// - Top Hero Logo: `assets/images/Logo.png` (`808x496` `Water BLOCK - Number Merge`)
+/// - `"Loading..."` label above the progress bar
+/// - Gold-rimmed blue capsule track: `Loading_BG.png` (`771x86`)
+/// - Glossy green capsule fill bar: `Loading_Progress.png` (`height = 60`, `inset = 13px`)
 class IntroSplashView extends StatelessWidget {
   final double progress;
 
@@ -18,50 +19,52 @@ class IntroSplashView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final clamped = progress.clamp(0.0, 1.0);
-    final pct = (clamped * 100).round().clamp(0, 100);
-    final barOuterW = ux(context, 840);
-    final barOuterH = ux(context, 82);
-    final inset = ux(context, 10);
+    final barOuterW = ux(context, 771);
+    final barOuterH = ux(context, 86);
+    final inset = ux(context, 13);
+    final fillH = ux(context, 60);
     final maxFillW = math.max(0.0, barOuterW - inset * 2);
-    // Keep fill wide enough for clean 9-slice rounded caps once started
-    final minCapW = ux(context, 62);
+    // Keep fill wide enough for clean 3-slice rounded caps once started
+    final minCapW = ux(context, 60);
     final fillW = clamped <= 0.01
         ? 0.0
         : math.max(minCapW, maxFillW * clamped).clamp(0.0, maxFillW);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF04228C),
+      backgroundColor: const Color(0xFF0A32B8),
       body: Stack(
         fit: StackFit.expand,
         children: [
           Image.asset(
-            'assets/images/Splash_Background.png',
+            'assets/images/BG.png',
             fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
           ),
           SafeArea(
             child: Column(
               children: [
-                const Spacer(flex: 3),
-                // Authentic Unity `Blocked-In_Logo.png`
+                const Spacer(flex: 2),
+                // Redesigned `Logo.png` (`808x496` `Water BLOCK - Number Merge`)
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: ux(context, 96)),
                   child: Image.asset(
-                    'assets/images/Blocked-In_Logo.png',
-                    width: ux(context, 840),
+                    'assets/images/Logo.png',
+                    width: ux(context, 808),
                     fit: BoxFit.contain,
                   ),
                 ),
-                const Spacer(flex: 5),
+                const Spacer(flex: 9),
 
-                // `Loading  XX%` (`Baloo2_ExtraBold_DarkStroke`, `sz = 60.87`)
-                UnitySdfText(
-                  'Loading  $pct%',
-                  unityFontSize: 60.87,
+                // `"Loading..."` (`Baloo2_ExtraBold_DarkStroke`)
+                const UnitySdfText(
+                  'Loading...',
+                  unityFontSize: 52,
                   material: UnityTextMaterial.darkStroke,
                 ),
-                SizedBox(height: ux(context, 24)),
+                SizedBox(height: ux(context, 14)),
 
-                // 9-Slice `Splash_Socket_ProgressBar.png` + `Splash_Fill_ProgressBar.png`
+                // 3-Slice `Loading_BG.png` (`771x86`) + `Loading_Progress.png` (`height = 60`, `inset = 13`)
                 SizedBox(
                   width: barOuterW,
                   height: barOuterH,
@@ -69,7 +72,7 @@ class IntroSplashView extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     children: [
                       UnityNineSlice(
-                        sprite: 'Splash_Socket_ProgressBar.png',
+                        sprite: 'Loading_BG.png',
                         width: barOuterW,
                         height: barOuterH,
                       ),
@@ -77,15 +80,15 @@ class IntroSplashView extends StatelessWidget {
                         Padding(
                           padding: EdgeInsets.symmetric(horizontal: inset),
                           child: UnityNineSlice(
-                            sprite: 'Splash_Fill_ProgressBar.png',
+                            sprite: 'Loading_Progress.png',
                             width: fillW,
-                            height: barOuterH - inset * 2,
+                            height: fillH,
                           ),
                         ),
                     ],
                   ),
                 ),
-                SizedBox(height: ux(context, 130)),
+                SizedBox(height: ux(context, 92)),
               ],
             ),
           ),

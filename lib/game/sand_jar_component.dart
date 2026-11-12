@@ -2494,7 +2494,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
 
   double _elapsed = 0.0;
   double _flowPhase = 0.0;
-  final double _totalDuration = 1.44;
+  final double _totalDuration = 1.14;
   late final double _archSideSign;
 
   double get archSideSign => _archSideSign;
@@ -2526,7 +2526,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
     super.update(dt);
     final clamped = dt.clamp(0.0, 0.05);
     _elapsed += clamped;
-    _flowPhase += clamped * 15.5;
+    _flowPhase += clamped * 18.5;
     if (_elapsed >= _totalDuration) {
       removeFromParent();
     }
@@ -3197,13 +3197,13 @@ class BoardSandStreamToJarVfx extends PositionComponent {
   void render(Canvas canvas) {
     final targetMouth = jar?.mouthWorldPos ?? targetMouthProvider();
 
-    // Progressive stream head (`0 -> 1` in `0.30s`) and smooth cohesive tail (`0 -> 1` from `0.48s..1.38s`)
+    // Progressive stream head (`0 -> 1` in `0.24s`) and smooth cohesive tail (`0 -> 1` from `0.36s..1.08s`)
     final headS =
-        Curves.easeOutCubic.transform((_elapsed / 0.30).clamp(0.0, 1.0));
-    final tailS = _elapsed <= 0.48
+        Curves.easeOutCubic.transform((_elapsed / 0.24).clamp(0.0, 1.0));
+    final tailS = _elapsed <= 0.36
         ? 0.0
         : Curves.easeInOutSine.transform(
-            ((_elapsed - 0.48) / 0.90).clamp(0.0, 1.0),
+            ((_elapsed - 0.36) / 0.72).clamp(0.0, 1.0),
           );
 
     _drawSourceBlockLiquidPool(canvas, tailS);
@@ -3260,7 +3260,7 @@ class JarOpenAndFullscreenLightWaveVfx extends PositionComponent {
     required this.jarMouthProvider,
     required this.style,
     required this.cellSize,
-    this.totalDuration = 1.05,
+    this.totalDuration = 0.86,
   }) : super(priority: 150) {
     if (Flame.images.containsKey('Explosion_Halo.png')) {
       _haloImg = Flame.images.fromCache('Explosion_Halo.png');
@@ -3271,11 +3271,11 @@ class JarOpenAndFullscreenLightWaveVfx extends PositionComponent {
   }
 
   double get currentFullscreenFlashIntensity {
-    if (_elapsed < 0.20) return 0.0;
-    if (_elapsed <= 0.62) {
-      return ((_elapsed - 0.20) / 0.42).clamp(0.0, 1.0);
+    if (_elapsed < 0.14) return 0.0;
+    if (_elapsed <= 0.48) {
+      return ((_elapsed - 0.14) / 0.34).clamp(0.0, 1.0);
     }
-    return (1.0 - (_elapsed - 0.62) / math.max(0.05, totalDuration - 0.62))
+    return (1.0 - (_elapsed - 0.48) / math.max(0.05, totalDuration - 0.48))
         .clamp(0.0, 1.0);
   }
 
@@ -3357,11 +3357,11 @@ class JarOpenAndFullscreenLightWaveVfx extends PositionComponent {
       }
     }
 
-    // 2. Step 4: Fullscreen Expanding Crystal-Aqua Light Wave (`t >= 0.16`)
+    // 2. Step 4: Fullscreen Expanding Crystal-Aqua Light Wave (`t >= 0.12`)
     final flash = currentFullscreenFlashIntensity;
     if (flash > 0.01) {
       final expandT =
-          ((_elapsed - 0.14) / (totalDuration - 0.14)).clamp(0.0, 1.0);
+          ((_elapsed - 0.10) / (totalDuration - 0.10)).clamp(0.0, 1.0);
       final maxRadius =
           cellSize * (2.5 + 18.0 * Curves.easeInOutCubic.transform(expandT));
 

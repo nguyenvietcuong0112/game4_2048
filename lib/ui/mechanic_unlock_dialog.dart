@@ -83,6 +83,7 @@ class UnityPowerUpHudButton extends StatefulWidget {
 
   final bool isLevelUp;
   final bool isUnlocked;
+  final int? unlockLevel;
   final bool isFree;
   final int count;
   final bool isActionable;
@@ -93,6 +94,7 @@ class UnityPowerUpHudButton extends StatefulWidget {
     super.key,
     required this.isLevelUp,
     required this.isUnlocked,
+    this.unlockLevel,
     required this.isFree,
     required this.count,
     required this.isActionable,
@@ -129,19 +131,35 @@ class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
         clipBehavior: Clip.none,
         children: [
           if (!widget.isUnlocked) ...[
-            // Locked State (`Play_Scene 2.png`): metallic grey circle + centered golden padlock
+            // Locked State: metallic grey circle + `"Level X"` label above golden padlock inside the circle
             Image.asset(
               'assets/images/Powerup_Base_Locked.png',
               width: ux(context, 204.0),
               height: ux(context, 204.0),
               fit: BoxFit.contain,
             ),
-            Transform.translate(
-              offset: Offset(0, -ux(context, 2.0)),
+            Positioned(
+              top: ux(context, 48.0),
+              width: ux(context, 122.0),
+              height: ux(context, 34.0),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: UnitySdfText(
+                    'Level ${widget.unlockLevel ?? (widget.isLevelUp ? 17 : 27)}',
+                    unityFontSize: 29.0,
+                    material: UnityTextMaterial.lockedBoosterLabel,
+                    singleTextNode: true,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: ux(context, 83.0),
               child: Image.asset(
                 'assets/images/Icon_Padlock_Silver.png',
-                width: ux(context, 78.0),
-                height: ux(context, 98.0),
+                width: ux(context, 68.0),
+                height: ux(context, 85.0),
                 fit: BoxFit.contain,
               ),
             ),

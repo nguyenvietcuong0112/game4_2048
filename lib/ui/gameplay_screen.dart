@@ -48,6 +48,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   late final AnimationController _coinBounceCtrl;
   late final AnimationController _freezeFlyCtrl;
   late final AnimationController _lowTimerPulseCtrl;
+  late final Animation<double> _lowTimerVignetteOpacity;
 
   bool _showWinOverlay = false;
   bool _showLoseOverlay = false;
@@ -93,7 +94,16 @@ class _GameplayScreenState extends State<GameplayScreen>
 
     _lowTimerPulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 620),
+      duration: const Duration(milliseconds: 500),
+    );
+    _lowTimerVignetteOpacity = Tween<double>(
+      begin: 0.16,
+      end: 0.78,
+    ).animate(
+      CurvedAnimation(
+        parent: _lowTimerPulseCtrl,
+        curve: Curves.easeInOutSine,
+      ),
     );
 
     _game = BlockOrderGame(
@@ -760,31 +770,54 @@ class _GameplayScreenState extends State<GameplayScreen>
             },
           ),
 
-          // 4. Urgent Low-Time (<= 10s) Soft Red Vignette Pulse
-          ValueListenableBuilder<int>(
-            valueListenable: _game.remainingSecondsNotifier,
-            builder: (context, secs, _) {
-              if (_activeLevel.timerDisabled || secs > 10 || secs <= 0) {
-                return const SizedBox.shrink();
-              }
-              return AnimatedBuilder(
-                animation: _lowTimerPulseCtrl,
-                builder: (context, _) {
-                  final a = 0.14 + 0.28 * _lowTimerPulseCtrl.value;
-                  return IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Color.fromRGBO(255, 38, 78, a),
-                          width: ux(context, 16),
-                        ),
-                      ),
+          // 3b. Full-width purple footer shelf (`Frame_Footer.png`) placed below low-time edge vignette
+          //     so all 4 outer screen edges glow seamlessly while HUD & booster buttons stay crisp above it.
+          if (!isTutorialLevel1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: safePadding.bottom +
+                  ux(
+                    context,
+                    UnityPowerUpHudButton.footerTopLineUnity,
+                  ),
+              child: const IgnorePointer(
+                child: RepaintBoundary(
+                  child: UnityNineSlice(
+                    sprite: 'Frame_Footer.png',
+                  ),
+                ),
+              ),
+            ),
+
+          // 4. Urgent Low-Time (<= 10s) Soft Feathered Red Outer-Edge Vignette Pulse
+          //    Cached in a static GPU `RepaintBoundary` below HUD icons (keeping HUD crisp) and pulsed via `FadeTransition`.
+          if (!_activeLevel.timerDisabled && !_showWinOverlay && !_showLoseOverlay)
+            ValueListenableBuilder<bool>(
+              valueListenable: _game.isTimeFrozenNotifier,
+              builder: (context, isFrozen, _) {
+                if (isFrozen) return const SizedBox.shrink();
+                return ValueListenableBuilder<int>(
+                  valueListenable: _game.remainingSecondsNotifier,
+                  child: FadeTransition(
+                    opacity: _lowTimerVignetteOpacity,
+                    child: const RepaintBoundary(
+                      key: ValueKey('urgent_low_time_vignette'),
+                      child: _UrgentLowTimeVignetteLayer(),
                     ),
-                  );
-                },
-              );
-            },
-          ),
+                  ),
+                  builder: (context, secs, vignetteChild) {
+                    if (secs <= 0 || secs > 10) {
+                      return const SizedBox.shrink();
+                    }
+                    return Positioned.fill(
+                      child: IgnorePointer(child: vignetteChild),
+                    );
+                  },
+                );
+              },
+            ),
 
           // 5. Redesigned Top HUD (`Play_Scene.png`: `CoinsWidget` left, `Frame_Level.png` center,
           //    `TimerGameplayView` right, + `ComboProgressBar` centered right below `Frame_Level.png`)
@@ -909,23 +942,6 @@ class _GameplayScreenState extends State<GameplayScreen>
                     alignment: Alignment.bottomCenter,
                     clipBehavior: Clip.none,
                     children: [
-                      // Full-width purple footer shelf with golden top trim (`Frame_Footer.png`)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        height: safePadding.bottom +
-                            ux(
-                              context,
-                              UnityPowerUpHudButton.footerTopLineUnity,
-                            ),
-                        child: const IgnorePointer(
-                          child: UnityNineSlice(
-                            sprite: 'Frame_Footer.png',
-                          ),
-                        ),
-                      ),
-
                       // Left Power-Up (`LevelUp` at `X = -135` Unity px)
                       Positioned(
                         bottom: safePadding.bottom +
@@ -956,6 +972,8 @@ class _GameplayScreenState extends State<GameplayScreen>
                                 key: const ValueKey('hud_level_up_btn'),
                                 isLevelUp: true,
                                 isUnlocked: _isLevelUpUnlocked,
+                                unlockLevel:
+                                    PlayerProgressService.levelUpUnlockLevel,
                                 isFree: isFree,
                                 count: widget.progress.levelUpCount,
                                 isActionable:
@@ -999,6 +1017,8 @@ class _GameplayScreenState extends State<GameplayScreen>
                                     const ValueKey('hud_time_freeze_btn'),
                                 isLevelUp: false,
                                 isUnlocked: _isTimeFreezeUnlocked,
+                                unlockLevel:
+                                    PlayerProgressService.timeFreezeUnlockLevel,
                                 isFree: isFree,
                                 count: widget.progress.timeFreezeCount,
                                 isActionable: _game.canUseTimeFreeze,
@@ -2174,6 +2194,76 @@ class _GameplayScreenState extends State<GameplayScreen>
       ),
     );
   }
+}
+
+/// Static GPU-cached soft crimson-red outer screen-edge & corner vignette for low time (`<= 10s`).
+/// Combines an aspect-adapted elliptical perimeter gradient with a Gaussian-feathered rounded-frame
+/// glow so all 4 edges & corners fade smoothly inward without miter seams while keeping the board clear.
+class _UrgentLowTimeVignetteLayer extends StatelessWidget {
+  const _UrgentLowTimeVignetteLayer();
+
+  @override
+  Widget build(BuildContext context) {
+    return const CustomPaint(
+      size: Size.infinite,
+      painter: _LowTimeRedVignettePainter(),
+    );
+  }
+}
+
+class _LowTimeRedVignettePainter extends CustomPainter {
+  const _LowTimeRedVignettePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 1 || size.height <= 1) return;
+    final w = size.width;
+    final h = size.height;
+    final fullRect = Offset.zero & size;
+
+    // 1. Aspect-mapped elliptical outer corner & perimeter crimson vignette (center 74% stays 100% clear)
+    canvas.save();
+    canvas.scale(w, h);
+    const unitRect = Rect.fromLTWH(0, 0, 1, 1);
+    final radialPaint = Paint()
+      ..shader = const RadialGradient(
+        center: Alignment.center,
+        radius: 0.75,
+        colors: [
+          Color(0x00FF1834),
+          Color(0x00FF1834),
+          Color(0x1EF2122E),
+          Color(0x4EE80C28),
+          Color(0x7AD90620),
+        ],
+        stops: [0.0, 0.72, 0.86, 0.95, 1.0],
+      ).createShader(unitRect);
+    canvas.drawRect(unitRect, radialPaint);
+    canvas.restore();
+
+    // 2. Subtle continuous Gaussian-feathered SDF rounded-perimeter glow hugging all 4 outer screen edges
+    final shortest = math.min(w, h);
+    final bandW = shortest * 0.082;
+    final blurSigma = shortest * 0.045;
+    final inset = -bandW * 0.22;
+    final frameRRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(inset, inset, w - inset * 2.0, h - inset * 2.0),
+      Radius.circular(shortest * 0.11),
+    );
+    final framePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = bandW
+      ..color = const Color(0xADFF1E38)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma);
+
+    canvas.save();
+    canvas.clipRect(fullRect);
+    canvas.drawRRect(frameRRect, framePaint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _LowTimeRedVignettePainter oldDelegate) => false;
 }
 
 /// Authentic `TimeFreezeFullScreenEffectView.prefab` using all extracted Unity frost & crystal PNGs.

@@ -563,6 +563,17 @@ class UnityTextMaterial {
     underlayColor: Color(0xFF6B3100),
     underlayYRatio: 0.095,
   );
+
+  /// Compact high-contrast white label inside `Powerup_Base_Locked.png` (`"Level 17"` / `"Level 27"` above padlock)
+  static const lockedBoosterLabel = UnityTextMaterial(
+    faceTop: Color(0xFFFFFFFF),
+    faceBottom: Color(0xFFF4F7FB),
+    strokeColor: Color(0xFF26303D),
+    strokeRatio: 0.18,
+    underlayColor: Color(0xCC161C24),
+    underlayYRatio: 0.08,
+    letterSpacing: 0.1,
+  );
 }
 
 /// Multi-layer SDF Text widget replicating Unity's TextMeshPro SDF shaders (multi-outline,
@@ -602,6 +613,7 @@ class UnitySdfText extends StatelessWidget {
           fontVariations: variations,
           letterSpacing: letterSpacing ?? material.letterSpacing,
           height: 1.08,
+          decoration: TextDecoration.none,
           foreground: foreground,
           color: color,
         );

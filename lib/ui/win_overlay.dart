@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../services/player_progress_service.dart';
 import 'unity_ui_kit.dart';
+import 'water_garden_view.dart';
 
 /// Level Complete Overlay combining a smooth 2-line `'Level' / 'Complete!'` wave header (`PoetsenOne`)
 /// with the redesigned `Victory` reward layout & denser one-shot Confetti FX:
@@ -17,24 +19,40 @@ import 'unity_ui_kit.dart';
 ///   3. `Time | Moves | Combo` summary pill positioned cleanly between the coin pile and CTA
 ///   4. Bottom `"Continue"` `Button_CTA.png` (`499x221`) triggering curved `Icon_Coin.png` flight to HUD
 class WinOverlay extends StatefulWidget {
+  static const int rewardX2UnlockLevel = 7;
+
+  final int? levelNumber;
   final String levelLabel;
   final int rewardCoins;
+  final bool? showRewardX2;
   final String timeFormatted;
   final int movesCount;
   final int comboCount;
+  final VaseStepAdvanceResult? gardenResult;
+  final int finalBlockNumber;
+  final VoidCallback? onClaimMilestone;
   final VoidCallback? onStage2Shown;
   final ValueChanged<int>? onCoinChunkArrived;
+  final Future<bool> Function()? onWatchRewardX2;
+  final VoidCallback? onNextLevelAfterRewardAd;
   final VoidCallback onNextLevel;
 
   const WinOverlay({
     super.key,
+    this.levelNumber,
     required this.levelLabel,
     required this.rewardCoins,
+    this.showRewardX2,
     this.timeFormatted = '01:55',
     this.movesCount = 0,
     this.comboCount = 0,
+    this.gardenResult,
+    this.finalBlockNumber = 2048,
+    this.onClaimMilestone,
     this.onStage2Shown,
     this.onCoinChunkArrived,
+    this.onWatchRewardX2,
+    this.onNextLevelAfterRewardAd,
     required this.onNextLevel,
   });
 
@@ -52,9 +70,15 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   bool _confettiFinished = false;
   bool _stage2Notified = false;
   bool _collecting = false;
+  bool _watchingRewardAd = false;
+  bool _completedViaRewardAd = false;
+  int _coinMultiplier = 1;
+  int _activeFlyCount = _defaultFlyingCoinCount;
+  int _spawnSide = 0; // -1: left Next Level btn, 0: center legacy, 1: right Reward x2 btn
   final Set<int> _arrivedCoinIndices = {};
 
-  static const int _flyingCoinCount = 7;
+  static const int _defaultFlyingCoinCount = 7;
+  static const int _rewardX2FlyingCoinCount = 12;
   static const String _line1Text = 'Level';
   static const String _line2Text = 'Complete!';
 
@@ -89,17 +113,25 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       ..addListener(_handleCoinFlightTick)
       ..addStatusListener((status) {
         if (status == AnimationStatus.completed && mounted) {
-          widget.onNextLevel();
+          if (_completedViaRewardAd &&
+              widget.onNextLevelAfterRewardAd != null) {
+            widget.onNextLevelAfterRewardAd!();
+          } else {
+            widget.onNextLevel();
+          }
         }
       });
   }
 
   void _checkStageTransition() {
-    if (!_confettiStarted && _sequenceCtrl.value >= 0.38) {
+    final confettiTrigger = widget.gardenResult != null ? 0.10 : 0.38;
+    final fanfareTrigger = widget.gardenResult != null ? 0.14 : 0.46;
+
+    if (!_confettiStarted && _sequenceCtrl.value >= confettiTrigger) {
       _confettiStarted = true;
       _confettiCtrl.forward(from: 0.0);
     }
-    if (!_stage2Notified && _sequenceCtrl.value >= 0.46) {
+    if (!_stage2Notified && _sequenceCtrl.value >= fanfareTrigger) {
       _stage2Notified = true;
       widget.onStage2Shown?.call();
     }
@@ -107,11 +139,13 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
 
   void _handleCoinFlightTick() {
     final t = _coinFlyCtrl.value;
-    final baseChunk = widget.rewardCoins ~/ _flyingCoinCount;
-    final remainder = widget.rewardCoins % _flyingCoinCount;
+    final flyCount = math.max(2, _activeFlyCount);
+    final totalCoins = widget.rewardCoins * _coinMultiplier;
+    final baseChunk = totalCoins ~/ flyCount;
+    final remainder = totalCoins % flyCount;
 
-    for (int i = 0; i < _flyingCoinCount; i++) {
-      final coinEnd = 0.58 + (i / (_flyingCoinCount - 1)) * 0.40;
+    for (int i = 0; i < flyCount; i++) {
+      final coinEnd = 0.58 + (i / (flyCount - 1)) * 0.40;
       if (t >= coinEnd && _arrivedCoinIndices.add(i)) {
         final chunk = baseChunk + (i < remainder ? 1 : 0);
         if (chunk > 0) {
@@ -121,10 +155,76 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
     }
   }
 
-  void _onTapContinue() {
-    if (_collecting) return;
-    setState(() => _collecting = true);
+  void _startCoinCollection({
+    required int multiplier,
+    required int flyCount,
+    required int spawnSide,
+    required bool viaRewardAd,
+  }) {
+    if (_collecting || _watchingRewardAd) return;
+    setState(() {
+      _collecting = true;
+      _coinMultiplier = multiplier;
+      _activeFlyCount = flyCount;
+      _spawnSide = spawnSide;
+      _completedViaRewardAd = viaRewardAd;
+      _arrivedCoinIndices.clear();
+    });
     _coinFlyCtrl.forward(from: 0.0);
+  }
+
+  void _onTapContinue() {
+    _startCoinCollection(
+      multiplier: 1,
+      flyCount: _defaultFlyingCoinCount,
+      spawnSide: 0,
+      viaRewardAd: false,
+    );
+  }
+
+  int? _parseLevelFromLabel(String label) {
+    final match = RegExp(r'(\d+)').firstMatch(label);
+    if (match == null) return null;
+    return int.tryParse(match.group(1)!);
+  }
+
+  /// Dual monetization buttons (`Next Level` + `Reward x2`) unlock from Level 7 onwards (`level >= 7`).
+  bool get _isRewardX2Enabled {
+    if (widget.showRewardX2 != null) return widget.showRewardX2!;
+    final lv = widget.levelNumber ?? _parseLevelFromLabel(widget.levelLabel);
+    if (lv != null) {
+      return lv >= WinOverlay.rewardX2UnlockLevel;
+    }
+    return widget.onWatchRewardX2 != null;
+  }
+
+  void _onTapGardenNextLevel() {
+    _startCoinCollection(
+      multiplier: 1,
+      flyCount: _defaultFlyingCoinCount,
+      spawnSide: _isRewardX2Enabled ? -1 : 0,
+      viaRewardAd: false,
+    );
+  }
+
+  Future<void> _onTapGardenRewardX2() async {
+    if (_collecting || _watchingRewardAd) return;
+    if (widget.onWatchRewardX2 != null) {
+      setState(() => _watchingRewardAd = true);
+      final rewarded = await widget.onWatchRewardX2!();
+      if (!mounted) return;
+      if (!rewarded) {
+        setState(() => _watchingRewardAd = false);
+        return;
+      }
+      setState(() => _watchingRewardAd = false);
+    }
+    _startCoinCollection(
+      multiplier: 2,
+      flyCount: _rewardX2FlyingCoinCount,
+      spawnSide: 1,
+      viaRewardAd: true,
+    );
   }
 
   @override
@@ -149,7 +249,28 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // One-shot Celebratory Confetti FX: flies in from top-left & top-right downward for ~2.8s, then turns off
+              if (widget.gardenResult != null)
+                SafeArea(
+                  child: WaterGardenView(
+                    advanceResult: widget.gardenResult!,
+                    finalBlockNumber: widget.finalBlockNumber,
+                    rewardCoins: widget.rewardCoins,
+                    levelNumber: widget.levelNumber,
+                    showRewardX2: _isRewardX2Enabled,
+                    showGardenBackdrop: false,
+                    isActionBusy: _collecting || _watchingRewardAd,
+                    onNextLevel: _onTapGardenNextLevel,
+                    onRewardX2:
+                        _isRewardX2Enabled ? _onTapGardenRewardX2 : null,
+                    onClaimMilestone: () {
+                      widget.onClaimMilestone?.call();
+                    },
+                  ),
+                )
+              else
+                _buildWinSequenceBody(context, seq),
+
+              // One-shot Celebratory Confetti FX: flies in from top-left & top-right downward, then unmounts
               if (_confettiStarted && !_confettiFinished)
                 IgnorePointer(
                   key: const ValueKey('win_confetti_fx'),
@@ -162,8 +283,6 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
-
-              _buildWinSequenceBody(context, seq),
 
               if (_collecting) _buildFlyingCoinsLayer(context),
             ],
@@ -256,6 +375,27 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                   ),
                 ),
 
+              // Smooth 2-Line `'Level' / 'Complete!'` (`PoetsenOne` font):
+              // Ripples in at screen center, glides on GPU (`Transform.translate`) up to the top header!
+              Positioned(
+                left: 0,
+                right: 0,
+                top: targetHeaderCenterY - headerBoxH * 0.5,
+                height: headerBoxH,
+                child: IgnorePointer(
+                  child: Transform.translate(
+                    offset: Offset(0, headerGlideDy),
+                    child: Center(
+                      child: _buildTwoLineWaveLevelComplete(
+                        context,
+                        seq: seq,
+                        glideT: glideT,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
               // Stage 2: Rotating Sunbeam Starburst + Golden Glow + Sparkles
               if (stage2Raw > 0.005)
                 Positioned(
@@ -315,27 +455,6 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                   ),
                 ),
 
-              // Smooth 2-Line `'Level' / 'Complete!'` (`PoetsenOne` font):
-              // Ripples in at screen center, glides on GPU (`Transform.translate`) up to the top header!
-              Positioned(
-                left: 0,
-                right: 0,
-                top: targetHeaderCenterY - headerBoxH * 0.5,
-                height: headerBoxH,
-                child: IgnorePointer(
-                  child: Transform.translate(
-                    offset: Offset(0, headerGlideDy),
-                    child: Center(
-                      child: _buildTwoLineWaveLevelComplete(
-                        context,
-                        seq: seq,
-                        glideT: glideT,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
               // Stage 2: 3-Stat Card (`Time | Moves | Combo`)
               if (statsRaw > 0.005)
                 Positioned(
@@ -355,27 +474,52 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                   ),
                 ),
 
-              // Stage 2: Bottom `"Continue"` Gold-Rimmed Green Pill (`Button_CTA.png`, `499x221`)
+              // Stage 2: Dual Action Row (Level 7+ when Reward x2 is wired) or Single `"Continue"` Pill
               if (ctaRaw > 0.005)
-                Positioned(
-                  left: (safeW - ctaW) * 0.5,
-                  top: ctaCenterY - ctaH * 0.5,
-                  child: Transform.scale(
-                    scale: 0.78 + 0.22 * ctaPop,
-                    child: wrapFade(
-                      ctaRaw,
-                      RepaintBoundary(
-                        child: UnityCtaButton(
-                          label: 'Continue',
-                          unityWidth: 499,
-                          unityHeight: 221,
-                          unityFontSize: 68,
-                          onTap: _collecting ? null : _onTapContinue,
+                if (_isRewardX2Enabled && widget.onWatchRewardX2 != null)
+                  Positioned(
+                    left: 18,
+                    right: 18,
+                    top: ctaCenterY - 34,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 368),
+                        child: Transform.scale(
+                          scale: 0.78 + 0.22 * ctaPop,
+                          child: wrapFade(
+                            ctaRaw,
+                            LevelCompleteDualActionRow(
+                              rewardCoins: widget.rewardCoins,
+                              shimmerAnimation: _ambientCtrl,
+                              enabled: !_collecting && !_watchingRewardAd,
+                              onNextLevel: _onTapGardenNextLevel,
+                              onRewardX2: _onTapGardenRewardX2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Positioned(
+                    left: (safeW - ctaW) * 0.5,
+                    top: ctaCenterY - ctaH * 0.5,
+                    child: Transform.scale(
+                      scale: 0.78 + 0.22 * ctaPop,
+                      child: wrapFade(
+                        ctaRaw,
+                        RepaintBoundary(
+                          child: UnityCtaButton(
+                            label: 'Continue',
+                            unityWidth: 499,
+                            unityHeight: 221,
+                            unityFontSize: 68,
+                            onTap: _collecting ? null : _onTapContinue,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
             ],
           );
         },
@@ -707,31 +851,54 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   /// Curved Bezier flight of golden `Icon_Coin.png` sprites up into top-left `CoinsWidget`.
   Widget _buildFlyingCoinsLayer(BuildContext context) {
     final screen = MediaQuery.sizeOf(context);
-    final topPad = MediaQuery.paddingOf(context).top;
-    final startCenter = Offset(
-      screen.width * 0.5,
-      screen.height * 0.5 - ux(context, 42),
-    );
+    final pad = MediaQuery.paddingOf(context);
+    final topPad = pad.top;
+    final bottomPad = pad.bottom;
+
+    final Offset startCenter;
+    if (_spawnSide < 0) {
+      startCenter = Offset(
+        screen.width * 0.28,
+        screen.height - bottomPad - 44.0,
+      );
+    } else if (_spawnSide > 0) {
+      startCenter = Offset(
+        screen.width * 0.72,
+        screen.height - bottomPad - 44.0,
+      );
+    } else if (widget.gardenResult != null) {
+      startCenter = Offset(
+        screen.width * 0.5,
+        screen.height - bottomPad - 44.0,
+      );
+    } else {
+      startCenter = Offset(
+        screen.width * 0.5,
+        screen.height * 0.5 - ux(context, 42),
+      );
+    }
+
     final targetCoinIcon = Offset(
       ux(context, UnityCoinsWidget.coinCenterXUnity),
       topPad + ux(context, UnityCoinsWidget.coinCenterYUnity),
     );
 
+    final flyCount = math.max(2, _activeFlyCount);
     final t = _coinFlyCtrl.value;
     final children = <Widget>[];
 
-    for (int i = 0; i < _flyingCoinCount; i++) {
-      final coinStart = (i / (_flyingCoinCount - 1)) * 0.34;
-      final coinEnd = 0.58 + (i / (_flyingCoinCount - 1)) * 0.40;
+    for (int i = 0; i < flyCount; i++) {
+      final coinStart = (i / (flyCount - 1)) * 0.34;
+      final coinEnd = 0.58 + (i / (flyCount - 1)) * 0.40;
       if (t < coinStart || t >= coinEnd) continue;
 
       final localT = ((t - coinStart) / (coinEnd - coinStart)).clamp(0.0, 1.0);
       final eased = Curves.easeInOutCubic.transform(localT);
 
-      final spreadX = (i - (_flyingCoinCount - 1) * 0.5) * ux(context, 42);
+      final spreadX = (i - (flyCount - 1) * 0.5) * ux(context, 38);
       final ctrl = Offset(
-        startCenter.dx + spreadX - ux(context, 130),
-        (startCenter.dy + targetCoinIcon.dy) * 0.48 + spreadX * 0.25,
+        startCenter.dx + spreadX - ux(context, 120),
+        (startCenter.dy + targetCoinIcon.dy) * 0.46 + spreadX * 0.22,
       );
 
       final oneMinus = 1.0 - eased;
@@ -742,7 +909,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
           2 * oneMinus * eased * ctrl.dy +
           eased * eased * targetCoinIcon.dy;
 
-      final coinSz = ux(context, 98) * (1.05 - 0.18 * eased);
+      final coinSz = ux(context, 96) * (1.05 - 0.18 * eased);
       children.add(
         Positioned(
           left: px - coinSz * 0.5,

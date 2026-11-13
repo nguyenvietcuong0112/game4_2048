@@ -369,8 +369,8 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
     final isBonus = widget.activeLevel.isBonus;
     return _CheatSectionCard(
       title: isBonus
-          ? '1. Chuyển Level (Đang chơi Bonus: ${widget.activeLevel.title})'
-          : '1. Chuyển Level (${widget.activeLevel.title} / $_maxCampaignLevel màn)',
+          ? '1. Level Jump (Playing Bonus: ${widget.activeLevel.title})'
+          : '1. Level Jump (${widget.activeLevel.title} / $_maxCampaignLevel levels)',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -486,8 +486,8 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
                   child: _CheatActionBtn(
                     key: const ValueKey('cheat_toggle_bonus_list_btn'),
                     label: _showBonusList
-                        ? '▲ Ẩn Danh Sách Màn Bonus (${bonusLevels.length} màn)'
-                        : '🎁 Mở Toàn Bộ Level Bonus (${bonusLevels.length} màn)',
+                        ? '▲ Hide Bonus Levels (${bonusLevels.length})'
+                        : '🎁 Show All Bonus Levels (${bonusLevels.length})',
                     color: const Color(0xFF7C3AED),
                     onTap: () => setState(() => _showBonusList = !_showBonusList),
                   ),
@@ -576,38 +576,38 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
 
   Widget _buildBoardAndOutcomeSection(BuildContext context) {
     return _CheatSectionCard(
-      title: '2. Kết quả & Hỗ trợ Bàn chơi',
+      title: '2. Board & Level Outcome',
       child: Wrap(
         spacing: ux(context, 14),
         runSpacing: ux(context, 14),
         children: [
           _CheatActionBtn(
             key: const ValueKey('cheat_win_now_btn'),
-            label: 'Thắng Ngay (Popup)',
+            label: 'Instant Win (Popup)',
             color: const Color(0xFF059669),
             onTap: widget.onInstantWinPopup,
           ),
           _CheatActionBtn(
             key: const ValueKey('cheat_win_sand_btn'),
-            label: 'Thắng + FX Cát',
+            label: 'Win + Jar FX',
             color: const Color(0xFF0D9488),
             onTap: widget.onWinWithSandSequence,
           ),
           _CheatActionBtn(
             key: const ValueKey('cheat_lose_now_btn'),
-            label: 'Thua Ngay (Hết giờ)',
+            label: 'Instant Lose (Timeout)',
             color: const Color(0xFFDC2626),
             onTap: widget.onInstantLoseTimeout,
           ),
           _CheatActionBtn(
             key: const ValueKey('cheat_merge_pair_btn'),
-            label: 'Gộp 1 Cặp Free',
+            label: 'Merge 1 Pair Free',
             color: const Color(0xFF2563EB),
             onTap: widget.onMergeOnePairFree,
           ),
           _CheatActionBtn(
             key: const ValueKey('cheat_unlock_board_btn'),
-            label: 'Phá Băng & Mở Khóa',
+            label: 'Break Ice & Unlock Board',
             color: const Color(0xFF7C3AED),
             onTap: widget.onUnlockAllBoardObstacles,
           ),
@@ -624,29 +624,29 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
 
   Widget _buildTimerSection(BuildContext context) {
     return _CheatSectionCard(
-      title: '3. Thời gian (Hiện tại: ${widget.remainingSeconds}s)',
+      title: '3. Timer (Current: ${widget.remainingSeconds}s)',
       child: Wrap(
         spacing: ux(context, 14),
         runSpacing: ux(context, 14),
         children: [
           _CheatActionBtn(
-            label: '+30 Giây',
+            label: '+30 Seconds',
             color: const Color(0xFF0284C7),
             onTap: () => widget.onAddTimeSeconds(30),
           ),
           _CheatActionBtn(
-            label: '+60 Giây',
+            label: '+60 Seconds',
             color: const Color(0xFF0284C7),
             onTap: () => widget.onAddTimeSeconds(60),
           ),
           _CheatActionBtn(
             key: const ValueKey('cheat_timer_5s_btn'),
-            label: 'Còn 5s (Test Urgent)',
+            label: 'Set 5s Left (Urgent)',
             color: const Color(0xFFE11D48),
             onTap: () => widget.onSetTimeSeconds(5),
           ),
           _CheatActionBtn(
-            label: 'Đóng Băng 20s Free',
+            label: 'Free Time Freeze (20s)',
             color: const Color(0xFF0891B2),
             onTap: widget.onTriggerFreeTimeFreeze,
           ),
@@ -659,7 +659,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
     final p = widget.progress;
     return _CheatSectionCard(
       title:
-          '4. Tài nguyên (Coins: ${p.coins} | LvUp: ${p.levelUpCount} | Freeze: ${p.timeFreezeCount} | Mạng: ${p.lives})',
+          '4. Economy (Coins: ${p.coins} | LvUp: ${p.levelUpCount} | Freeze: ${p.timeFreezeCount} | Lives: ${p.lives})',
       child: Wrap(
         spacing: ux(context, 14),
         runSpacing: ux(context, 14),
@@ -682,7 +682,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
           ),
           _CheatActionBtn(
             key: const ValueKey('cheat_add_5_boosters_btn'),
-            label: '+5 Mỗi Booster',
+            label: '+5 Each Booster',
             color: const Color(0xFF4F46E5),
             onTap: () => p.cheatSetPowerUps(
               levelUp: p.levelUpCount + 5,
@@ -695,17 +695,17 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
             onTap: () => p.cheatSetPowerUps(levelUp: 0, timeFreeze: 0),
           ),
           _CheatActionBtn(
-            label: 'Mở Khóa Tất Cả Booster',
+            label: 'Unlock All Boosters',
             color: const Color(0xFF059669),
             onTap: p.cheatUnlockAllBoostersAndMechanics,
           ),
           _CheatActionBtn(
-            label: 'Full 5 Mạng',
+            label: 'Full 5 Lives',
             color: const Color(0xFFDB2777),
             onTap: () => p.cheatSetLives(PlayerProgressService.maxLives),
           ),
           _CheatActionBtn(
-            label: 'Còn 1 Mạng',
+            label: '1 Life Left',
             color: const Color(0xFF475569),
             onTap: () => p.cheatSetLives(1),
           ),
@@ -716,14 +716,14 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
 
   Widget _buildSystemSection(BuildContext context) {
     return _CheatSectionCard(
-      title: '5. Hệ thống & Hiển thị',
+      title: '5. System & Display',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(
-              'Ẩn nút CHEAT nổi trên màn hình chơi',
+              'Hide floating CHEAT button on HUD',
               style: TextStyle(
                 fontFamily: 'Baloo2',
                 fontSize: ux(context, 34),
@@ -732,7 +732,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
               ),
             ),
             subtitle: Text(
-              'Khi ẩn, bạn vẫn có thể mở lại bảng Cheat bằng cách mở Setting -> chạm vào dòng v.1.0.6',
+              'When hidden, you can reopen the Cheat Panel via Settings -> tap v.1.0.6',
               style: TextStyle(
                 fontFamily: 'Baloo2',
                 fontSize: ux(context, 26),
@@ -745,7 +745,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
           ),
           SizedBox(height: ux(context, 12)),
           _CheatActionBtn(
-            label: 'Reset Toàn Bộ Dữ Liệu (Về Level 1)',
+            label: 'Reset All Progress (Back to Level 1)',
             color: const Color(0xFF991B1B),
             onTap: () async {
               await widget.onResetAllProgress();

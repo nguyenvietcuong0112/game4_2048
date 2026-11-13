@@ -1251,11 +1251,13 @@ class UnityCoinsWidget extends StatelessWidget {
 
   final int coins;
   final double scale;
+  final bool showPlusBadge;
 
   const UnityCoinsWidget({
     super.key,
     required this.coins,
     this.scale = 1.0,
+    this.showPlusBadge = true,
   });
 
   @override
@@ -1313,16 +1315,17 @@ class UnityCoinsWidget extends StatelessWidget {
               fit: BoxFit.contain,
             ),
           ),
-          Positioned(
-            left: ux(context, 58),
-            bottom: 0,
-            width: ux(context, 46),
-            height: ux(context, 46),
-            child: Image.asset(
-              'assets/images/PowerUp_Plus.png',
-              fit: BoxFit.contain,
+          if (showPlusBadge)
+            Positioned(
+              left: ux(context, 58),
+              bottom: 0,
+              width: ux(context, 46),
+              height: ux(context, 46),
+              child: Image.asset(
+                'assets/images/PowerUp_Plus.png',
+                fit: BoxFit.contain,
+              ),
             ),
-          ),
         ],
       ),
     );

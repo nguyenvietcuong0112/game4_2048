@@ -1240,13 +1240,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         .min(availW / framedCols, availH / framedRows)
         .clamp(24.0, 220.0);
 
-    // On timed levels (`!_level.timerDisabled`), ensure `[Jar + Board]` fits cleanly
-    // between Top HUD and Bottom Footer; on `isSpotlightLevel`, reserve `296*u` bottom space
-    // so `stageCenterY` keeps the 4x6 board strictly above the Spotlight Tutorial Box.
+    // On timed levels (`!_level.timerDisabled`) or Level 1 Spotlight (`isSpotlightLevel`),
+    // ensure `[Jar + Board]` fits cleanly between Top HUD and the lifted Tutorial Box / Footer.
     final minJarTopScreenY =
         _safeTop + (_level.timerDisabled ? 150.0 : 218.0) * u;
     final maxBoardBottomScreenY =
-        size.y - _safeBottom - (isSpotlightLevel ? 296.0 : 272.0) * u;
+        size.y - _safeBottom - (isSpotlightLevel ? 312.0 : 272.0) * u;
     if (!_level.timerDisabled) {
       final maxTimedSpanH =
           (maxBoardBottomScreenY - minJarTopScreenY).clamp(180.0, 4000.0);

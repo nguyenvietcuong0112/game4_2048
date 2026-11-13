@@ -66,6 +66,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   Timer? _lockedToastTimer;
   double _lockedToastOpacity = 0.0;
   int _lastLoggedTutMergeStep = 0;
+  VaseStepAdvanceResult? _activeVaseAdvanceResult;
 
   bool _shouldTrackFtueForLevel(LevelDefinition level) =>
       !level.isBonus && level.number == 1 && !widget.progress.isFtueCompleted;
@@ -243,6 +244,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     _freezeFlyCtrl.value = 0.0;
     setState(() {
       _activeLevel = level;
+      _activeVaseAdvanceResult = null;
       _showWinOverlay = false;
       _showLoseOverlay = false;
       _loseInFailedStage = false;
@@ -298,7 +300,11 @@ class _GameplayScreenState extends State<GameplayScreen>
       rewardCoins: _activeLevel.coinReward,
       isBonus: _activeLevel.isBonus,
     );
+    final vaseAdvance = !_activeLevel.isBonus
+        ? widget.progress.recordLevelWonVaseStep(_activeLevel.number)
+        : null;
     setState(() {
+      _activeVaseAdvanceResult = vaseAdvance;
       _showWinOverlay = true;
       _settingsOpen = false;
       _cheatOpen = false;
@@ -329,27 +335,59 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
   }
 
-  void _handleNextLevelAfterWin() {
+  void _advanceAfterWinExit() {
+    if (!mounted) return;
+    if (_activeLevel.isBonus) {
+      final list = widget.repository.bonusLevels;
+      final idx = list.indexWhere((b) => b.number == _activeLevel.number);
+      final nextBonus = list[(idx + 1) % list.length];
+      _startLevel(nextBonus);
+      return;
+    }
+    widget.progress.advanceToNextCampaignLevel();
+    final nextLv =
+        widget.repository.getCampaignLevel(widget.progress.currentLevel);
+    _startLevel(nextLv);
+  }
+
+  void _handleNextLevelAfterWin({bool skipInterstitial = false}) {
     widget.progress.flushPendingWinCoins();
     widget.audio.playClick();
+    if (skipInterstitial) {
+      _advanceAfterWinExit();
+      return;
+    }
     final currentLv = _activeLevel.number;
     AdsManager.showInterEndgame(
       levelNumber: currentLv,
-      onCompleted: () {
-        if (!mounted) return;
-        if (_activeLevel.isBonus) {
-          final list = widget.repository.bonusLevels;
-          final idx = list.indexWhere((b) => b.number == _activeLevel.number);
-          final nextBonus = list[(idx + 1) % list.length];
-          _startLevel(nextBonus);
-          return;
+      onCompleted: _advanceAfterWinExit,
+    );
+  }
+
+  Future<bool> _handleWinRewardX2Ad() async {
+    bool rewarded = false;
+    await AdsManager.showRewardedAd(
+      placement: 'win_x2_coins',
+      levelNumber: _activeLevel.number,
+      onAdFailed: _handleRewardedAdFailed,
+      onRewardResult: (success) {
+        rewarded = success;
+        if (success && mounted) {
+          widget.audio.playClick();
+          final extraCoins = _activeLevel.coinReward;
+          widget.progress.doublePendingWinCoins(extraCoins);
+          AnalyticsService.logEarnResource(
+            level: _activeLevel.number,
+            type: 'currency',
+            name: 'coins',
+            amount: extraCoins.toDouble(),
+            reason: 'win_x2_rewarded_ad',
+            balance: (widget.progress.coins + extraCoins * 2).toDouble(),
+          );
         }
-        widget.progress.advanceToNextCampaignLevel();
-        final nextLv =
-            widget.repository.getCampaignLevel(widget.progress.currentLevel);
-        _startLevel(nextLv);
       },
     );
+    return rewarded;
   }
 
   void _handlePlayOnCoins() {
@@ -426,6 +464,7 @@ class _GameplayScreenState extends State<GameplayScreen>
           _loseInFailedStage = false;
           _losePeekingBoard = false;
           _playOnsUsedInAttempt = 0;
+          _activeVaseAdvanceResult = null;
           _showWinOverlay = false;
           _showExitRestartPopup = false;
           _settingsOpen = false;
@@ -677,6 +716,8 @@ class _GameplayScreenState extends State<GameplayScreen>
       bottom: safePadding.bottom,
     );
 
+    final isTutorialLevel1 =
+        !_activeLevel.isBonus && _activeLevel.number == 1;
     final hideBaseCoins = _showWinOverlay ||
         (_showLoseOverlay && !_loseInFailedStage) ||
         _buyPopupIsLevelUp != null;
@@ -851,203 +892,185 @@ class _GameplayScreenState extends State<GameplayScreen>
           ),
 
           // 6. Bottom `Frame_Footer.png` Shelf + Straddling Circular `PowerUps` (`Play_Scene.png`)
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: RepaintBoundary(
-              child: SizedBox(
-                width: double.infinity,
-                height: safePadding.bottom +
-                    ux(
-                      context,
-                      UnityPowerUpHudButton.bottomOffsetUnity +
-                          UnityPowerUpHudButton.scaledUnitySize,
-                    ),
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Dimmed footer & buttons layer during Level 1 Spotlight Tutorial
-                    Positioned.fill(
-                      child: ValueListenableBuilder<bool>(
-                        valueListenable: _game.isSpotlightTutorialActiveNotifier,
-                        builder: (context, spotlightActive, footerChild) {
-                          return AnimatedOpacity(
-                            opacity: spotlightActive ? 0.36 : 1.0,
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeOut,
-                            child: footerChild,
-                          );
-                        },
-                        child: Stack(
-                          alignment: Alignment.bottomCenter,
-                          clipBehavior: Clip.none,
-                          children: [
-                            // Full-width purple footer shelf with golden top trim (`Frame_Footer.png`)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              height: safePadding.bottom +
-                                  ux(
-                                    context,
-                                    UnityPowerUpHudButton.footerTopLineUnity,
-                                  ),
-                              child: const IgnorePointer(
-                                child: UnityNineSlice(
-                                  sprite: 'Frame_Footer.png',
-                                ),
-                              ),
+          //    Completely hidden on Tutorial Level 1 so zero buttons distract or overlap the tutorial box!
+          if (!isTutorialLevel1)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: RepaintBoundary(
+                child: SizedBox(
+                  width: double.infinity,
+                  height: safePadding.bottom +
+                      ux(
+                        context,
+                        UnityPowerUpHudButton.bottomOffsetUnity +
+                            UnityPowerUpHudButton.scaledUnitySize,
+                      ),
+                  child: Stack(
+                    alignment: Alignment.bottomCenter,
+                    clipBehavior: Clip.none,
+                    children: [
+                      // Full-width purple footer shelf with golden top trim (`Frame_Footer.png`)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: safePadding.bottom +
+                            ux(
+                              context,
+                              UnityPowerUpHudButton.footerTopLineUnity,
                             ),
-
-                            // Left Power-Up (`LevelUp` at `X = -135` Unity px)
-                            Positioned(
-                              bottom: safePadding.bottom +
-                                  ux(
-                                    context,
-                                    UnityPowerUpHudButton.bottomOffsetUnity,
-                                  ),
-                              child: ListenableBuilder(
-                                listenable: Listenable.merge([
-                                  widget.progress,
-                                  _game.canLevelUpNotifier,
-                                ]),
-                                builder: (context, _) {
-                                  final isFree =
-                                      widget.progress.isFreePowerUpPending(
-                                    MechanicUnlockInfo.levelUpPowerUp.id,
-                                  );
-                                  return Transform.translate(
-                                    offset: Offset(
-                                      -ux(
-                                        context,
-                                        UnityPowerUpHudButton
-                                            .horizontalOffsetUnity,
-                                      ),
-                                      0,
-                                    ),
-                                    child: UnityPowerUpHudButton(
-                                      key: const ValueKey('hud_level_up_btn'),
-                                      isLevelUp: true,
-                                      isUnlocked: _isLevelUpUnlocked,
-                                      isFree: isFree,
-                                      count: widget.progress.levelUpCount,
-                                      isActionable:
-                                          _game.canLevelUpNotifier.value,
-                                      onTap: _handleLevelUpTap,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-
-                            // Right Power-Up (`TimeFreeze` at `X = +135` Unity px)
-                            Positioned(
-                              bottom: safePadding.bottom +
-                                  ux(
-                                    context,
-                                    UnityPowerUpHudButton.bottomOffsetUnity,
-                                  ),
-                              child: ListenableBuilder(
-                                listenable: Listenable.merge([
-                                  widget.progress,
-                                  _game.isTimeFrozenNotifier,
-                                  _game.isTimerStartedNotifier,
-                                ]),
-                                builder: (context, _) {
-                                  final isFree =
-                                      widget.progress.isFreePowerUpPending(
-                                    MechanicUnlockInfo.timeFreezePowerUp.id,
-                                  );
-                                  return Transform.translate(
-                                    offset: Offset(
-                                      ux(
-                                        context,
-                                        UnityPowerUpHudButton
-                                            .horizontalOffsetUnity,
-                                      ),
-                                      0,
-                                    ),
-                                    child: UnityPowerUpHudButton(
-                                      key:
-                                          const ValueKey('hud_time_freeze_btn'),
-                                      isLevelUp: false,
-                                      isUnlocked: _isTimeFreezeUnlocked,
-                                      isFree: isFree,
-                                      count: widget.progress.timeFreezeCount,
-                                      isActionable: _game.canUseTimeFreeze,
-                                      onTap: _handleTimeFreezeTap,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-
-                            // Bottom-Right Settings Circle Button (`Play_Scene.png`: `137x137`, `right = 58`, straddling golden footer trim)
-                            Positioned(
-                              right: ux(context, 58),
-                              bottom: safePadding.bottom + ux(context, 91.5),
-                              child: UnitySpriteButton(
-                                key: const ValueKey('hud_settings_btn'),
-                                onTap: _toggleSettingsPopup,
-                                child: SizedBox(
-                                  width: ux(context, 137),
-                                  height: ux(context, 137),
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Image.asset(
-                                        'assets/images/Button_Circle_Blue.png',
-                                        width: ux(context, 137),
-                                        height: ux(context, 137),
-                                        fit: BoxFit.contain,
-                                      ),
-                                      Image.asset(
-                                        'assets/images/Icon_Settings.png',
-                                        width: ux(context, 79),
-                                        height: ux(context, 79),
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                        child: const IgnorePointer(
+                          child: UnityNineSlice(
+                            sprite: 'Frame_Footer.png',
+                          ),
                         ),
                       ),
-                    ),
 
-                    // Bottom-Left Cheat Button (ONLY rendered when `RemoteConfigService.cheatEnable == true`)
-                    ValueListenableBuilder<bool>(
-                      valueListenable: RemoteConfigService.cheatEnableNotifier,
-                      builder: (context, cheatEnabled, _) {
-                        if (!cheatEnabled || _hideCheatHudButton) {
-                          return const SizedBox.shrink();
-                        }
-                        return Positioned(
-                          left: ux(context, 42),
-                          bottom: safePadding.bottom + ux(context, 122),
-                          child: CheatHudButton(
-                            key: const ValueKey('hud_cheat_btn'),
-                            onTap: () {
-                              widget.audio.playClick();
-                              setState(() {
-                                _cheatOpen = true;
-                                _settingsOpen = false;
-                                _syncGamePauseState();
-                              });
-                            },
+                      // Left Power-Up (`LevelUp` at `X = -135` Unity px)
+                      Positioned(
+                        bottom: safePadding.bottom +
+                            ux(
+                              context,
+                              UnityPowerUpHudButton.bottomOffsetUnity,
+                            ),
+                        child: ListenableBuilder(
+                          listenable: Listenable.merge([
+                            widget.progress,
+                            _game.canLevelUpNotifier,
+                          ]),
+                          builder: (context, _) {
+                            final isFree =
+                                widget.progress.isFreePowerUpPending(
+                              MechanicUnlockInfo.levelUpPowerUp.id,
+                            );
+                            return Transform.translate(
+                              offset: Offset(
+                                -ux(
+                                  context,
+                                  UnityPowerUpHudButton
+                                      .horizontalOffsetUnity,
+                                ),
+                                0,
+                              ),
+                              child: UnityPowerUpHudButton(
+                                key: const ValueKey('hud_level_up_btn'),
+                                isLevelUp: true,
+                                isUnlocked: _isLevelUpUnlocked,
+                                isFree: isFree,
+                                count: widget.progress.levelUpCount,
+                                isActionable:
+                                    _game.canLevelUpNotifier.value,
+                                onTap: _handleLevelUpTap,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      // Right Power-Up (`TimeFreeze` at `X = +135` Unity px)
+                      Positioned(
+                        bottom: safePadding.bottom +
+                            ux(
+                              context,
+                              UnityPowerUpHudButton.bottomOffsetUnity,
+                            ),
+                        child: ListenableBuilder(
+                          listenable: Listenable.merge([
+                            widget.progress,
+                            _game.isTimeFrozenNotifier,
+                            _game.isTimerStartedNotifier,
+                          ]),
+                          builder: (context, _) {
+                            final isFree =
+                                widget.progress.isFreePowerUpPending(
+                              MechanicUnlockInfo.timeFreezePowerUp.id,
+                            );
+                            return Transform.translate(
+                              offset: Offset(
+                                ux(
+                                  context,
+                                  UnityPowerUpHudButton
+                                      .horizontalOffsetUnity,
+                                ),
+                                0,
+                              ),
+                              child: UnityPowerUpHudButton(
+                                key:
+                                    const ValueKey('hud_time_freeze_btn'),
+                                isLevelUp: false,
+                                isUnlocked: _isTimeFreezeUnlocked,
+                                isFree: isFree,
+                                count: widget.progress.timeFreezeCount,
+                                isActionable: _game.canUseTimeFreeze,
+                                onTap: _handleTimeFreezeTap,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      // Bottom-Right Settings Circle Button (`Play_Scene.png`: `137x137`, `right = 58`, straddling golden footer trim)
+                      Positioned(
+                        right: ux(context, 58),
+                        bottom: safePadding.bottom + ux(context, 91.5),
+                        child: UnitySpriteButton(
+                          key: const ValueKey('hud_settings_btn'),
+                          onTap: _toggleSettingsPopup,
+                          child: SizedBox(
+                            width: ux(context, 137),
+                            height: ux(context, 137),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/images/Button_Circle_Blue.png',
+                                  width: ux(context, 137),
+                                  height: ux(context, 137),
+                                  fit: BoxFit.contain,
+                                ),
+                                Image.asset(
+                                  'assets/images/Icon_Settings.png',
+                                  width: ux(context, 79),
+                                  height: ux(context, 79),
+                                  fit: BoxFit.contain,
+                                ),
+                              ],
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                  ],
+                        ),
+                      ),
+
+                      // Bottom-Left Cheat Button (ONLY rendered when `RemoteConfigService.cheatEnable == true`)
+                      ValueListenableBuilder<bool>(
+                        valueListenable: RemoteConfigService.cheatEnableNotifier,
+                        builder: (context, cheatEnabled, _) {
+                          if (!cheatEnabled || _hideCheatHudButton) {
+                            return const SizedBox.shrink();
+                          }
+                          return Positioned(
+                            left: ux(context, 42),
+                            bottom: safePadding.bottom + ux(context, 122),
+                            child: CheatHudButton(
+                              key: const ValueKey('hud_cheat_btn'),
+                              onTap: () {
+                                widget.audio.playClick();
+                                setState(() {
+                                  _cheatOpen = true;
+                                  _settingsOpen = false;
+                                  _syncGamePauseState();
+                                });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // 6b. Level 1 Step-by-Step Spotlight Tutorial Banner (`"Drag matching blocks to merge!"`)
+          // 6b. Level 1 Step-by-Step Spotlight Tutorial Banner (`"Drag to move"`)
           ValueListenableBuilder<bool>(
             valueListenable: _game.isSpotlightTutorialActiveNotifier,
             builder: (context, spotlightActive, _) {
@@ -1062,15 +1085,15 @@ class _GameplayScreenState extends State<GameplayScreen>
               return Positioned(
                 left: 0,
                 right: 0,
-                bottom: safePadding.bottom + ux(context, 48),
+                bottom: safePadding.bottom + ux(context, 136),
                 child: IgnorePointer(
                   child: Center(
                     child: Container(
                       key: const ValueKey('level1_spotlight_banner'),
                       constraints: BoxConstraints(maxWidth: maxBannerW),
                       padding: EdgeInsets.symmetric(
-                        horizontal: ux(context, 44),
-                        vertical: ux(context, 28),
+                        horizontal: ux(context, 56),
+                        vertical: ux(context, 26),
                       ),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
@@ -1099,11 +1122,11 @@ class _GameplayScreenState extends State<GameplayScreen>
                         ],
                       ),
                       child: Text(
-                        'Drag matching blocks to merge!',
+                        'Drag to move',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: 'Baloo2',
-                          fontSize: ux(context, 44),
+                          fontSize: ux(context, 46),
                           height: 1.12,
                           fontWeight: FontWeight.w800,
                           fontVariations: const [FontVariation('wght', 800)],
@@ -1374,20 +1397,33 @@ class _GameplayScreenState extends State<GameplayScreen>
                 },
               ),
 
-          // 12. Two-Stage `WinGameplayView.prefab` (`Level complete!` -> `AMAZING!` + Coin Flight)
+          // 12. Two-Stage `WinGameplayView.prefab` (`Level complete!` -> `AMAZING!` + Coin Flight or Garden Metagame)
           if (_showWinOverlay)
             WinOverlay(
+              levelNumber: _activeLevel.number,
               levelLabel: _activeLevel.title,
               rewardCoins: _activeLevel.coinReward,
+              showRewardX2: widget.progress
+                  .isWinRewardX2UnlockedForLevel(_activeLevel.number),
               timeFormatted: _game.elapsedTimeFormatted,
               movesCount: _game.movesCount,
               comboCount: _game.highestCombo,
+              gardenResult: _activeVaseAdvanceResult,
+              finalBlockNumber: _activeLevel.targetWinNumber,
+              onClaimMilestone: () {
+                widget.progress.claimCurrentVaseMilestone();
+                widget.audio.playCoinCollect();
+                _coinBounceCtrl.forward(from: 0.0);
+              },
               onStage2Shown: widget.audio.playWinAmazing,
               onCoinChunkArrived: (chunk) {
                 widget.progress.collectPendingWinCoinChunk(chunk);
                 widget.audio.playCoinCollect();
                 _coinBounceCtrl.forward(from: 0.0);
               },
+              onWatchRewardX2: _handleWinRewardX2Ad,
+              onNextLevelAfterRewardAd: () =>
+                  _handleNextLevelAfterWin(skipInterstitial: true),
               onNextLevel: _handleNextLevelAfterWin,
             ),
 
@@ -1539,6 +1575,8 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   /// Redesigned `CoinsWidget` (`WidgetBase.png` + `Icon_Coin.png` + `PowerUp_Plus.png`).
   Widget _buildCoinsWidget(BuildContext context) {
+    final isTutorialLevel1 =
+        !_activeLevel.isBonus && _activeLevel.number == 1;
     return ListenableBuilder(
       listenable: Listenable.merge([widget.progress, _coinBounceCtrl]),
       builder: (context, _) {
@@ -1547,6 +1585,7 @@ class _GameplayScreenState extends State<GameplayScreen>
         return UnityCoinsWidget(
           coins: widget.progress.coins,
           scale: pulse,
+          showPlusBadge: !isTutorialLevel1 || _showWinOverlay,
         );
       },
     );

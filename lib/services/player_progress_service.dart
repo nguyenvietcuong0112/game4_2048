@@ -12,12 +12,17 @@ class PlayerProgressService extends ChangeNotifier {
   static const _kFreePowerUpsPending = 'bo_free_pu_pending';
   static const _kFtueLoadingLogged = 'bo_ftue_loading_logged';
   static const _kFtueCompleted = 'bo_ftue_completed';
+  static const _kVaseCurrentId = 'bo_vase_current_id';
+  static const _kVaseStepCount = 'bo_vase_step_count';
+  static const _kVaseClaimedIds = 'bo_vase_claimed_ids';
+  static const _kVaseUnlockedIds = 'bo_vase_unlocked_ids';
 
   static const int maxLives = 5;
 
   /// Exact Unity `remote_config.json` power-up progression & economy settings:
   /// - `LevelUp` (`type = 0`): `unlock_level = 17`, `initial_inventory = 3`, `price_coins = 600` (`x3`)
   /// - `TimeFreeze` (`type = 1`): `unlock_level = 27`, `initial_inventory = 3`, `price_coins = 450` (`x3`), `duration = 20s`
+  static const int winRewardX2UnlockLevel = 7;
   static const int levelUpUnlockLevel = 17;
   static const int timeFreezeUnlockLevel = 27;
   static const int levelUpPackCost = 600;
@@ -38,6 +43,11 @@ class PlayerProgressService extends ChangeNotifier {
   bool _ftueLoadingLogged = false;
   bool _ftueCompleted = false;
 
+  int _vaseCurrentId = 1;
+  int _vaseStepCount = 0;
+  Set<int> _vaseClaimedIds = {};
+  Set<int> _vaseUnlockedIds = {};
+
   int get currentLevel => _currentLevel;
   int get highestLevel => _highestLevel;
   int get coins => _coins;
@@ -47,8 +57,25 @@ class PlayerProgressService extends ChangeNotifier {
   int get pendingWinCoins => _pendingWinCoins;
   bool get isFtueCompleted => _ftueCompleted;
 
+  int get vaseCurrentId => _vaseCurrentId;
+  int get vaseStepCount => _vaseStepCount;
+  VaseMilestoneConfig get currentVaseConfig =>
+      VaseMilestoneConfig.getForVaseId(_vaseCurrentId);
+  double get currentVaseProgress =>
+      (_vaseStepCount / currentVaseConfig.totalSteps).clamp(0.0, 1.0);
+  bool get isCurrentVaseReadyToClaim =>
+      _vaseStepCount >= currentVaseConfig.totalSteps &&
+      !_vaseClaimedIds.contains(_vaseCurrentId);
+  bool hasClaimedVase(int id) => _vaseClaimedIds.contains(id);
+  bool isVaseUnlocked(int id) => _vaseUnlockedIds.contains(id);
+
   /// Exact `PowerUpService.IsUnlockLevelReached(type)` checked against active campaign level
   /// (`levelNumber >= 17` for `LevelUp`, `levelNumber >= 27` for `TimeFreeze`).
+  bool isWinRewardX2UnlockedForLevel(int levelNumber) {
+    final effective = levelNumber >= 1000 ? _highestLevel : levelNumber;
+    return effective >= winRewardX2UnlockLevel;
+  }
+
   bool isLevelUpUnlockedForLevel(int levelNumber) {
     final effective = levelNumber >= 1000 ? _highestLevel : levelNumber;
     return effective >= levelUpUnlockLevel;
@@ -79,6 +106,17 @@ class PlayerProgressService extends ChangeNotifier {
         (_prefs?.getBool(_kFtueCompleted) ?? false) || _highestLevel > 1;
     _ftueLoadingLogged =
         (_prefs?.getBool(_kFtueLoadingLogged) ?? false) || _ftueCompleted;
+    final savedVaseId = _prefs?.getInt(_kVaseCurrentId);
+    _vaseCurrentId = savedVaseId ?? VaseMilestoneConfig.determineInitialVaseId(_highestLevel);
+    _vaseStepCount = _prefs?.getInt(_kVaseStepCount) ?? 0;
+    _vaseClaimedIds = (_prefs?.getStringList(_kVaseClaimedIds) ?? [])
+        .map((s) => int.tryParse(s) ?? 0)
+        .where((id) => id > 0)
+        .toSet();
+    _vaseUnlockedIds = (_prefs?.getStringList(_kVaseUnlockedIds) ?? [])
+        .map((s) => int.tryParse(s) ?? 0)
+        .where((id) => id > 0)
+        .toSet();
     notifyListeners();
   }
 
@@ -175,6 +213,15 @@ class PlayerProgressService extends ChangeNotifier {
         _prefs?.setInt(_kHighestLevel, _highestLevel);
       }
     }
+    notifyListeners();
+  }
+
+  /// Adds [extraCoins] to `_pendingWinCoins` when the player watches a Rewarded Ad
+  /// for `x2` Level Complete coins, persisting immediately on disk for crash safety.
+  void doublePendingWinCoins(int extraCoins) {
+    if (extraCoins <= 0) return;
+    _pendingWinCoins += extraCoins;
+    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins);
     notifyListeners();
   }
 
@@ -352,6 +399,89 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Records a won level step and returns animation data (oldProgress -> newProgress).
+  VaseStepAdvanceResult recordLevelWonVaseStep(int wonLevelNumber) {
+    final cfg = currentVaseConfig;
+    final oldStep = _vaseStepCount;
+    final totalSteps = cfg.totalSteps;
+    final oldProg = (oldStep / totalSteps).clamp(0.0, 1.0);
+
+    // Increment step up to totalSteps
+    final nextStep = (oldStep + 1).clamp(0, totalSteps);
+    _vaseStepCount = nextStep;
+    _prefs?.setInt(_kVaseStepCount, _vaseStepCount);
+
+    final newProg = (nextStep / totalSteps).clamp(0.0, 1.0);
+    final did100 = nextStep >= totalSteps;
+    if (did100) {
+      _vaseUnlockedIds.add(cfg.vaseId);
+      _prefs?.setStringList(
+        _kVaseUnlockedIds,
+        _vaseUnlockedIds.map((i) => i.toString()).toList(),
+      );
+    }
+    notifyListeners();
+
+    return VaseStepAdvanceResult(
+      vaseId: cfg.vaseId,
+      oldStep: oldStep,
+      newStep: nextStep,
+      totalSteps: totalSteps,
+      oldProgress: oldProg,
+      newProgress: newProg,
+      didReach100Percent: did100,
+      config: cfg,
+    );
+  }
+
+  /// Claims current vase milestone reward and advances to the next vase!
+  void claimCurrentVaseMilestone() {
+    final cfg = currentVaseConfig;
+    _vaseClaimedIds.add(cfg.vaseId);
+    _vaseUnlockedIds.add(cfg.vaseId);
+    _prefs?.setStringList(
+      _kVaseClaimedIds,
+      _vaseClaimedIds.map((i) => i.toString()).toList(),
+    );
+    _prefs?.setStringList(
+      _kVaseUnlockedIds,
+      _vaseUnlockedIds.map((i) => i.toString()).toList(),
+    );
+
+    // Reward coins
+    if (cfg.rewardCoins > 0) {
+      addCoins(cfg.rewardCoins);
+    }
+
+    // Unlock mechanic if applicable
+    if (cfg.unlockMechanicId != null) {
+      markMechanicSeen(cfg.unlockMechanicId!);
+      if (cfg.unlockMechanicId == 'pu_level_up' ||
+          cfg.unlockMechanicId == 'pu_time_freeze') {
+        setFreePowerUpPending(cfg.unlockMechanicId!, true);
+      }
+    }
+
+    // Advance to next vase
+    _vaseCurrentId++;
+    _vaseStepCount = 0;
+    _prefs?.setInt(_kVaseCurrentId, _vaseCurrentId);
+    _prefs?.setInt(_kVaseStepCount, _vaseStepCount);
+    notifyListeners();
+  }
+
+  void cheatAdvanceVaseToFull() {
+    final cfg = currentVaseConfig;
+    _vaseStepCount = cfg.totalSteps;
+    _vaseUnlockedIds.add(cfg.vaseId);
+    _prefs?.setInt(_kVaseStepCount, _vaseStepCount);
+    _prefs?.setStringList(
+      _kVaseUnlockedIds,
+      _vaseUnlockedIds.map((i) => i.toString()).toList(),
+    );
+    notifyListeners();
+  }
+
   Future<void> cheatResetAllProgress() async {
     flushPendingWinCoins();
     _currentLevel = 1;
@@ -362,6 +492,10 @@ class PlayerProgressService extends ChangeNotifier {
     _timeFreezeCount = initialPowerUpInventory;
     _seenMechanics.clear();
     _freePowerUpsPending.clear();
+    _vaseCurrentId = 1;
+    _vaseStepCount = 0;
+    _vaseClaimedIds.clear();
+    _vaseUnlockedIds.clear();
     await _prefs?.setInt(_kCurrentLevel, _currentLevel);
     await _prefs?.setInt(_kHighestLevel, _highestLevel);
     await _prefs?.setInt(_kCoins, _coins);
@@ -370,6 +504,168 @@ class PlayerProgressService extends ChangeNotifier {
     await _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
     await _prefs?.setStringList(_kSeenMechanics, const []);
     await _prefs?.setStringList(_kFreePowerUpsPending, const []);
+    await _prefs?.setInt(_kVaseCurrentId, 1);
+    await _prefs?.setInt(_kVaseStepCount, 0);
+    await _prefs?.setStringList(_kVaseClaimedIds, const []);
+    await _prefs?.setStringList(_kVaseUnlockedIds, const []);
     notifyListeners();
   }
+}
+
+enum VaseShapeType {
+  fishbowl,
+  ovalCeramic,
+  flutedCrystal,
+  royalTall,
+  prismLotus,
+}
+
+enum FlowerType {
+  tulipPink,
+  trioDaisy,
+  sunflower,
+  scarletPoppy,
+  crystalLotus,
+}
+
+class VaseMilestoneConfig {
+  final int vaseId;
+  final String title;
+  final String flowerTitle;
+  final VaseShapeType shapeType;
+  final FlowerType flowerType;
+  final int startLevel;
+  final int endLevel;
+  final int totalSteps;
+  final String? unlockMechanicId;
+  final String rewardTitle;
+  final int rewardCoins;
+  final String? rewardNote;
+
+  const VaseMilestoneConfig({
+    required this.vaseId,
+    required this.title,
+    required this.flowerTitle,
+    required this.shapeType,
+    required this.flowerType,
+    required this.startLevel,
+    required this.endLevel,
+    required this.totalSteps,
+    this.unlockMechanicId,
+    required this.rewardTitle,
+    this.rewardCoins = 150,
+    this.rewardNote,
+  });
+
+  static const List<VaseMilestoneConfig> milestones = [
+    VaseMilestoneConfig(
+      vaseId: 1,
+      title: 'Crystal Fishbowl',
+      flowerTitle: 'Pink Tulip',
+      shapeType: VaseShapeType.fishbowl,
+      flowerType: FlowerType.tulipPink,
+      startLevel: 1,
+      endLevel: 3,
+      totalSteps: 3,
+      unlockMechanicId: null,
+      rewardTitle: 'Starter Gift',
+      rewardCoins: 150,
+      rewardNote: '+150 Coins & New Crystal Vase!',
+    ),
+    VaseMilestoneConfig(
+      vaseId: 2,
+      title: 'Azure Ceramic Vase',
+      flowerTitle: 'Trio Daisies',
+      shapeType: VaseShapeType.ovalCeramic,
+      flowerType: FlowerType.trioDaisy,
+      startLevel: 4,
+      endLevel: 8,
+      totalSteps: 5,
+      unlockMechanicId: 'ice',
+      rewardTitle: 'Ice Blocks',
+      rewardCoins: 200,
+      rewardNote: 'Unlocks at Level 9!',
+    ),
+    VaseMilestoneConfig(
+      vaseId: 3,
+      title: 'Fluted Crystal Vase',
+      flowerTitle: 'Golden Sunflowers',
+      shapeType: VaseShapeType.flutedCrystal,
+      flowerType: FlowerType.sunflower,
+      startLevel: 9,
+      endLevel: 16,
+      totalSteps: 8,
+      unlockMechanicId: 'pu_level_up',
+      rewardTitle: 'Level Up',
+      rewardCoins: 250,
+      rewardNote: 'Booster unlocks at Level 17!',
+    ),
+    VaseMilestoneConfig(
+      vaseId: 4,
+      title: 'Royal Amphora Vase',
+      flowerTitle: 'Scarlet Poppies',
+      shapeType: VaseShapeType.royalTall,
+      flowerType: FlowerType.scarletPoppy,
+      startLevel: 17,
+      endLevel: 26,
+      totalSteps: 10,
+      unlockMechanicId: 'pu_time_freeze',
+      rewardTitle: 'Time Freeze',
+      rewardCoins: 300,
+      rewardNote: 'Booster unlocks at Level 27!',
+    ),
+  ];
+
+  static VaseMilestoneConfig getForVaseId(int id) {
+    if (id <= 4 && id >= 1) {
+      return milestones[id - 1];
+    }
+    // High-level looping milestones (10 levels per vase)
+    final cycle = (id - 5);
+    final start = 27 + cycle * 10;
+    return VaseMilestoneConfig(
+      vaseId: id,
+      title: 'Prism Lotus Vase',
+      flowerTitle: 'Crystal Lotus',
+      shapeType: VaseShapeType.prismLotus,
+      flowerType: FlowerType.crystalLotus,
+      startLevel: start,
+      endLevel: start + 9,
+      totalSteps: 10,
+      unlockMechanicId: null,
+      rewardTitle: 'Crystal Bloom Chest',
+      rewardCoins: 500,
+      rewardNote: '+500 Coins & Next Crystal Vase!',
+    );
+  }
+
+  static int determineInitialVaseId(int level) {
+    if (level <= 3) return 1;
+    if (level <= 8) return 2;
+    if (level <= 16) return 3;
+    if (level <= 26) return 4;
+    return 5 + ((level - 27) ~/ 10);
+  }
+}
+
+class VaseStepAdvanceResult {
+  final int vaseId;
+  final int oldStep;
+  final int newStep;
+  final int totalSteps;
+  final double oldProgress;
+  final double newProgress;
+  final bool didReach100Percent;
+  final VaseMilestoneConfig config;
+
+  const VaseStepAdvanceResult({
+    required this.vaseId,
+    required this.oldStep,
+    required this.newStep,
+    required this.totalSteps,
+    required this.oldProgress,
+    required this.newProgress,
+    required this.didReach100Percent,
+    required this.config,
+  });
 }

@@ -574,6 +574,7 @@ class UnitySdfText extends StatelessWidget {
   final TextAlign textAlign;
   final int? maxLines;
   final double? letterSpacing;
+  final bool singleTextNode;
 
   const UnitySdfText(
     this.text, {
@@ -583,6 +584,7 @@ class UnitySdfText extends StatelessWidget {
     this.textAlign = TextAlign.center,
     this.maxLines,
     this.letterSpacing,
+    this.singleTextNode = false,
   });
 
   @override
@@ -631,6 +633,18 @@ class UnitySdfText extends StatelessWidget {
         textAlign: textAlign,
         maxLines: maxLines,
         style: baseStyle(color: material.faceTop),
+      );
+    }
+
+    if (singleTextNode) {
+      return CustomPaint(
+        painter: _UnitySdfOutlinePainter(
+          text: text,
+          fontSize: fs,
+          material: material,
+          letterSpacing: letterSpacing ?? material.letterSpacing,
+        ),
+        child: faceText,
       );
     }
 
@@ -692,6 +706,79 @@ class UnitySdfText extends StatelessWidget {
   }
 }
 
+class _UnitySdfOutlinePainter extends CustomPainter {
+  final String text;
+  final double fontSize;
+  final UnityTextMaterial material;
+  final double letterSpacing;
+
+  const _UnitySdfOutlinePainter({
+    required this.text,
+    required this.fontSize,
+    required this.material,
+    required this.letterSpacing,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (text.isEmpty) return;
+    final weightVal = material.fontWeight.value.toDouble();
+    final variations = material.fontFamily == 'Baloo2'
+        ? [FontVariation('wght', weightVal)]
+        : null;
+
+    final innerSw = (fontSize * material.strokeRatio).clamp(1.2, 22.0);
+    final outerSw = material.outerStrokeColor != null
+        ? (fontSize * material.outerStrokeRatio).clamp(innerSw + 0.8, 28.0)
+        : innerSw;
+    final dropY = fontSize * material.underlayYRatio;
+
+    TextStyle strokeStyle(double width, Color color) => TextStyle(
+          fontFamily: material.fontFamily,
+          fontSize: fontSize,
+          fontWeight: material.fontWeight,
+          fontVariations: variations,
+          letterSpacing: letterSpacing,
+          height: 1.08,
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = width
+            ..strokeJoin = StrokeJoin.round
+            ..color = color,
+        );
+
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+
+    void paintLayer(double width, Color color, double dy) {
+      tp.text = TextSpan(text: text, style: strokeStyle(width, color));
+      tp.layout();
+      tp.paint(
+        canvas,
+        Offset(
+          (size.width - tp.width) * 0.5,
+          (size.height - tp.height) * 0.5 + dy,
+        ),
+      );
+    }
+
+    if (dropY > 0.2) {
+      paintLayer(outerSw, material.underlayColor, dropY);
+    }
+    if (material.outerStrokeColor != null) {
+      paintLayer(outerSw, material.outerStrokeColor!, 0.0);
+    }
+    paintLayer(innerSw, material.strokeColor, 0.0);
+  }
+
+  @override
+  bool shouldRepaint(covariant _UnitySdfOutlinePainter old) {
+    return old.text != text ||
+        old.fontSize != fontSize ||
+        old.material != material ||
+        old.letterSpacing != letterSpacing;
+  }
+}
+
 enum UnityButtonSkin { green, blue, red }
 
 /// GPU color-matrix filters that transform the green body of `Button_CTA.png` (`499x221`)
@@ -739,6 +826,14 @@ class UnityButtonColorFilters {
     1.00, 0.00, 0.18, 0, 0,
     0.00, 1.00, 1.05, 0, 0,
     0.00, 0.00, 1.85, 0, 0,
+    0.00, 0.00, 0.00, 1, 0,
+  ]);
+
+  /// Shifts green `Inset_Button_CTA.png` into warm recessed amber-brown matching `Button_Yellow.png`.
+  static const ColorFilter amberInsetFromGreen = ColorFilter.matrix(<double>[
+    0.15, 0.88, 0.00, 0, 14,
+    0.05, 0.40, 0.00, 0, 4,
+    0.00, 0.04, 0.04, 0, 0,
     0.00, 0.00, 0.00, 1, 0,
   ]);
 
@@ -932,6 +1027,373 @@ class _UnityCtaButtonState extends State<UnityCtaButton> {
       ),
     );
   }
+}
+
+/// Reusable 3-Slice Stacked Green Coin CTA Button (`Button_CTA.png` / `Button_Green.png` + `Inset_Button_CTA.png`):
+/// - Preserves circular `1:1` gold capsule end-caps via [UnityNineSlice] (`UnitySliceSpec(110, 0, 110, 0)`)
+///   so the button never distorts across single-button or dual-button widths!
+/// - Top line: [label] (`UnityTextMaterial.ctaGreen`)
+/// - Bottom recessed socket: `Inset_Button_CTA.png` (`Icon_Coin.png` + [coinLabel])
+class UnityStackedCoinCtaButton extends StatefulWidget {
+  final String label;
+  final String coinLabel;
+  final VoidCallback? onTap;
+  final String sprite;
+  final double? unityWidth;
+  final double unityHeight;
+  final double unityFontSize;
+  final double insetUnityWidth;
+  final double insetUnityHeight;
+
+  const UnityStackedCoinCtaButton({
+    super.key,
+    required this.label,
+    required this.coinLabel,
+    required this.onTap,
+    this.sprite = 'Button_CTA.png',
+    this.unityWidth,
+    this.unityHeight = 221,
+    this.unityFontSize = 54,
+    this.insetUnityWidth = 224,
+    this.insetUnityHeight = 58,
+  });
+
+  @override
+  State<UnityStackedCoinCtaButton> createState() =>
+      _UnityStackedCoinCtaButtonState();
+}
+
+class _UnityStackedCoinCtaButtonState extends State<UnityStackedCoinCtaButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final textMat =
+        enabled ? UnityTextMaterial.ctaGreen : UnityTextMaterial.ctaGray;
+    final w = widget.unityWidth != null ? ux(context, widget.unityWidth!) : null;
+    final h = ux(context, widget.unityHeight);
+    final hRatio = widget.unityHeight / 221.0;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+      onTapUp: enabled
+          ? (_) {
+              if (_pressed) setState(() => _pressed = false);
+              widget.onTap?.call();
+            }
+          : null,
+      onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+      child: AnimatedScale(
+        scale: _pressed && enabled ? 0.94 : 1.0,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOutCubic,
+        child: UnityNineSlice(
+          sprite: widget.sprite,
+          width: w,
+          height: h,
+          colorFilter:
+              enabled ? null : UnityButtonColorFilters.disabledSilver,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Upper Primary Label (`"Next Level"`)
+              Positioned(
+                left: ux(context, 38),
+                right: ux(context, 38),
+                top: ux(context, 20 * hRatio),
+                bottom: ux(context, (22 + widget.insetUnityHeight) * hRatio),
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: UnitySdfText(
+                      widget.label,
+                      unityFontSize: widget.unityFontSize,
+                      material: textMat,
+                      singleTextNode: true,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Bottom-Docked Recessed Arch Socket (`Inset_Button_CTA.png` flush on inner gold rim)
+              Positioned(
+                bottom: ux(context, 22 * hRatio),
+                child: UnityNineSlice(
+                  sprite: 'Inset_Button_CTA.png',
+                  width: ux(context, widget.insetUnityWidth),
+                  height: ux(context, widget.insetUnityHeight * hRatio),
+                  tint: enabled ? null : const Color(0xFF99A3B0),
+                  padding: EdgeInsets.fromLTRB(
+                    ux(context, 20),
+                    ux(context, 4 * hRatio),
+                    ux(context, 20),
+                    ux(context, 2 * hRatio),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset(
+                        'assets/images/Icon_Coin.png',
+                        width: ux(context, 44 * hRatio),
+                        height: ux(context, 44 * hRatio),
+                        fit: BoxFit.contain,
+                      ),
+                      SizedBox(width: ux(context, 8)),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: UnitySdfText(
+                            widget.coinLabel,
+                            unityFontSize: widget.unityFontSize * 0.82,
+                            material: textMat,
+                            singleTextNode: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Reusable 3-Slice Stacked Golden-Yellow Rewarded-Ad CTA Button (`Button_Yellow.png` + `Icon_Ads.png`):
+/// - Preserves circular `1:1` gold capsule end-caps via [UnityNineSlice] (`UnitySliceSpec(110, 0, 110, 0)`)!
+/// - Overlapping top-left 3D clapperboard badge `Icon_Ads.png` matching `LoseOverlay` (`Out of time!`).
+/// - Recessed amber `Inset_Button_CTA.png` socket (`Icon_Coin.png` + [coinLabel]).
+class UnityStackedAdCtaButton extends StatefulWidget {
+  final String label;
+  final String coinLabel;
+  final VoidCallback? onTap;
+  final double shimmerPhase;
+  final double? unityWidth;
+  final double unityHeight;
+  final double unityFontSize;
+  final double insetUnityWidth;
+  final double insetUnityHeight;
+
+  const UnityStackedAdCtaButton({
+    super.key,
+    required this.label,
+    required this.coinLabel,
+    required this.onTap,
+    this.shimmerPhase = 0.0,
+    this.unityWidth,
+    this.unityHeight = 221,
+    this.unityFontSize = 54,
+    this.insetUnityWidth = 224,
+    this.insetUnityHeight = 58,
+  });
+
+  @override
+  State<UnityStackedAdCtaButton> createState() =>
+      _UnityStackedAdCtaButtonState();
+}
+
+class _UnityStackedAdCtaButtonState extends State<UnityStackedAdCtaButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    final textMat = enabled
+        ? UnityTextMaterial.ctaYellowButton
+        : UnityTextMaterial.ctaGray;
+    final w = widget.unityWidth != null ? ux(context, widget.unityWidth!) : null;
+    final h = ux(context, widget.unityHeight);
+    final hRatio = widget.unityHeight / 221.0;
+    final breath = _pressed
+        ? 0.94
+        : (enabled
+            ? (1.0 + 0.014 * math.sin(widget.shimmerPhase * math.pi * 4.0))
+            : 1.0);
+
+    Widget body = SizedBox(
+      width: w,
+      height: h,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          // 1. 3-Slice Golden-Orange Pill (`Button_Yellow.png` — zero cap distortion!)
+          Positioned.fill(
+            child: UnityNineSlice(
+              sprite: 'Button_Yellow.png',
+              colorFilter:
+                  enabled ? null : UnityButtonColorFilters.disabledSilver,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Upper Primary Label (`"Reward x2"`)
+                  Positioned(
+                    left: ux(context, 52),
+                    right: ux(context, 36),
+                    top: ux(context, 20 * hRatio),
+                    bottom:
+                        ux(context, (22 + widget.insetUnityHeight) * hRatio),
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: UnitySdfText(
+                          widget.label,
+                          unityFontSize: widget.unityFontSize,
+                          material: textMat,
+                          singleTextNode: true,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Bottom-Docked Recessed Arch Socket (`Inset_Button_CTA.png` flush on inner gold rim)
+                  Positioned(
+                    bottom: ux(context, 22 * hRatio),
+                    child: UnityNineSlice(
+                      sprite: 'Inset_Button_CTA.png',
+                      width: ux(context, widget.insetUnityWidth),
+                      height: ux(context, widget.insetUnityHeight * hRatio),
+                      colorFilter: enabled
+                          ? UnityButtonColorFilters.amberInsetFromGreen
+                          : UnityButtonColorFilters.disabledSilver,
+                      padding: EdgeInsets.fromLTRB(
+                        ux(context, 20),
+                        ux(context, 4 * hRatio),
+                        ux(context, 20),
+                        ux(context, 2 * hRatio),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            'assets/images/Icon_Coin.png',
+                            width: ux(context, 44 * hRatio),
+                            height: ux(context, 44 * hRatio),
+                            fit: BoxFit.contain,
+                          ),
+                          SizedBox(width: ux(context, 8)),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: UnitySdfText(
+                                widget.coinLabel,
+                                unityFontSize: widget.unityFontSize * 0.82,
+                                material: textMat,
+                                singleTextNode: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 2. Subtle Diagonal Shimmer Sweep inside the inner button face
+          if (enabled)
+            Positioned(
+              left: ux(context, 24),
+              right: ux(context, 24),
+              top: ux(context, 16),
+              bottom: ux(context, 28),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(h * 0.42),
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _UnityCtaShimmerPainter(
+                      phase: (widget.shimmerPhase * 2.0) % 1.0,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // 3. Overlapping Top-Left 3D Clapperboard Badge (`Icon_Ads.png` — exact match with `LoseOverlay`)
+          Positioned(
+            left: -ux(context, 8),
+            top: -ux(context, 38),
+            width: ux(context, 114),
+            height: ux(context, 119),
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: enabled ? 1.0 : 0.65,
+                child: Image.asset(
+                  'assets/images/Icon_Ads.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+      onTapUp: enabled
+          ? (_) {
+              if (_pressed) setState(() => _pressed = false);
+              widget.onTap?.call();
+            }
+          : null,
+      onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+      child: Transform.scale(
+        scale: breath,
+        child: body,
+      ),
+    );
+  }
+}
+
+class _UnityCtaShimmerPainter extends CustomPainter {
+  final double phase;
+
+  const _UnityCtaShimmerPainter({required this.phase});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (phase > 0.52) return;
+    final t = (phase / 0.52).clamp(0.0, 1.0);
+    final sweepX = ui.lerpDouble(-size.width * 0.45, size.width * 1.35, t)!;
+    final bandW = size.width * 0.30;
+
+    final path = Path()
+      ..moveTo(sweepX, 0)
+      ..lineTo(sweepX + bandW, 0)
+      ..lineTo(sweepX + bandW - 18, size.height)
+      ..lineTo(sweepX - 18, size.height)
+      ..close();
+
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        Offset(sweepX - 10, 0),
+        Offset(sweepX + bandW, 0),
+        const [
+          Color(0x00FFFFFF),
+          Color(0x40FFFDE7),
+          Color(0x00FFFFFF),
+        ],
+        const [0.0, 0.5, 1.0],
+      );
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _UnityCtaShimmerPainter old) =>
+      old.phase != phase;
 }
 
 /// Interactive spring-squish sprite button (`Button_Close.png`, `Button_Circle_Green.png`, etc.).

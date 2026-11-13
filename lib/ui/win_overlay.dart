@@ -478,12 +478,12 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
               if (ctaRaw > 0.005)
                 if (_isRewardX2Enabled && widget.onWatchRewardX2 != null)
                   Positioned(
-                    left: 18,
-                    right: 18,
-                    top: ctaCenterY - 34,
+                    left: 16,
+                    right: 16,
+                    top: ctaCenterY - ux(context, 108),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 368),
+                        constraints: BoxConstraints(maxWidth: ux(context, 984)),
                         child: Transform.scale(
                           scale: 0.78 + 0.22 * ctaPop,
                           child: wrapFade(

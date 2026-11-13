@@ -266,7 +266,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
         final ribbonW = math.min(352.0, safeW - 20.0);
 
         final bottomPad = math.max(12.0, safeH * 0.020);
-        const bottomControlsEstimatedH = 178.0;
+        final bottomControlsEstimatedH = 92.0 + ux(context, 224.0);
         final stageTop = ribbonTop + ribbonH - 10.0;
         final stageBottom = math.max(
           stageTop + 176.0,
@@ -456,7 +456,9 @@ class _WaterGardenViewState extends State<WaterGardenView>
                       },
                       child: Center(
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 372),
+                          constraints: BoxConstraints(
+                            maxWidth: ux(context, 984),
+                          ),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -490,14 +492,15 @@ class _WaterGardenViewState extends State<WaterGardenView>
                               ),
                               const SizedBox(height: 14),
                               if (is100 && !_showingNextVase)
-                                _GardenTealPillButton(
+                                UnityCtaButton(
                                   key: const ValueKey('garden_claim_btn'),
                                   label: 'Claim',
-                                  width: 228,
-                                  height: 68,
-                                  fontSize: 23,
-                                  enabled: !widget.isActionBusy,
-                                  onTap: _handleClaimTapped,
+                                  unityWidth: 499,
+                                  unityHeight: 221,
+                                  unityFontSize: 68,
+                                  onTap: widget.isActionBusy
+                                      ? null
+                                      : _handleClaimTapped,
                                 )
                               else
                                 _buildDualNextAndRewardButtons(),
@@ -556,20 +559,23 @@ class _WaterGardenViewState extends State<WaterGardenView>
     return true;
   }
 
-  /// Level Complete Action Buttons:
-  /// - Levels 1..6 (`!_effectiveShowRewardX2`): Single centered `Button_Green.png` (`Next Level` + `+coins`).
-  /// - Level 7+ (`_effectiveShowRewardX2`): Side-by-side `Next Level` (`+coins`) & `Reward x2` (`+coins * 2` + `Icon_Ads.png`).
+  /// Level Complete Action Buttons (100% 3-Slice `UnityNineSlice` — zero capsule distortion):
+  /// - Levels 1..6 (`!_effectiveShowRewardX2`): Single centered `UnityStackedCoinCtaButton` (`500 x 221`).
+  /// - Level 7+ (`_effectiveShowRewardX2`): Side-by-side `LevelCompleteDualActionRow`.
   Widget _buildDualNextAndRewardButtons() {
     if (!_effectiveShowRewardX2) {
       return Center(
-        child: SizedBox(
-          width: 236,
-          child: _GardenNextLevelCoinButton(
-            key: const ValueKey('garden_next_level_btn'),
-            rewardCoins: math.max(1, widget.rewardCoins),
-            enabled: !widget.isActionBusy,
-            onTap: _handleNextLevelTapped,
-          ),
+        child: UnityStackedCoinCtaButton(
+          key: const ValueKey('garden_next_level_btn'),
+          label: 'Next Level',
+          coinLabel: '+${math.max(1, widget.rewardCoins)}',
+          sprite: 'Button_CTA.png',
+          unityWidth: 500,
+          unityHeight: 221,
+          unityFontSize: 56,
+          insetUnityWidth: 232,
+          insetUnityHeight: 58,
+          onTap: widget.isActionBusy ? null : _handleNextLevelTapped,
         ),
       );
     }
@@ -805,11 +811,11 @@ class _WaterGardenViewState extends State<WaterGardenView>
     );
   }
 
-  /// Panel 5 `"New Mechanic!"` Reward Popup Card styled 1:1 with the game's native popup kit:
-  /// - `popup_bg.png` gold-rimmed royal-blue body
-  /// - `Frame_Popup_Title.png` top header ribbon (`"New Mechanic!"` / `"Bonus Reward!"`)
-  /// - `frame_content.png` warm cream inner well with 3D reward icon + coins + `#5A270B` title
-  /// - `Button_Green.png` `"Claim"` CTA button!
+  /// Panel 5 `"New Mechanic!"` Reward Popup Card reusing 100% `UnityNineSlice` & `UnityCtaButton`:
+  /// - `popup_bg.png` 9-slice gold-rimmed royal-blue body
+  /// - `Frame_Popup_Title.png` 3-slice top header ribbon (`"New Mechanic!"` / `"Bonus Reward!"`)
+  /// - `frame_content.png` 9-slice warm cream inner well with 3D reward icon + coins + `#5A270B` title
+  /// - `UnityCtaButton` (`Button_CTA.png`) `"Claim"` button!
   Widget _buildNewMechanicCard({
     required BuildContext context,
     required VaseMilestoneConfig config,
@@ -818,714 +824,143 @@ class _WaterGardenViewState extends State<WaterGardenView>
   }) {
     final modalHeaderTitle =
         config.unlockMechanicId != null ? 'New Mechanic!' : 'Bonus Reward!';
+    final cardW = ux(context, 884);
+    final cardH = ux(context, 856);
 
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxWidth: 334,
-        maxHeight: math.max(276.0, maxCardHeight),
+        maxWidth: math.min(cardW, 380.0),
+        maxHeight: math.max(ux(context, 720), maxCardHeight),
       ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: SizedBox(
-          width: 330,
-          height: 306,
+          width: cardW,
+          height: cardH,
           child: Stack(
             alignment: Alignment.topCenter,
             clipBehavior: Clip.none,
             children: [
-              // 1. Gold-Rimmed Royal-Blue Popup Body (`popup_bg.png`)
+              // 1. 9-Slice Gold-Rimmed Royal-Blue Popup Body (`popup_bg.png`, exact 884px width -> 1:1 arch continuity)
               Positioned(
                 left: 0,
                 right: 0,
-                top: 14,
+                top: ux(context, 42),
                 bottom: 0,
-                child: Image.asset(
-                  'assets/images/popup_bg.png',
-                  fit: BoxFit.fill,
+                child: const UnityNineSlice(
+                  sprite: 'popup_bg.png',
+                  pixelMultiplier: 1.0,
                 ),
               ),
 
-              // 2. Warm Cream Inner Content Well (`frame_content.png`)
+              // 2. 9-Slice Warm Cream Inner Content Well (`frame_content.png`, exact 784px width -> 1:1 corner continuity)
               Positioned(
-                left: 19,
-                right: 19,
-                top: 56,
-                height: 162,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned.fill(
-                      child: Image.asset(
-                        'assets/images/frame_content.png',
-                        fit: BoxFit.fill,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Stack(
-                              alignment: Alignment.center,
-                              clipBehavior: Clip.none,
-                              children: [
-                                AnimatedBuilder(
-                                  animation: _ambientCtrl,
-                                  builder: (context, _) {
-                                    return _RewardShowcaseGraphic(
-                                      mechanicId: config.unlockMechanicId,
-                                      ambientPhase:
-                                          _ambientCtrl.value * math.pi * 2.0,
-                                    );
-                                  },
-                                ),
-                                Positioned(
-                                  right: 6,
-                                  bottom: 2,
-                                  child: _SingleNodeUnitySdfText(
-                                    '+${config.rewardCoins}',
-                                    fontSize: 19.5,
-                                    material: UnityTextMaterial.winCoinAmount,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            config.rewardTitle,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            style: const TextStyle(
-                              fontFamily: 'Baloo2',
-                              fontSize: 23.0,
-                              fontWeight: FontWeight.w800,
-                              fontVariations: [FontVariation('wght', 800)],
-                              height: 1.06,
-                              color: Color(0xFF5A270B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 3. Bottom Native `Button_Green.png` `"Claim"` CTA Button
-              Positioned(
-                bottom: 15,
-                child: _GardenTealPillButton(
-                  label: 'Claim',
-                  width: 214,
-                  height: 62,
-                  fontSize: 22.0,
-                  enabled: !widget.isActionBusy,
-                  onTap: onClaim,
-                ),
-              ),
-
-              // 4. Top Overlapping Ribbon (`Frame_Popup_Title.png`)
-              Positioned(
-                top: 0,
-                width: 248,
-                height: 50,
-                child: Container(
-                  key: ValueKey<String>(modalHeaderTitle),
-                  alignment: Alignment.center,
-                  child: Stack(
-                    alignment: Alignment.center,
+                left: ux(context, 50),
+                right: ux(context, 50),
+                top: ux(context, 162),
+                height: ux(context, 434),
+                child: UnityNineSlice(
+                  sprite: 'frame_content.png',
+                  pixelMultiplier: 1.0,
+                  padding: EdgeInsets.fromLTRB(
+                    ux(context, 34),
+                    ux(context, 16),
+                    ux(context, 34),
+                    ux(context, 22),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Positioned.fill(
-                        child: Image.asset(
-                          'assets/images/Frame_Popup_Title.png',
-                          fit: BoxFit.fill,
+                      Expanded(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          clipBehavior: Clip.none,
+                          children: [
+                            AnimatedBuilder(
+                              animation: _ambientCtrl,
+                              builder: (context, _) {
+                                return _RewardShowcaseGraphic(
+                                  mechanicId: config.unlockMechanicId,
+                                  ambientPhase:
+                                      _ambientCtrl.value * math.pi * 2.0,
+                                );
+                              },
+                            ),
+                            Positioned(
+                              right: ux(context, 16),
+                              bottom: ux(context, 6),
+                              child: UnitySdfText(
+                                '+${config.rewardCoins}',
+                                unityFontSize: 54,
+                                material: UnityTextMaterial.winCoinAmount,
+                                singleTextNode: true,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 2, 22, 6),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: _SingleNodeUnitySdfText(
-                            modalHeaderTitle,
-                            fontSize: 21.0,
-                            material: UnityTextMaterial.popupTitle,
-                          ),
+                      SizedBox(height: ux(context, 6)),
+                      Text(
+                        config.rewardTitle,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontFamily: 'Baloo2',
+                          fontSize: ux(context, 62),
+                          fontWeight: FontWeight.w800,
+                          fontVariations: const [FontVariation('wght', 800)],
+                          height: 1.06,
+                          color: const Color(0xFF5A270B),
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ),
+
+              // 3. Bottom Shared `UnityCtaButton` (`Button_CTA.png`, `"Claim"`)
+              Positioned(
+                bottom: ux(context, 34),
+                child: UnityCtaButton(
+                  label: 'Claim',
+                  unityWidth: 480,
+                  unityHeight: 205,
+                  unityFontSize: 64,
+                  onTap: widget.isActionBusy ? null : onClaim,
+                ),
+              ),
+
+              // 4. 3-Slice Top Overlapping Ribbon (`Frame_Popup_Title.png`)
+              Positioned(
+                top: 0,
+                width: ux(context, 636),
+                height: ux(context, 150),
+                child: Container(
+                  key: ValueKey<String>(modalHeaderTitle),
+                  alignment: Alignment.center,
+                  child: UnityNineSlice(
+                    sprite: 'Frame_Popup_Title.png',
+                    padding: EdgeInsets.fromLTRB(
+                      ux(context, 52),
+                      ux(context, 8),
+                      ux(context, 52),
+                      ux(context, 18),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: UnitySdfText(
+                        modalHeaderTitle,
+                        unityFontSize: 60,
+                        material: UnityTextMaterial.popupTitle,
+                        singleTextNode: true,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Single-node SDF Text widget rendering exact `UnityTextMaterial` strokes & 3D drop underlay
-/// via `CustomPaint` behind a **single** `Text` widget so `find.text(...)` matches `findsOneWidget`!
-class _SingleNodeUnitySdfText extends StatelessWidget {
-  final String text;
-  final double fontSize;
-  final UnityTextMaterial material;
-
-  const _SingleNodeUnitySdfText(
-    this.text, {
-    required this.fontSize,
-    required this.material,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final weightVal = material.fontWeight.value.toDouble();
-    final variations = material.fontFamily == 'Baloo2'
-        ? [FontVariation('wght', weightVal)]
-        : null;
-
-    TextStyle buildStyle({Paint? foreground, Color? color}) => TextStyle(
-          fontFamily: material.fontFamily,
-          fontSize: fontSize,
-          fontWeight: material.fontWeight,
-          fontVariations: variations,
-          letterSpacing: material.letterSpacing,
-          height: 1.08,
-          foreground: foreground,
-          color: color,
-        );
-
-    final faceChild = material.faceTop != material.faceBottom
-        ? Text(
-            text,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            style: buildStyle(
-              foreground: Paint()
-                ..shader = ui.Gradient.linear(
-                  Offset(0, fontSize * 0.12),
-                  Offset(0, fontSize * 0.98),
-                  [material.faceTop, material.faceBottom],
-                ),
-            ),
-          )
-        : Text(
-            text,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            style: buildStyle(color: material.faceTop),
-          );
-
-    return CustomPaint(
-      painter: _SdfOutlineLayerPainter(
-        text: text,
-        fontSize: fontSize,
-        material: material,
-      ),
-      child: faceChild,
-    );
-  }
-}
-
-class _SdfOutlineLayerPainter extends CustomPainter {
-  final String text;
-  final double fontSize;
-  final UnityTextMaterial material;
-
-  const _SdfOutlineLayerPainter({
-    required this.text,
-    required this.fontSize,
-    required this.material,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (text.isEmpty) return;
-    final weightVal = material.fontWeight.value.toDouble();
-    final variations = material.fontFamily == 'Baloo2'
-        ? [FontVariation('wght', weightVal)]
-        : null;
-
-    final innerSw = (fontSize * material.strokeRatio).clamp(1.2, 16.0);
-    final outerSw = material.outerStrokeColor != null
-        ? (fontSize * material.outerStrokeRatio).clamp(innerSw + 0.6, 20.0)
-        : innerSw;
-    final dropY = fontSize * material.underlayYRatio;
-
-    TextStyle strokeStyle(double width, Color color) => TextStyle(
-          fontFamily: material.fontFamily,
-          fontSize: fontSize,
-          fontWeight: material.fontWeight,
-          fontVariations: variations,
-          letterSpacing: material.letterSpacing,
-          height: 1.08,
-          foreground: Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = width
-            ..strokeJoin = StrokeJoin.round
-            ..color = color,
-        );
-
-    final tp = TextPainter(textDirection: TextDirection.ltr);
-
-    void paintLayer(double width, Color color, double dy) {
-      tp.text = TextSpan(text: text, style: strokeStyle(width, color));
-      tp.layout();
-      tp.paint(
-        canvas,
-        Offset(
-          (size.width - tp.width) * 0.5,
-          (size.height - tp.height) * 0.5 + dy,
-        ),
-      );
-    }
-
-    // 1. 3D Drop Underlay
-    if (dropY > 0.15) {
-      paintLayer(outerSw, material.underlayColor, dropY);
-    }
-    // 2. Optional Outer Stroke
-    if (material.outerStrokeColor != null) {
-      paintLayer(outerSw, material.outerStrokeColor!, 0.0);
-    }
-    // 3. Primary Inner Stroke
-    paintLayer(innerSw, material.strokeColor, 0.0);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SdfOutlineLayerPainter oldDelegate) {
-    return oldDelegate.text != text ||
-        oldDelegate.fontSize != fontSize ||
-        oldDelegate.material != material;
-  }
-}
-
-/// Left Level Complete CTA Button (Native Old Theme):
-/// Gold-rimmed `Button_Green.png` with `"Next Level"` (`ctaGreen`) on top
-/// and `Inset_Button_CTA.png` (`Icon_Coin.png` + `+coins`) below!
-class _GardenNextLevelCoinButton extends StatefulWidget {
-  final int rewardCoins;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  const _GardenNextLevelCoinButton({
-    super.key,
-    required this.rewardCoins,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  @override
-  State<_GardenNextLevelCoinButton> createState() =>
-      _GardenNextLevelCoinButtonState();
-}
-
-class _GardenNextLevelCoinButtonState
-    extends State<_GardenNextLevelCoinButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    const height = 74.0;
-    final active = widget.enabled;
-    final textMat =
-        active ? UnityTextMaterial.ctaGreen : UnityTextMaterial.ctaGray;
-
-    Widget body = SizedBox(
-      height: height,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/Button_Green.png',
-              fit: BoxFit.fill,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 7, 14, 12),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: _SingleNodeUnitySdfText(
-                      'Next Level',
-                      fontSize: 18.5,
-                      material: textMat,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                // Native recessed dark-green coin inset (`Inset_Button_CTA.png`)
-                SizedBox(
-                  height: 22,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Positioned.fill(
-                        child: Image.asset(
-                          'assets/images/Inset_Button_CTA.png',
-                          fit: BoxFit.fill,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 11),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const _GoldCoinBadgeIcon(size: 16.5),
-                            const SizedBox(width: 5),
-                            _SingleNodeUnitySdfText(
-                              '+${widget.rewardCoins}',
-                              fontSize: 15.0,
-                              material: textMat,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (!active) {
-      body = ColorFiltered(
-        colorFilter: UnityButtonColorFilters.disabledSilver,
-        child: body,
-      );
-    }
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: active ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: active
-          ? (_) {
-              if (_pressed) setState(() => _pressed = false);
-              widget.onTap();
-            }
-          : null,
-      onTapCancel: active ? () => setState(() => _pressed = false) : null,
-      child: AnimatedScale(
-        scale: _pressed ? 0.94 : 1.0,
-        duration: const Duration(milliseconds: 80),
-        curve: Curves.easeOutCubic,
-        child: body,
-      ),
-    );
-  }
-}
-
-/// Right Level Complete Monetization CTA Button (Native Old Theme):
-/// Gold-rimmed `Button_Yellow.png` with `"Reward x2"` (`ctaYellowButton`) on top,
-/// coin icon + `+${doubledCoins}` below, and overlapping top-left `Icon_Ads.png` clapperboard badge!
-class _GardenRewardX2CoinButton extends StatefulWidget {
-  final int doubledCoins;
-  final double shimmerPhase;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  const _GardenRewardX2CoinButton({
-    super.key,
-    required this.doubledCoins,
-    required this.shimmerPhase,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  @override
-  State<_GardenRewardX2CoinButton> createState() =>
-      _GardenRewardX2CoinButtonState();
-}
-
-class _GardenRewardX2CoinButtonState extends State<_GardenRewardX2CoinButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    const height = 74.0;
-    final active = widget.enabled;
-    final textMat =
-        active ? UnityTextMaterial.ctaYellowButton : UnityTextMaterial.ctaGray;
-    final breath = _pressed
-        ? 0.94
-        : (active
-            ? (1.0 + 0.015 * math.sin(widget.shimmerPhase * math.pi * 4.0))
-            : 1.0);
-
-    Widget body = SizedBox(
-      height: height,
-      child: Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: [
-          // 1. Native Gold-Rimmed Golden-Orange Pill (`Button_Yellow.png`)
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/Button_Yellow.png',
-              fit: BoxFit.fill,
-            ),
-          ),
-
-          // 2. Subtle Diagonal Golden Shimmer Sweep inside the button face
-          if (active)
-            Positioned(
-              left: 8,
-              right: 8,
-              top: 6,
-              bottom: 10,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: IgnorePointer(
-                  child: CustomPaint(
-                    painter: _ButtonShimmerSweepPainter(
-                      phase: (widget.shimmerPhase * 2.0) % 1.0,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          // 3. Stacked `"Reward x2"` + Recessed Doubled-Coin Pill
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 7, 14, 12),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: _SingleNodeUnitySdfText(
-                        'Reward x2',
-                        fontSize: 18.5,
-                        material: textMat,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Container(
-                  height: 22,
-                  padding: const EdgeInsets.symmetric(horizontal: 11),
-                  decoration: BoxDecoration(
-                    color: const Color(0x4D7A2E00),
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(
-                      color: const Color(0x58FFE082),
-                      width: 1.0,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const _GoldCoinBadgeIcon(size: 16.5),
-                      const SizedBox(width: 5),
-                      _SingleNodeUnitySdfText(
-                        '+${widget.doubledCoins}',
-                        fontSize: 15.0,
-                        material: textMat,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // 4. Overlapping Top-Left 3D Clapperboard Badge (`Icon_Ads.png` — exact match with `LoseOverlay`)
-          Positioned(
-            left: -5,
-            top: -11,
-            width: 37,
-            height: 39,
-            child: Image.asset(
-              'assets/images/Icon_Ads.png',
-              fit: BoxFit.contain,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (!active) {
-      body = ColorFiltered(
-        colorFilter: UnityButtonColorFilters.disabledSilver,
-        child: body,
-      );
-    }
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: active ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: active
-          ? (_) {
-              if (_pressed) setState(() => _pressed = false);
-              widget.onTap();
-            }
-          : null,
-      onTapCancel: active ? () => setState(() => _pressed = false) : null,
-      child: Transform.scale(
-        scale: breath,
-        child: body,
-      ),
-    );
-  }
-}
-
-class _ButtonShimmerSweepPainter extends CustomPainter {
-  final double phase;
-
-  const _ButtonShimmerSweepPainter({required this.phase});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (phase > 0.52) return;
-    final t = (phase / 0.52).clamp(0.0, 1.0);
-    final sweepX = ui.lerpDouble(-size.width * 0.45, size.width * 1.35, t)!;
-    final bandW = size.width * 0.30;
-
-    final path = Path()
-      ..moveTo(sweepX, 0)
-      ..lineTo(sweepX + bandW, 0)
-      ..lineTo(sweepX + bandW - 18, size.height)
-      ..lineTo(sweepX - 18, size.height)
-      ..close();
-
-    final paint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        Offset(sweepX - 10, 0),
-        Offset(sweepX + bandW, 0),
-        const [
-          Color(0x00FFFFFF),
-          Color(0x46FFFDE7),
-          Color(0x00FFFFFF),
-        ],
-        const [0.0, 0.5, 1.0],
-      );
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ButtonShimmerSweepPainter oldDelegate) =>
-      oldDelegate.phase != phase;
-}
-
-class _GoldCoinBadgeIcon extends StatelessWidget {
-  final double size;
-
-  const _GoldCoinBadgeIcon({required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Image.asset(
-      'assets/images/Icon_Coin.png',
-      width: size,
-      height: size,
-      fit: BoxFit.contain,
-      errorBuilder: (_, _, _) => SizedBox(
-        width: size,
-        height: size,
-        child: const CustomPaint(painter: _MiniGoldCoinPainter()),
-      ),
-    );
-  }
-}
-
-/// Native Old-Theme Gold-Rimmed Green CTA Button (`Button_Green.png`) for `"Claim"`.
-class _GardenTealPillButton extends StatefulWidget {
-  final String label;
-  final double width;
-  final double height;
-  final double fontSize;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  const _GardenTealPillButton({
-    super.key,
-    required this.label,
-    required this.width,
-    required this.height,
-    required this.fontSize,
-    this.enabled = true,
-    required this.onTap,
-  });
-
-  @override
-  State<_GardenTealPillButton> createState() => _GardenTealPillButtonState();
-}
-
-class _GardenTealPillButtonState extends State<_GardenTealPillButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = widget.enabled;
-    final textMat =
-        active ? UnityTextMaterial.ctaGreen : UnityTextMaterial.ctaGray;
-
-    Widget body = SizedBox(
-      width: widget.width,
-      height: widget.height,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(
-            child: Image.asset(
-              'assets/images/Button_Green.png',
-              fit: BoxFit.fill,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 9),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: _SingleNodeUnitySdfText(
-                widget.label,
-                fontSize: widget.fontSize,
-                material: textMat,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (!active) {
-      body = ColorFiltered(
-        colorFilter: UnityButtonColorFilters.disabledSilver,
-        child: body,
-      );
-    }
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: active ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: active
-          ? (_) {
-              if (_pressed) setState(() => _pressed = false);
-              widget.onTap();
-            }
-          : null,
-      onTapCancel: active ? () => setState(() => _pressed = false) : null,
-      child: AnimatedScale(
-        scale: _pressed ? 0.94 : 1.0,
-        duration: const Duration(milliseconds: 80),
-        curve: Curves.easeOutCubic,
-        child: body,
       ),
     );
   }
@@ -2224,39 +1659,6 @@ class _RewardShowcasePainter extends CustomPainter {
   bool shouldRepaint(covariant _RewardShowcasePainter oldDelegate) =>
       oldDelegate.ambientPhase != ambientPhase ||
       oldDelegate.drawCustomIceCube != drawCustomIceCube;
-}
-
-class _MiniGoldCoinPainter extends CustomPainter {
-  const _MiniGoldCoinPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width * 0.5, size.height * 0.5);
-    final r = size.width * 0.46;
-    final p = Paint()..isAntiAlias = true;
-
-    p.color = const Color(0xFFD97706);
-    canvas.drawCircle(c.translate(0, 1.2), r, p);
-
-    p
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        Offset(c.dx - r, c.dy - r),
-        Offset(c.dx + r, c.dy + r),
-        const [Color(0xFFFFF59D), Color(0xFFFFB300)],
-      );
-    canvas.drawCircle(c, r, p);
-    p.shader = null;
-
-    p
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.3
-      ..color = const Color(0xEEFFFDE7);
-    canvas.drawCircle(c, r * 0.68, p);
-  }
-
-  @override
-  bool shouldRepaint(covariant _MiniGoldCoinPainter oldDelegate) => false;
 }
 
 /// Parametric geometry metrics for each of the 5 sculpted 3D Vase shapes.
@@ -4908,9 +4310,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
 }
 
 
-/// Reusable Side-by-Side Level Complete Monetization Action Bar:
-/// - Left Button: `Next Level` + Coin Icon + `+${rewardCoins}`
-/// - Right Button: `Reward x2` (Ad Icon) + Coin Icon + `+${rewardCoins * 2}`
+/// Reusable Side-by-Side Level Complete Monetization Action Bar (100% 3-Slice `UnityNineSlice`):
+/// - Left Button: [UnityStackedCoinCtaButton] (`Button_Green.png` + `Inset_Button_CTA.png` + `+${rewardCoins}`)
+/// - Right Button: [UnityStackedAdCtaButton] (`Button_Yellow.png` + `Icon_Ads.png` + `+${rewardCoins * 2}`)
 class LevelCompleteDualActionRow extends StatelessWidget {
   final int rewardCoins;
   final Animation<double> shimmerAnimation;
@@ -4935,24 +4337,33 @@ class LevelCompleteDualActionRow extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: _GardenNextLevelCoinButton(
+          child: UnityStackedCoinCtaButton(
             key: const ValueKey('garden_next_level_btn'),
-            rewardCoins: baseCoins,
-            enabled: enabled,
-            onTap: onNextLevel,
+            label: 'Next Level',
+            coinLabel: '+$baseCoins',
+            sprite: 'Button_Green.png',
+            unityHeight: 216,
+            unityFontSize: 52,
+            insetUnityWidth: 216,
+            insetUnityHeight: 56,
+            onTap: enabled ? onNextLevel : null,
           ),
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: ux(context, 28)),
         Expanded(
           child: AnimatedBuilder(
             animation: shimmerAnimation,
             builder: (context, _) {
-              return _GardenRewardX2CoinButton(
+              return UnityStackedAdCtaButton(
                 key: const ValueKey('garden_reward_x2_btn'),
-                doubledCoins: doubleCoins,
+                label: 'Reward x2',
+                coinLabel: '+$doubleCoins',
                 shimmerPhase: shimmerAnimation.value,
-                enabled: enabled,
-                onTap: onRewardX2,
+                unityHeight: 216,
+                unityFontSize: 52,
+                insetUnityWidth: 216,
+                insetUnityHeight: 56,
+                onTap: enabled ? onRewardX2 : null,
               );
             },
           ),

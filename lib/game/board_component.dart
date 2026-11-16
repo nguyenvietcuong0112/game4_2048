@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +24,34 @@ class BoardComponent extends PositionComponent {
   bool isSuperseded = false;
   final Paint _imagePaint = Paint()..filterQuality = FilterQuality.low;
 
+  static const double _cellTrailFadeSeconds = 0.36;
+  static const double _wakeFadeSeconds = 0.20;
+  static const int _maxWakeStamps = 8;
+
+  late final int _gridCols;
+  late final int _gridRows;
+  late final Float32List _cellTrailAge;
+  late final Uint8List _cellTrailHold;
+  late final List<Color> _cellTrailColor;
+
+  final Float32List _wakeCx = Float32List(_maxWakeStamps);
+  final Float32List _wakeCy = Float32List(_maxWakeStamps);
+  final Float32List _wakeW = Float32List(_maxWakeStamps);
+  final Float32List _wakeH = Float32List(_maxWakeStamps);
+  final Float32List _wakeAge = Float32List(_maxWakeStamps);
+  final List<Color> _wakeColor = List<Color>.filled(
+    _maxWakeStamps,
+    Colors.transparent,
+  );
+  int _wakeCursor = 0;
+  double _holdPulseClock = 0.0;
+  bool _hasActiveTrails = false;
+
+  final Paint _trailFillPaint = Paint()..style = PaintingStyle.fill;
+  final Paint _trailRimPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.6;
+
   BoardComponent({
     required this.level,
     required this.cellSize,
@@ -31,7 +61,119 @@ class BoardComponent extends PositionComponent {
           size: Vector2(level.cols * cellSize, level.rows * cellSize),
           priority: 1,
         ) {
+    _gridCols = math.max(1, level.cols);
+    _gridRows = math.max(1, level.rows);
+    final totalCells = _gridCols * _gridRows;
+    _cellTrailAge = Float32List(totalCells)..fillRange(0, totalCells, -1.0);
+    _cellTrailHold = Uint8List(totalCells);
+    _cellTrailColor = List<Color>.filled(totalCells, Colors.transparent);
+    _wakeAge.fillRange(0, _maxWakeStamps, -1.0);
     _bakeBoardToGpuImageSync();
+  }
+
+  @visibleForTesting
+  int get debugActiveTrailCellCount {
+    int count = 0;
+    for (int i = 0; i < _cellTrailAge.length; i++) {
+      if (_cellTrailHold[i] != 0 || _cellTrailAge[i] > 0.0) count++;
+    }
+    return count;
+  }
+
+  @visibleForTesting
+  double debugTrailAgeAt(int col, int row) {
+    if (col < 0 || col >= _gridCols || row < 0 || row >= _gridRows) {
+      return -1.0;
+    }
+    return _cellTrailAge[row * _gridCols + col];
+  }
+
+  /// Lights up the board grid slots underneath a dragged block; vacated cells
+  /// remain lit and smoothly animate & contract into a colorful fading trail.
+  void updateActiveDragFootprint(
+    int baseCol,
+    int baseRow,
+    List<GridCell> localCells,
+    Color accentColor,
+  ) {
+    if (isSuperseded) return;
+    _cellTrailHold.fillRange(0, _cellTrailHold.length, 0);
+    for (int i = 0; i < localCells.length; i++) {
+      final lc = localCells[i];
+      final c = baseCol + lc.$1;
+      final r = baseRow + lc.$2;
+      if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) continue;
+      final idx = r * _gridCols + c;
+      _cellTrailHold[idx] = 1;
+      _cellTrailAge[idx] = 1.0;
+      _cellTrailColor[idx] = accentColor;
+    }
+    _hasActiveTrails = true;
+  }
+
+  /// Releases hold lock so the last touched cells animate smoothly to fade out.
+  void clearActiveDragFootprint() {
+    _cellTrailHold.fillRange(0, _cellTrailHold.length, 0);
+  }
+
+  /// Emits a lightweight motion-wake stamp behind the sliding block footprint.
+  void emitDragWakeStamp({
+    required double cx,
+    required double cy,
+    required double width,
+    required double height,
+    required Color color,
+  }) {
+    if (isSuperseded) return;
+    _wakeCx[_wakeCursor] = cx;
+    _wakeCy[_wakeCursor] = cy;
+    _wakeW[_wakeCursor] = width;
+    _wakeH[_wakeCursor] = height;
+    _wakeAge[_wakeCursor] = 1.0;
+    _wakeColor[_wakeCursor] = color;
+    _wakeCursor = (_wakeCursor + 1) % _maxWakeStamps;
+    _hasActiveTrails = true;
+  }
+
+  void clearTrailsImmediate() {
+    _cellTrailHold.fillRange(0, _cellTrailHold.length, 0);
+    _cellTrailAge.fillRange(0, _cellTrailAge.length, -1.0);
+    _wakeAge.fillRange(0, _maxWakeStamps, -1.0);
+    _hasActiveTrails = false;
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    if (isSuperseded || !_hasActiveTrails) return;
+
+    final clampedDt = dt.clamp(0.0, 0.05);
+    _holdPulseClock = (_holdPulseClock + clampedDt * 6.5) % (math.pi * 200.0);
+
+    bool anyAlive = false;
+    final cellDecay = clampedDt / _cellTrailFadeSeconds;
+    for (int i = 0; i < _cellTrailAge.length; i++) {
+      if (_cellTrailHold[i] != 0) {
+        _cellTrailAge[i] = 1.0;
+        anyAlive = true;
+      } else if (_cellTrailAge[i] > 0.0) {
+        final next = _cellTrailAge[i] - cellDecay;
+        _cellTrailAge[i] = next > 0.004 ? next : -1.0;
+        if (_cellTrailAge[i] > 0.0) anyAlive = true;
+      }
+    }
+
+    final wakeDecay = clampedDt / _wakeFadeSeconds;
+    for (int i = 0; i < _maxWakeStamps; i++) {
+      final age = _wakeAge[i];
+      if (age > 0.0) {
+        final next = age - wakeDecay;
+        _wakeAge[i] = next > 0.004 ? next : -1.0;
+        if (_wakeAge[i] > 0.0) anyAlive = true;
+      }
+    }
+
+    _hasActiveTrails = anyAlive;
   }
 
   void markSupersededAndDispose() {
@@ -277,6 +419,84 @@ class BoardComponent extends PositionComponent {
     final img = _bakedImage;
     if (img != null) {
       canvas.drawImageRect(img, _bakedSrcRect, _bakedDstRect, _imagePaint);
+    }
+    if (_hasActiveTrails) {
+      _drawBoardCellTrailsAndWake(canvas);
+    }
+  }
+
+  void _drawBoardCellTrailsAndWake(Canvas canvas) {
+    final tileInset = cellSize * 0.028;
+    final baseTileSpan = cellSize - tileInset * 2.0;
+    final baseTileRadius = cellSize * 0.135;
+
+    // 1. Animated board grid slot highlights under & trailing the dragged block
+    for (int i = 0; i < _cellTrailAge.length; i++) {
+      final rawAge = _cellTrailAge[i];
+      if (rawAge <= 0.0) continue;
+
+      final c = i % _gridCols;
+      final r = i ~/ _gridCols;
+      final baseColor = _cellTrailColor[i];
+      final cx = c * cellSize + cellSize * 0.5;
+      final cy = r * cellSize + cellSize * 0.5;
+
+      final bool isHeld = _cellTrailHold[i] != 0;
+      final double scale;
+      final double fillAlpha;
+      final double rimAlpha;
+      if (isHeld) {
+        final pulse = 0.5 + 0.5 * math.sin(_holdPulseClock);
+        scale = 0.96 + 0.03 * pulse;
+        fillAlpha = 0.36 + 0.08 * pulse;
+        rimAlpha = 0.70 + 0.12 * pulse;
+      } else {
+        final u = rawAge.clamp(0.0, 1.0);
+        final eased = Curves.easeOutCubic.transform(u);
+        final popBump = u > 0.72
+            ? ((1.0 - (u - 0.72) / 0.28).clamp(0.0, 1.0) * 0.05)
+            : 0.0;
+        scale = (0.64 + 0.38 * eased + popBump).clamp(0.4, 1.08);
+        fillAlpha = 0.60 * eased;
+        rimAlpha = 0.86 * eased;
+      }
+
+      final span = baseTileSpan * scale;
+      final rrect = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(cx, cy), width: span, height: span),
+        Radius.circular(baseTileRadius * scale),
+      );
+
+      _trailFillPaint.color = baseColor.withValues(alpha: fillAlpha);
+      canvas.drawRRect(rrect, _trailFillPaint);
+
+      _trailRimPaint.color = Color.lerp(baseColor, Colors.white, 0.48)!
+          .withValues(alpha: rimAlpha);
+      canvas.drawRRect(rrect, _trailRimPaint);
+    }
+
+    // 2. Soft continuous motion wake stamps trailing the sliding block body
+    final wakeRadius = cellSize * 0.14;
+    for (int offset = 0; offset < _maxWakeStamps; offset++) {
+      final idx = (_wakeCursor + offset) % _maxWakeStamps;
+      final rawAge = _wakeAge[idx];
+      if (rawAge <= 0.0) continue;
+
+      final u = rawAge.clamp(0.0, 1.0);
+      final scale = 0.76 + 0.22 * u;
+      final alpha = 0.18 * u * u;
+      final rrect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(_wakeCx[idx], _wakeCy[idx]),
+          width: _wakeW[idx] * scale,
+          height: _wakeH[idx] * scale,
+        ),
+        Radius.circular(wakeRadius * scale),
+      );
+      _trailFillPaint.color =
+          Color.lerp(_wakeColor[idx], Colors.white, 0.22)!
+              .withValues(alpha: alpha);
+      canvas.drawRRect(rrect, _trailFillPaint);
     }
   }
 }

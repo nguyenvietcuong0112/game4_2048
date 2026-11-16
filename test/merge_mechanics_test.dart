@@ -127,6 +127,7 @@ Future<void> _mountAndLoadGame(
       'IceLock.png',
       'IceBlocks.png',
       'Ice_Shards.png',
+      'Icon_Mechanic_Ice.png',
       'Screw_Greyscale_01.png',
       'Screw_Greyscale_02.png',
       'Screw_Greyscale_03.png',
@@ -256,6 +257,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -393,6 +396,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -484,6 +489,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -610,6 +617,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -744,6 +753,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -818,6 +829,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -1208,6 +1221,7 @@ void main() {
           'IceBlocks.png',
           'Ice_Shards.png',
           'Icon_Mechanic_Blocker.png',
+          'Icon_Mechanic_Ice.png',
           'Screw_Greyscale_01.png',
           'Screw_Greyscale_02.png',
           'Screw_Greyscale_03.png',
@@ -1496,6 +1510,7 @@ void main() {
           'IceBlocks.png',
           'Ice_Shards.png',
           'Icon_Mechanic_Blocker.png',
+          'Icon_Mechanic_Ice.png',
           'Screw_Greyscale_01.png',
           'Screw_Greyscale_02.png',
           'Screw_Greyscale_03.png',
@@ -1695,6 +1710,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -1833,6 +1850,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -1993,6 +2012,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -2124,6 +2145,8 @@ void main() {
       late final BlockOrderPalette palette;
       late final PieceVisualSettings settings;
       await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
       });
@@ -2234,11 +2257,13 @@ void main() {
         await tester.pump(const Duration(milliseconds: 32));
       }
 
-      // 1. First merge (`2 + 2 -> 4` at `(1, 0)`): activates COMBO x1 and 3.5s countdown
+      // 1. First merge (`2 + 2 -> 4` at `(1, 0)`): activates COMBO x1 with gentle shake and 3.5s countdown
       await dragMergeCell((0, 0), (1, 0));
       expect(game.debugComboCount, 1);
       expect(game.debugComboRemainingSeconds, greaterThan(3.3));
       expect(game.comboCountdownFractionNotifier.value, greaterThan(0.9));
+      final amp1 = game.debugMergeImpactShakeAmpPx;
+      expect(amp1, greaterThan(0.0));
 
       // Wait ~0.6s (still well inside 3.5s window) -> merge `4 + 4 -> 8` at `(2, 0)` -> COMBO x2 (`NICE!`)
       for (int i = 0; i < 18; i++) {
@@ -2249,6 +2274,8 @@ void main() {
       expect(game.debugComboCount, 2);
       expect(game.debugComboRemainingSeconds, greaterThan(3.3));
       expect(audio.comboPraises, contains(2));
+      final amp2 = game.debugMergeImpactShakeAmpPx;
+      expect(amp2, greaterThan(amp1));
 
       // Merge `8 + 8 -> 16` at `(3, 0)` -> COMBO x3 (`GREAT!`)
       for (int i = 0; i < 10; i++) {
@@ -2257,6 +2284,8 @@ void main() {
       await dragMergeCell((2, 0), (3, 0));
       expect(game.debugComboCount, 3);
       expect(audio.comboPraises, contains(3));
+      final amp3 = game.debugMergeImpactShakeAmpPx;
+      expect(amp3, greaterThan(amp2));
 
       // Merge `16 + 16 -> 32` at `(4, 0)` -> COMBO x4 (`PERFECT!`)
       for (int i = 0; i < 10; i++) {
@@ -2265,6 +2294,27 @@ void main() {
       await dragMergeCell((3, 0), (4, 0));
       expect(game.debugComboCount, 4);
       expect(audio.comboPraises, contains(4));
+
+      // Verify combo shake escalates gently 1x..5x and stops growing at 5x+
+      final p1 = BlockOrderGame.comboShakeProfileForCount(1, 80.0);
+      final p2 = BlockOrderGame.comboShakeProfileForCount(2, 80.0);
+      final p5 = BlockOrderGame.comboShakeProfileForCount(5, 80.0);
+      final p6 = BlockOrderGame.comboShakeProfileForCount(6, 80.0);
+      final p12 = BlockOrderGame.comboShakeProfileForCount(12, 80.0);
+      expect(p2.ampPx, greaterThan(p1.ampPx));
+      expect(p5.ampPx, greaterThan(p2.ampPx));
+      expect(p6.ampPx, p5.ampPx);
+      expect(p12.ampPx, p5.ampPx);
+      expect(p12.zoomPunch, p5.zoomPunch);
+      expect(p12.duration, p5.duration);
+      expect(
+        ComboPraiseTier.forCombo(6).scaleBoost,
+        ComboPraiseTier.forCombo(5).scaleBoost,
+      );
+      expect(
+        ComboPraiseTier.forCombo(15).scaleBoost,
+        ComboPraiseTier.forCombo(5).scaleBoost,
+      );
 
       // Now wait > 3.5s (`90 * 45ms = 4.05s`) without merging -> combo countdown expires & resets to 0!
       for (int i = 0; i < 90; i++) {
@@ -2277,5 +2327,86 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     },
     timeout: const Timeout(Duration(seconds: 25)),
+  );
+
+  testWidgets(
+    'Drag illuminates board cells beneath block and leaves smoothly fading tile trail behind slide',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(540, 960));
+      late final BlockOrderPalette palette;
+      late final PieceVisualSettings settings;
+      await tester.runAsync(() async {
+        await Flame.images.load('Icon_Mechanic_Blocker.png');
+        await SparkleAtlas.ensureLoaded();
+        palette = await BlockOrderPalette.loadFromAssets();
+        settings = await PieceVisualSettings.loadFromAssets();
+      });
+      final audio = _SilentAudioHapticsService();
+
+      final level = LevelDefinition(
+        number: 4,
+        title: 'Drag Trail Test',
+        cols: 4,
+        rows: 3,
+        timeSeconds: 120,
+        timerDisabled: true,
+        walls: const {},
+        initialPieces: [
+          PieceModel(
+            id: 1,
+            key: 'mover',
+            col: 0,
+            row: 1,
+            localCells: const [(0, 0)],
+            number: 8,
+          ),
+          PieceModel(
+            id: 2,
+            key: 'anchor',
+            col: 3,
+            row: 2,
+            localCells: const [(0, 0)],
+            number: 16,
+          ),
+        ],
+      );
+
+      final game = BlockOrderGame(
+        initialLevel: level,
+        palette: palette,
+        visualSettings: settings,
+        audio: audio,
+        onLevelWon: () {},
+        onTimeExpired: () {},
+      );
+      await _mountAndLoadGame(tester, game);
+
+      final board = game.debugBoard;
+      expect(board, isNotNull);
+      expect(board!.debugActiveTrailCellCount, 0);
+
+      // Start dragging at (0, 1): cell (0, 1) lights up at full intensity
+      final g = await tester.startGesture(game.debugCellCenterCanvas(0, 1));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(board.debugTrailAgeAt(0, 1), closeTo(1.0, 0.05));
+
+      // Slide smoothly across (1, 1) -> (2, 1): (0, 1) and (1, 1) leave a decaying trail while (2, 1) stays active
+      await g.moveTo(game.debugCellCenterCanvas(2, 1));
+      await tester.pump(const Duration(milliseconds: 32));
+      expect(board.debugTrailAgeAt(2, 1), closeTo(1.0, 0.05));
+      expect(board.debugTrailAgeAt(0, 1), greaterThan(0.5));
+      expect(board.debugTrailAgeAt(1, 1), greaterThan(0.5));
+      expect(board.debugActiveTrailCellCount, greaterThanOrEqualTo(3));
+
+      // Release finger and advance ~0.5s: tile trail & wake smoothly fade back to 0
+      await g.up();
+      for (int i = 0; i < 16; i++) {
+        await tester.pump(const Duration(milliseconds: 35));
+      }
+      expect(board.debugActiveTrailCellCount, 0);
+
+      await tester.binding.setSurfaceSize(null);
+    },
+    timeout: const Timeout(Duration(seconds: 15)),
   );
 }

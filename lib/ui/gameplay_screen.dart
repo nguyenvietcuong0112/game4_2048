@@ -780,21 +780,15 @@ class _GameplayScreenState extends State<GameplayScreen>
           RepaintBoundary(child: GameWidget<BlockOrderGame>(game: _game)),
 
           // 3. Authentic `TimeFreezeFullScreenEffectView.prefab` Frost & Corner Crystals
-          ValueListenableBuilder<double>(
-            valueListenable: _game.timeFreezeNotifier,
-            child: const RepaintBoundary(child: _TimeFreezeFrostStaticLayer()),
-            builder: (context, freezeLeft, staticFrost) {
-              if (freezeLeft <= 0.05) return const SizedBox.shrink();
-              if (freezeLeft >= 2.5) {
-                return IgnorePointer(child: staticFrost);
-              }
-              final alpha = (freezeLeft / 2.5).clamp(0.0, 1.0);
-              return IgnorePointer(
-                child: Opacity(
-                  opacity: alpha,
-                  child: staticFrost,
-                ),
-              );
+          ValueListenableBuilder<bool>(
+            valueListenable: _game.isTimeFrozenNotifier,
+            child: FadeTransition(
+              opacity: _TimeFreezeFadeAnimation(_game.timeFreezeNotifier),
+              child: const RepaintBoundary(child: _TimeFreezeFrostStaticLayer()),
+            ),
+            builder: (context, isFrozen, frostLayer) {
+              if (!isFrozen) return const SizedBox.shrink();
+              return IgnorePointer(child: frostLayer);
             },
           ),
 
@@ -2291,7 +2285,6 @@ class _LowTimeRedVignettePainter extends CustomPainter {
     if (size.width <= 1 || size.height <= 1) return;
     final w = size.width;
     final h = size.height;
-    final fullRect = Offset.zero & size;
 
     // 1. Aspect-mapped elliptical outer corner & perimeter crimson vignette (center 74% stays 100% clear)
     canvas.save();
@@ -2313,29 +2306,95 @@ class _LowTimeRedVignettePainter extends CustomPainter {
     canvas.drawRect(unitRect, radialPaint);
     canvas.restore();
 
-    // 2. Subtle continuous Gaussian-feathered SDF rounded-perimeter glow hugging all 4 outer screen edges
+    // 2. Smooth 4-edge gradient vignette glow without full-screen MaskFilter.blur
     final shortest = math.min(w, h);
-    final bandW = shortest * 0.082;
-    final blurSigma = shortest * 0.045;
-    final inset = -bandW * 0.22;
-    final frameRRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(inset, inset, w - inset * 2.0, h - inset * 2.0),
-      Radius.circular(shortest * 0.11),
-    );
-    final framePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = bandW
-      ..color = const Color(0xADFF1E38)
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma);
+    final bandW = shortest * 0.11;
+    const edgeColors = [
+      Color(0x88FF1632),
+      Color(0x36FF1A36),
+      Color(0x00FF1E38),
+    ];
+    const edgeStops = [0.0, 0.42, 1.0];
 
-    canvas.save();
-    canvas.clipRect(fullRect);
-    canvas.drawRRect(frameRRect, framePaint);
-    canvas.restore();
+    final topRect = Rect.fromLTWH(0, 0, w, bandW);
+    canvas.drawRect(
+      topRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: edgeColors,
+          stops: edgeStops,
+        ).createShader(topRect),
+    );
+    final botRect = Rect.fromLTWH(0, h - bandW, w, bandW);
+    canvas.drawRect(
+      botRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: edgeColors,
+          stops: edgeStops,
+        ).createShader(botRect),
+    );
+    final leftRect = Rect.fromLTWH(0, 0, bandW, h);
+    canvas.drawRect(
+      leftRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: edgeColors,
+          stops: edgeStops,
+        ).createShader(leftRect),
+    );
+    final rightRect = Rect.fromLTWH(w - bandW, 0, bandW, h);
+    canvas.drawRect(
+      rightRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.centerRight,
+          end: Alignment.centerLeft,
+          colors: edgeColors,
+          stops: edgeStops,
+        ).createShader(rightRect),
+    );
   }
 
   @override
   bool shouldRepaint(covariant _LowTimeRedVignettePainter oldDelegate) => false;
+}
+
+class _TimeFreezeFadeAnimation extends Animation<double> {
+  final ValueNotifier<double> _source;
+
+  _TimeFreezeFadeAnimation(this._source);
+
+  @override
+  void addListener(VoidCallback listener) => _source.addListener(listener);
+
+  @override
+  void removeListener(VoidCallback listener) => _source.removeListener(listener);
+
+  @override
+  void addStatusListener(AnimationStatusListener listener) {}
+
+  @override
+  void removeStatusListener(AnimationStatusListener listener) {}
+
+  @override
+  AnimationStatus get status => _source.value > 0.05
+      ? AnimationStatus.forward
+      : AnimationStatus.dismissed;
+
+  @override
+  double get value {
+    final v = _source.value;
+    if (v <= 0.05) return 0.0;
+    if (v >= 2.5) return 1.0;
+    return (v / 2.5).clamp(0.0, 1.0);
+  }
 }
 
 /// Authentic `TimeFreezeFullScreenEffectView.prefab` using all extracted Unity frost & crystal PNGs.

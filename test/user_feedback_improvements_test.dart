@@ -267,7 +267,7 @@ void main() {
       expect(pic4, isNotNull);
     });
 
-    test('5. Water stream flow SFX triggers correctly in AudioHapticsService', () {
+    test('5. Water stream, combo new_1..new_13 SFX, and anti-clipping mixer behavior', () {
       final audio = AudioHapticsService();
       audio.clearDebugLogs();
 
@@ -275,11 +275,55 @@ void main() {
       audio.playWaterStreamFlow();
       expect(audio.debugPlayedSfxLog, contains('sfx_water_stream.wav'));
 
+      // Combo 1..15 maps cleanly to ascending new_1.mp3 .. new_13.mp3 (clamped at 13)
+      audio.clearDebugLogs();
+      for (int c = 1; c <= 15; c++) {
+        audio.playComboPraise(c);
+      }
+      for (int c = 1; c <= 13; c++) {
+        expect(audio.debugPlayedSfxLog, contains('new_$c.mp3'));
+      }
+      // 14 & 15 share 'new_13.mp3' and deduplicate within minGapMs on simultaneous fire
+      expect(
+        audio.debugPlayedSfxLog.where((e) => e == 'new_13.mp3').length,
+        1,
+      );
+
+      // Simultaneous duplicate triggers on same frame deduplicate to prevent phase clipping
+      audio.clearDebugLogs();
+      audio.playIceBreak();
+      audio.playIceBreak();
+      audio.playIceBreak();
+      expect(
+        audio.debugPlayedSfxLog.where((e) => e == 'sfx_ice_break_whole.wav').length,
+        1,
+      );
+
+      // Concurrent polyphony mixer lowers headroom proportionally as burst count grows
+      final solo = AudioHapticsService.computeMixGain(
+        'sfx_block_put.wav',
+        volume: 1.0,
+        concurrentCount: 1,
+      );
+      final triple = AudioHapticsService.computeMixGain(
+        'sfx_block_put.wav',
+        volume: 1.0,
+        concurrentCount: 3,
+      );
+      final quad = AudioHapticsService.computeMixGain(
+        'sfx_block_put.wav',
+        volume: 1.0,
+        concurrentCount: 4,
+      );
+      expect(triple, lessThan(solo));
+      expect(quad, lessThan(triple));
+
       // When sound is disabled, no SFX is logged or played
       audio.clearDebugLogs();
       audio.toggleSound(); // disables sound
       expect(audio.soundEnabled, isFalse);
       audio.playWaterStreamFlow();
+      audio.playComboPraise(1);
       expect(audio.debugPlayedSfxLog, isEmpty);
     });
 

@@ -5,13 +5,12 @@ import 'package:flame/components.dart';
 import 'package:flame/flame.dart';
 import 'package:flutter/material.dart'
     show
-        BlurStyle,
         Canvas,
         Color,
         Colors,
         Curves,
+        FilterQuality,
         FontWeight,
-        MaskFilter,
         Offset,
         Paint,
         Path,
@@ -46,7 +45,22 @@ class MagicSandJarComponent extends PositionComponent {
   bool _isOpened = false;
 
   ui.Image? _haloImg;
+  ui.Image? _idleJarBaseImg;
+  String? _idleJarBaseKey;
+  Rect _idleJarSrcRect = Rect.zero;
+  Rect _idleJarDstRect = Rect.zero;
+  TextPainter? _cachedTagMainTp;
+  TextPainter? _cachedTagEmbossTp;
+  String? _cachedTagTextKey;
+  final Paint _idleJarPaint = Paint()..filterQuality = FilterQuality.medium;
   final Path _scratchPath = Path();
+
+  @override
+  void onRemove() {
+    _idleJarBaseImg?.dispose();
+    _idleJarBaseImg = null;
+    super.onRemove();
+  }
 
   MagicSandJarComponent({
     required BlockColorStyle style,
@@ -324,16 +338,131 @@ class MagicSandJarComponent extends PositionComponent {
     final easedOpen = _easedCurtainOpen;
     final easedFill = _easedFill;
 
-    // 1. Soft dark navy ground drop shadow right beneath the rounded aqua-glass bowl
+    if (!isPouringOrFull &&
+        easedOpen <= 0.001 &&
+        _glowIntensity <= 0.01 &&
+        _appearProgress >= 0.995 &&
+        !_externalStreamActive) {
+      final baked = _getOrBakeIdleJarBase(w, h);
+      if (baked != null) {
+        canvas.drawImageRect(
+          baked,
+          _idleJarSrcRect,
+          _idleJarDstRect,
+          _idleJarPaint,
+        );
+        _drawTargetGoalTag(canvas, w: w, h: h, openProgress: 0.0);
+        return;
+      }
+    }
+
+    _drawPotionPouchJarBaseLayers(
+      canvas,
+      w: w,
+      h: h,
+      easedOpen: easedOpen,
+      easedFill: easedFill,
+      isPouringOrFull: isPouringOrFull,
+    );
+
+    // 6 & 7. When `_externalStreamActive == false`, draw Golden Rope & Target Tag directly;
+    // when `_externalStreamActive == true`, `renderStreamForegroundOcclusion` draws them IN FRONT OF the stream!
+    if (!_externalStreamActive) {
+      _drawGoldenRopeAndKnot(canvas, w: w, h: h, openProgress: easedOpen);
+      _drawTargetGoalTag(canvas, w: w, h: h, openProgress: easedOpen);
+    }
+
+    // 8. Subtle luminous belly glow when filling / full matching final block style
+    final bellyGlowAlpha =
+        (0.22 * easedFill + 0.28 * _glowIntensity).clamp(0.0, 0.52);
+    if (bellyGlowAlpha > 0.01 && easedOpen > 0.2) {
+      canvas.drawCircle(
+        Offset(cx, h * 0.62),
+        w * 0.30,
+        Paint()
+          ..blendMode = ui.BlendMode.plus
+          ..shader = ui.Gradient.radial(
+            Offset(cx, h * 0.62),
+            w * 0.30,
+            [
+              Color.lerp(_style.topBright, Colors.white, 0.40)!
+                  .withValues(alpha: bellyGlowAlpha),
+              _style.topBright.withValues(alpha: 0.0),
+            ],
+          ),
+      );
+    }
+  }
+
+  ui.Image? _getOrBakeIdleJarBase(double w, double h) {
+    final key = '${w.toStringAsFixed(1)}|${h.toStringAsFixed(1)}';
+    if (_idleJarBaseImg != null && _idleJarBaseKey == key) {
+      return _idleJarBaseImg;
+    }
+    _idleJarBaseImg?.dispose();
+    _idleJarBaseImg = null;
+    _idleJarBaseKey = key;
+
+    try {
+      final pad = (w * 0.14).ceilToDouble();
+      final logicalW = w + pad * 2.0;
+      final logicalH = h + pad * 2.0;
+      const ss = 2.0;
+      final imgW = (logicalW * ss).ceil().clamp(4, 1536);
+      final imgH = (logicalH * ss).ceil().clamp(4, 1536);
+
+      final rec = ui.PictureRecorder();
+      final rc = Canvas(rec);
+      rc.scale(imgW / logicalW, imgH / logicalH);
+      rc.translate(pad, pad);
+      _drawPotionPouchJarBaseLayers(
+        rc,
+        w: w,
+        h: h,
+        easedOpen: 0.0,
+        easedFill: 0.0,
+        isPouringOrFull: false,
+      );
+      _drawGoldenRopeAndKnot(rc, w: w, h: h, openProgress: 0.0);
+      final pic = rec.endRecording();
+      final img = pic.toImageSync(imgW, imgH);
+      pic.dispose();
+
+      _idleJarBaseImg = img;
+      _idleJarSrcRect = Rect.fromLTWH(0, 0, imgW.toDouble(), imgH.toDouble());
+      _idleJarDstRect = Rect.fromLTWH(-pad, -pad, logicalW, logicalH);
+      return img;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _drawPotionPouchJarBaseLayers(
+    Canvas canvas, {
+    required double w,
+    required double h,
+    required double easedOpen,
+    required double easedFill,
+    required bool isPouringOrFull,
+  }) {
+    final cx = w * 0.5;
+
+    // 1. Soft dark navy ground drop shadow (feathered double oval, zero MaskFilter.blur!)
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(cx, h * 0.948),
-        width: w * 0.66,
-        height: h * 0.082,
+        width: w * 0.72,
+        height: h * 0.098,
       ),
-      Paint()
-        ..color = const Color(0x64020D2A)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, w * 0.032),
+      Paint()..color = const Color(0x28020D2A),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx, h * 0.948),
+        width: w * 0.62,
+        height: h * 0.072,
+      ),
+      Paint()..color = const Color(0x4E020D2A),
     );
 
     final glassBodyPath = _buildPotNeckAndBellyClipPath(w, h);
@@ -417,34 +546,6 @@ class MagicSandJarComponent extends PositionComponent {
         alpha: flutterEnv * 0.86,
         drawLeft: !_externalStreamActive || _externalStreamSideSign > 0,
         drawRight: !_externalStreamActive || _externalStreamSideSign < 0,
-      );
-    }
-
-    // 6 & 7. When `_externalStreamActive == false`, draw Golden Rope & Target Tag directly;
-    // when `_externalStreamActive == true`, `renderStreamForegroundOcclusion` draws them IN FRONT OF the stream!
-    if (!_externalStreamActive) {
-      _drawGoldenRopeAndKnot(canvas, w: w, h: h, openProgress: easedOpen);
-      _drawTargetGoalTag(canvas, w: w, h: h, openProgress: easedOpen);
-    }
-
-    // 8. Subtle luminous belly glow when filling / full matching final block style
-    final bellyGlowAlpha =
-        (0.22 * easedFill + 0.28 * _glowIntensity).clamp(0.0, 0.52);
-    if (bellyGlowAlpha > 0.01 && easedOpen > 0.2) {
-      canvas.drawCircle(
-        Offset(cx, h * 0.62),
-        w * 0.30,
-        Paint()
-          ..blendMode = ui.BlendMode.plus
-          ..shader = ui.Gradient.radial(
-            Offset(cx, h * 0.62),
-            w * 0.30,
-            [
-              Color.lerp(_style.topBright, Colors.white, 0.40)!
-                  .withValues(alpha: bellyGlowAlpha),
-              _style.topBright.withValues(alpha: 0.0),
-            ],
-          ),
       );
     }
   }
@@ -1233,9 +1334,8 @@ class MagicSandJarComponent extends PositionComponent {
       Paint()
         ..style = ui.PaintingStyle.stroke
         ..strokeCap = ui.StrokeCap.round
-        ..strokeWidth = ropeThick * 1.15
-        ..color = const Color(0x424A2A05)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.4),
+        ..strokeWidth = ropeThick * 1.25
+        ..color = const Color(0x364A2A05),
     );
 
     // 2. Continuous 3D dark-bronze outer rim + rich golden-amber continuous rope core
@@ -1356,10 +1456,12 @@ class MagicSandJarComponent extends PositionComponent {
 
     // Warm soft cast shadow onto the cream pleats behind the tag
     canvas.drawRRect(
-      tagRRect.shift(Offset(0, h * 0.020)),
-      Paint()
-        ..color = const Color(0x422B1904)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, w * 0.022),
+      RRect.fromRectAndRadius(tagRect.shift(Offset(0, h * 0.022)).inflate(w * 0.01), tagR),
+      Paint()..color = const Color(0x282B1904),
+    );
+    canvas.drawRRect(
+      tagRRect.shift(Offset(0, h * 0.018)),
+      Paint()..color = const Color(0x382B1904),
     );
 
     // 3D warm golden-tan lower card thickness lip (`media_1794051081001.png`)
@@ -1444,23 +1546,45 @@ class MagicSandJarComponent extends PositionComponent {
       Paint()..color = const Color(0xFF4A2A08),
     );
 
-    // Bold Rounded Deep-Navy Target Goal Number (`4096`, `2048`, etc.) auto-fitted cleanly inside tag!
+    // Bold Rounded Deep-Navy Target Goal Number (`4096`, `2048`, etc.) cached across frames!
     final textStr = '$targetNumber';
     final baseFontSize = (tagH * 0.49).clamp(14.0, 42.0);
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: textStr,
-        style: TextStyle(
-          fontFamily: 'PoetsenOne',
-          fontSize: baseFontSize,
-          fontWeight: FontWeight.w900,
-          color: const Color(0xFF0B457C),
-          letterSpacing: -0.4,
-          height: 1.0,
+    final tagKey = '$textStr|${(baseFontSize * 10.0).round()}';
+    if (_cachedTagTextKey != tagKey ||
+        _cachedTagMainTp == null ||
+        _cachedTagEmbossTp == null) {
+      _cachedTagTextKey = tagKey;
+      _cachedTagMainTp = TextPainter(
+        text: TextSpan(
+          text: textStr,
+          style: TextStyle(
+            fontFamily: 'PoetsenOne',
+            fontSize: baseFontSize,
+            fontWeight: FontWeight.w900,
+            color: const Color(0xFF0B457C),
+            letterSpacing: -0.4,
+            height: 1.0,
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _cachedTagEmbossTp = TextPainter(
+        text: TextSpan(
+          text: textStr,
+          style: TextStyle(
+            fontFamily: 'PoetsenOne',
+            fontSize: baseFontSize,
+            fontWeight: FontWeight.w900,
+            color: Colors.white.withValues(alpha: 0.45),
+            letterSpacing: -0.4,
+            height: 1.0,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+    }
+    final textPainter = _cachedTagMainTp!;
+    final embossPainter = _cachedTagEmbossTp!;
 
     final maxTextW = tagW * 0.80;
     final fitScale =
@@ -1470,20 +1594,6 @@ class MagicSandJarComponent extends PositionComponent {
     final textCenterY = tagCenterY + tagH * 0.085;
     canvas.translate(tagCenterX, textCenterY);
     canvas.scale(fitScale, fitScale);
-    final embossPainter = TextPainter(
-      text: TextSpan(
-        text: textStr,
-        style: TextStyle(
-          fontFamily: 'PoetsenOne',
-          fontSize: baseFontSize,
-          fontWeight: FontWeight.w900,
-          color: Colors.white.withValues(alpha: 0.45),
-          letterSpacing: -0.4,
-          height: 1.0,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
     embossPainter.paint(
       canvas,
       Offset(-textPainter.width * 0.5, -textPainter.height * 0.5 + 1.0),
@@ -2775,16 +2885,12 @@ class BoardSandStreamToJarVfx extends PositionComponent {
       canvas.saveLayer(layerBounds, Paint());
     }
 
-    // 1. Soft outer water glow halo matching block color
+    // 1. Soft outer water glow halo matching block color (zero MaskFilter.blur!)
     canvas.drawPath(
       _outerStreamPath,
       Paint()
         ..style = ui.PaintingStyle.fill
-        ..color = brightAqua.withValues(alpha: 0.40)
-        ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal,
-          (cellSize * 0.046).clamp(2.0, 5.2),
-        ),
+        ..color = brightAqua.withValues(alpha: 0.30),
     );
 
     // 2. Rich translucent cylindrical stream core matching block color
@@ -2811,11 +2917,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
       _innerShadowPath,
       Paint()
         ..style = ui.PaintingStyle.fill
-        ..color = deepAqua.withValues(alpha: 0.36)
-        ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal,
-          (cellSize * 0.022).clamp(1.0, 2.8),
-        ),
+        ..color = deepAqua.withValues(alpha: 0.30),
     );
 
     // 4. Open meniscus side rims matching block highlight
@@ -2833,11 +2935,7 @@ class BoardSandStreamToJarVfx extends PositionComponent {
       _specularStripePath,
       Paint()
         ..style = ui.PaintingStyle.fill
-        ..color = Colors.white.withValues(alpha: 0.56)
-        ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal,
-          (cellSize * 0.012).clamp(0.6, 1.6),
-        ),
+        ..color = Colors.white.withValues(alpha: 0.52),
     );
 
     // 6. Effervescent translucent bubbles flowing smoothly inside the stream

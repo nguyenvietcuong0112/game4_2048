@@ -2380,14 +2380,14 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..color = Colors.white
       ..shader = null
       ..maskFilter = null
-      ..filterQuality = FilterQuality.high
+      ..filterQuality = FilterQuality.medium
       ..blendMode = BlendMode.srcOver
       ..style = PaintingStyle.fill;
     _fxPaint
       ..color = Colors.white
       ..shader = null
       ..maskFilter = null
-      ..filterQuality = FilterQuality.high
+      ..filterQuality = FilterQuality.medium
       ..blendMode = BlendMode.srcOver
       ..style = PaintingStyle.fill;
 

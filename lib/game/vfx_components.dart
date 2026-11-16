@@ -8,14 +8,12 @@ import 'package:flame/flame.dart';
 import 'package:flutter/material.dart'
     show
         BlendMode,
-        BlurStyle,
         Color,
         ColorFilter,
         Colors,
         Curves,
         FilterQuality,
         FontWeight,
-        MaskFilter,
         PaintingStyle,
         StrokeJoin,
         TextDirection,
@@ -831,15 +829,17 @@ class IceShatterVfx extends PositionComponent {
           _additivePaint,
         );
       } else {
-        canvas.drawCircle(
-          ui.Offset.zero,
-          r,
-          ui.Paint()
-            ..color =
-                const Color(0xFFBDF0FF).withValues(alpha: (1.0 - flashT) * 0.55)
-            ..blendMode = BlendMode.plus
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-        );
+        final haloCenterGlow = ui.Paint()
+          ..blendMode = BlendMode.plus
+          ..shader = ui.Gradient.radial(
+            ui.Offset.zero,
+            r * 1.15,
+            [
+              const Color(0xFFBDF0FF).withValues(alpha: (1.0 - flashT) * 0.58),
+              const Color(0xFFBDF0FF).withValues(alpha: 0.0),
+            ],
+          );
+        canvas.drawCircle(ui.Offset.zero, r * 1.15, haloCenterGlow);
       }
     }
 
@@ -1517,6 +1517,8 @@ class ComboPraiseTier {
 /// Layout is computed once in CPU memory per combo count and cell size with ZERO GPU texture
 /// allocation or synchronous `toImageSync` blocking!
 class _ComboBadgeLayout {
+  final ui.Image? bakedImage;
+  final ui.Rect srcRect;
   final TextPainter comboFillTp;
   final TextPainter comboStrokeTp;
   final TextPainter? praiseFillTp;
@@ -1527,6 +1529,8 @@ class _ComboBadgeLayout {
   final ui.Rect bounds;
 
   const _ComboBadgeLayout({
+    this.bakedImage,
+    required this.srcRect,
     required this.comboFillTp,
     required this.comboStrokeTp,
     this.praiseFillTp,
@@ -1594,8 +1598,8 @@ class _ComboBadgeLayoutCache {
       final hasPraise = praiseStrokeTp != null && praiseFillTp != null;
       final pillW = comboFillTp.width + cellSize * 0.34;
       final pillH = comboFillTp.height + cellSize * 0.10;
-      final maxW = math.max(pillW, praiseFillTp?.width ?? 0.0) + 24.0;
-      final totalH = pillH + (hasPraise ? praiseFillTp.height + 16.0 : 12.0);
+      final maxW = math.max(pillW, praiseFillTp?.width ?? 0.0) + 28.0;
+      final totalH = pillH + (hasPraise ? praiseFillTp.height + 20.0 : 16.0);
 
       final topY = hasPraise
           ? -comboFillTp.height * 0.95
@@ -1623,7 +1627,49 @@ class _ComboBadgeLayoutCache {
         height: totalH,
       );
 
+      ui.Image? bakedImg;
+      ui.Rect srcRect = ui.Rect.zero;
+      try {
+        const ss = 2.0;
+        final imgW = (bounds.width * ss).ceil().clamp(4, 1024);
+        final imgH = (bounds.height * ss).ceil().clamp(4, 1024);
+        final rec = ui.PictureRecorder();
+        final rc = ui.Canvas(rec);
+        rc.scale(imgW / bounds.width, imgH / bounds.height);
+        rc.translate(-bounds.left, -bounds.top);
+
+        rc.drawRRect(
+          pillRRect,
+          ui.Paint()
+            ..style = PaintingStyle.fill
+            ..color = tier.strokeColor.withValues(alpha: 0.88),
+        );
+        rc.drawRRect(
+          pillRRect,
+          ui.Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5
+            ..color = tier.primaryColor,
+        );
+        comboStrokeTp.paint(rc, comboOffset + const ui.Offset(0.0, 1.5));
+        comboStrokeTp.paint(rc, comboOffset);
+        comboFillTp.paint(rc, comboOffset);
+        if (hasPraise && praiseOffset != null) {
+          praiseStrokeTp.paint(rc, praiseOffset + const ui.Offset(0.0, 2.8));
+          praiseStrokeTp.paint(rc, praiseOffset);
+          praiseFillTp.paint(rc, praiseOffset);
+        }
+        final pic = rec.endRecording();
+        bakedImg = pic.toImageSync(imgW, imgH);
+        pic.dispose();
+        srcRect = ui.Rect.fromLTWH(0, 0, imgW.toDouble(), imgH.toDouble());
+      } catch (_) {
+        bakedImg = null;
+      }
+
       final layout = _ComboBadgeLayout(
+        bakedImage: bakedImg,
+        srcRect: srcRect,
         comboFillTp: comboFillTp,
         comboStrokeTp: comboStrokeTp,
         praiseFillTp: praiseFillTp,
@@ -1868,7 +1914,7 @@ class ComboPraiseCalloutVfx extends PositionComponent {
       }
     }
 
-    // 3. Direct vector rendering of 3D stroked `COMBO xN` pill + praise callout (zero toImageSync stalls!)
+    // 3. Pre-composited badge sprite rendering (zero saveLayer & zero per-frame text layout/paint!)
     final layout = _badgeLayout;
     if (layout != null) {
       canvas.save();
@@ -1876,37 +1922,50 @@ class ComboPraiseCalloutVfx extends PositionComponent {
       canvas.rotate(tiltRad);
       canvas.scale(scale, scale);
 
-      final bool hasFade = alpha < 0.98;
-      if (hasFade) {
-        _fadePaint.color = Color.fromRGBO(255, 255, 255, alpha);
-        canvas.saveLayer(layout.bounds, _fadePaint);
-      }
-
-      _pillFillPaint.color = tier.strokeColor.withValues(alpha: 0.88);
-      canvas.drawRRect(layout.pillRRect, _pillFillPaint);
-
-      _pillBorderPaint.color = tier.primaryColor;
-      canvas.drawRRect(layout.pillRRect, _pillBorderPaint);
-
-      layout.comboStrokeTp.paint(
-        canvas,
-        layout.comboOffset + const ui.Offset(0.0, 1.5),
-      );
-      layout.comboStrokeTp.paint(canvas, layout.comboOffset);
-      layout.comboFillTp.paint(canvas, layout.comboOffset);
-
-      if (layout.praiseFillTp != null && layout.praiseStrokeTp != null) {
-        final praiseOffset = layout.praiseOffset!;
-        layout.praiseStrokeTp!.paint(
-          canvas,
-          praiseOffset + const ui.Offset(0.0, 2.8),
+      final bakedImg = layout.bakedImage;
+      if (bakedImg != null) {
+        _fadePaint
+          ..filterQuality = FilterQuality.medium
+          ..color = Color.fromRGBO(255, 255, 255, alpha);
+        canvas.drawImageRect(
+          bakedImg,
+          layout.srcRect,
+          layout.bounds,
+          _fadePaint,
         );
-        layout.praiseStrokeTp!.paint(canvas, praiseOffset);
-        layout.praiseFillTp!.paint(canvas, praiseOffset);
-      }
+      } else {
+        final bool hasFade = alpha < 0.98;
+        if (hasFade) {
+          _fadePaint.color = Color.fromRGBO(255, 255, 255, alpha);
+          canvas.saveLayer(layout.bounds, _fadePaint);
+        }
 
-      if (hasFade) {
-        canvas.restore();
+        _pillFillPaint.color = tier.strokeColor.withValues(alpha: 0.88);
+        canvas.drawRRect(layout.pillRRect, _pillFillPaint);
+
+        _pillBorderPaint.color = tier.primaryColor;
+        canvas.drawRRect(layout.pillRRect, _pillBorderPaint);
+
+        layout.comboStrokeTp.paint(
+          canvas,
+          layout.comboOffset + const ui.Offset(0.0, 1.5),
+        );
+        layout.comboStrokeTp.paint(canvas, layout.comboOffset);
+        layout.comboFillTp.paint(canvas, layout.comboOffset);
+
+        if (layout.praiseFillTp != null && layout.praiseStrokeTp != null) {
+          final praiseOffset = layout.praiseOffset!;
+          layout.praiseStrokeTp!.paint(
+            canvas,
+            praiseOffset + const ui.Offset(0.0, 2.8),
+          );
+          layout.praiseStrokeTp!.paint(canvas, praiseOffset);
+          layout.praiseFillTp!.paint(canvas, praiseOffset);
+        }
+
+        if (hasFade) {
+          canvas.restore();
+        }
       }
       canvas.restore();
     }

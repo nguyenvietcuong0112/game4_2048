@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flame/components.dart' hide Matrix4;
 import 'package:flame/flame.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../geometry/polyomino_path_builder.dart';
 import '../models/level_models.dart';
 import '../models/palette.dart';
@@ -152,6 +153,19 @@ class PieceComponent extends PositionComponent {
       <String, _BakedStaticPieceSprite>{};
 
   static int _frameBakeBudget = 3;
+
+  static void _deferDisposeImage(ui.Image? img) {
+    if (img == null) return;
+    try {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        try {
+          img.dispose();
+        } catch (_) {}
+      });
+    } catch (_) {
+      img.dispose();
+    }
+  }
 
   /// Resets the per-frame GPU texture bake budget so static piece caching never
   /// causes a single-frame spike on large boards.
@@ -1674,7 +1688,7 @@ class PieceComponent extends PositionComponent {
       if (_sharedStaticPieceCache.length >= 96) {
         final oldest =
             _sharedStaticPieceCache.remove(_sharedStaticPieceCache.keys.first);
-        oldest?.image.dispose();
+        _deferDisposeImage(oldest?.image);
       }
       _sharedStaticPieceCache[key] = sprite;
       return sprite;
@@ -4219,7 +4233,7 @@ class PieceComponent extends PositionComponent {
       if (_fourLayerNumberSpriteCache.length >= 192) {
         final oldest =
             _fourLayerNumberSpriteCache.remove(_fourLayerNumberSpriteCache.keys.first);
-        oldest?.image.dispose();
+        _deferDisposeImage(oldest?.image);
       }
       _fourLayerNumberSpriteCache[key] = sprite;
       return sprite;

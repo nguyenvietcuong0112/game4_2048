@@ -748,6 +748,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   _TutorialHandComponent? _tutorialHand;
   _SpotlightDimVeilComponent? _spotlightVeil;
   _SpotlightDimVeilComponent? _fadingSpotlightVeil;
+  BoardComponent? _boardComponent;
   MagicSandJarComponent? _sandJar;
   BoardSandStreamToJarVfx? _activeWinWaterStream;
   JarOpenAndFullscreenLightWaveVfx? _jarOpenWaveVfx;
@@ -789,6 +790,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   int _dragStartCol = 0;
   int _dragStartRow = 0;
   Vector2 _lastOverlap = Vector2.zero();
+  Offset? _lastDragTrailWakeOrigin;
+
+  @visibleForTesting
+  BoardComponent? get debugBoard => _boardComponent;
 
   // Blocked feedback deduplication
   PieceComponent? _lastBlockedFeedbackPiece;
@@ -1226,6 +1231,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _tutorialHand = null;
     _spotlightVeil = null;
     _fadingSpotlightVeil = null;
+    _boardComponent = null;
+    _lastDragTrailWakeOrigin = null;
     _sandJar = null;
     _activeWinWaterStream = null;
     _jarOpenWaveVfx = null;
@@ -1317,6 +1324,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       cellSize: _cellSize,
       position: _boardOrigin.clone(),
     );
+    _boardComponent = board;
     _addToBoardStage(board);
 
     final targetJarNumber = _level.targetWinNumber;
@@ -1604,6 +1612,33 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   // `PointerDownEvent` with `0.0 px` touch-slop, while still handling blocked-piece shakes on
   // touch-down (`onDragStart`) and quick-tap squishes on finger release (`_releaseDrag`).
 
+  Color _dragTrailColorForPiece(PieceComponent piece) {
+    if (piece.model.isDud) return const Color(0xFF8C9BCE);
+    return palette
+        .styleFor(number: piece.model.number, isFrozen: false)
+        .topBright;
+  }
+
+  void _emitPieceWakeStamps(PieceComponent piece, Color color) {
+    final board = _boardComponent;
+    if (board == null) return;
+    final pad = _cellSize * 0.045;
+    final cellSpan = _cellSize - pad * 2.0;
+    final localCells = piece.model.localCells;
+    for (int i = 0; i < localCells.length; i++) {
+      final lc = localCells[i];
+      final lx = (piece.position.x - _boardOrigin.x) + lc.$1 * _cellSize + pad;
+      final ly = (piece.position.y - _boardOrigin.y) + lc.$2 * _cellSize + pad;
+      board.emitDragWakeStamp(
+        cx: lx + cellSpan * 0.5,
+        cy: ly + cellSpan * 0.5,
+        width: cellSpan,
+        height: cellSpan,
+        color: color,
+      );
+    }
+  }
+
   @override
   void onDragStart(DragStartEvent event) {
     super.onDragStart(event);
@@ -1636,6 +1671,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _grabOffsetFromPieceOrigin = stagePos - pieceGridOrigin;
 
     hit.beginDragging();
+    _lastDragTrailWakeOrigin = Offset(hit.position.x, hit.position.y);
+    _boardComponent?.updateActiveDragFootprint(
+      hit.model.col,
+      hit.model.row,
+      hit.model.localCells,
+      _dragTrailColorForPiece(hit),
+    );
     audio.playGrab();
   }
 
@@ -1715,6 +1757,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _draggedPiece = null;
     _activePointerId = null;
     _isTapCandidate = false;
+    _boardComponent?.clearActiveDragFootprint();
+    _lastDragTrailWakeOrigin = null;
 
     if (dragged != null) {
       final moved = dragged.model.col != _dragStartCol ||
@@ -1758,6 +1802,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _draggedPiece = null;
     _activePointerId = null;
     _isTapCandidate = false;
+    _boardComponent?.clearActiveDragFootprint();
+    _lastDragTrailWakeOrigin = null;
 
     if (dragged != null) {
       dragged.snapDragTargetToModelGrid();
@@ -2002,6 +2048,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     // 1. `CommitSteps` (up to `maxStepsPerFrame = 8` grid steps at `0.55 * cellSize`)
     bool movedGridCell = false;
+    Color? dragTrailColor;
     for (int step = 0; step < UnityBoardConfig.maxStepsPerFrame; step++) {
       final gridOrigin = comp.targetWorldOriginForGrid(model.col, model.row);
       final dx = allowsH ? (rawDesiredOrigin.x - gridOrigin.x) : 0.0;
@@ -2044,6 +2091,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         _syncOccupancyGrid();
         movedGridCell = true;
         _isTapCandidate = false;
+        dragTrailColor ??= _dragTrailColorForPiece(comp);
+        _boardComponent?.updateActiveDragFootprint(
+          model.col,
+          model.row,
+          model.localCells,
+          dragTrailColor,
+        );
       } else {
         break;
       }
@@ -2631,6 +2685,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     );
 
     _clearBoardMergeCandidateVisuals(wasCommitted: true);
+    _boardComponent?.clearActiveDragFootprint();
+    _lastDragTrailWakeOrigin = null;
     _mergeCandidate = null;
     _mergeSurvivor = null;
     _mergePushDir = (0, 0);
@@ -3033,6 +3089,28 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         if (comp.isMounted && !comp.isFlyingOrSwallowed) {
           comp.prewarmMergedNumberSprite(previewVal);
           budget--;
+        }
+      }
+    }
+
+    // 0b. Emit lightweight motion-wake stamps behind the actively dragged block
+    final activeDragged = _draggedPiece;
+    if (activeDragged != null && activeDragged.isMounted) {
+      final curX = activeDragged.position.x;
+      final curY = activeDragged.position.y;
+      final prev = _lastDragTrailWakeOrigin;
+      if (prev == null) {
+        _lastDragTrailWakeOrigin = Offset(curX, curY);
+      } else {
+        final dx = curX - prev.dx;
+        final dy = curY - prev.dy;
+        final thresh = _cellSize * 0.14;
+        if (dx * dx + dy * dy >= thresh * thresh) {
+          _emitPieceWakeStamps(
+            activeDragged,
+            _dragTrailColorForPiece(activeDragged),
+          );
+          _lastDragTrailWakeOrigin = Offset(curX, curY);
         }
       }
     }

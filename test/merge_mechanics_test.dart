@@ -1207,6 +1207,7 @@ void main() {
           'IceLock.png',
           'IceBlocks.png',
           'Ice_Shards.png',
+          'Icon_Mechanic_Blocker.png',
           'Screw_Greyscale_01.png',
           'Screw_Greyscale_02.png',
           'Screw_Greyscale_03.png',
@@ -1226,6 +1227,7 @@ void main() {
           await Flame.images.load(s);
         }
         await ScrewTextureCleaner.ensureCleanedScrewsLoaded();
+        await SparkleAtlas.ensureLoaded();
       });
 
       // 1. Verify exact `remote_config.json` unlock levels & pack prices
@@ -1273,7 +1275,7 @@ void main() {
       expect(find.byType(SnackBar), findsNothing);
       expect(find.byType(PowerUpBuyPopup), findsNothing);
 
-      // 3. Level 17 first entry -> 2-step `PowerUpFtueOverlay` -> FREE execution keeps `levelUpCount == 3`
+      // 3. Level 17 first entry -> "New Feature" unlock popup (`Claim` = +1, `Claim X2` = +2) -> HUD arrow hint & live in-game usage
       SharedPreferences.setMockInitialValues({
         'bo_current_level': 17,
         'bo_highest_level': 17,
@@ -1299,52 +1301,47 @@ void main() {
         await tester.pump(const Duration(milliseconds: 32));
       }
 
-      expect(find.byType(PowerUpFtueOverlay), findsOneWidget);
+      expect(find.byType(MechanicUnlockDialog), findsOneWidget);
+      expect(find.text('New Feature'), findsWidgets);
       expect(find.text('Level Up'), findsWidgets);
-      expect(find.text('New power-up unlocked!'), findsWidgets);
       expect(
         find.text('Merge a matching pair instantly, wherever they are!'),
         findsOneWidget,
       );
-      // Verify Step 1 layout: Title (`Level Up`) is strictly ABOVE SubTitle (`New power-up unlocked!`)
-      final titleY = tester.getCenter(find.text('Level Up').first).dy;
-      final subtitleY =
-          tester.getCenter(find.text('New power-up unlocked!').first).dy;
-      expect(titleY, lessThan(subtitleY));
-
-      // Tap `Continue` -> enters Step 2 with highlighted bottom `"FREE"` button (`ftue_free_level_up_btn`)
-      await tester.tap(find.byType(UnityCtaButton));
-      await tester.pump(const Duration(milliseconds: 100));
-      final freeLvUpBtn = find.byKey(const ValueKey('ftue_free_level_up_btn'));
-      expect(freeLvUpBtn, findsOneWidget);
+      expect(find.byKey(const ValueKey('mechanic_claim_btn')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mechanic_claim_x2_btn')), findsOneWidget);
       expect(
-        find.descendant(
-          of: freeLvUpBtn,
-          matching: find.byWidgetPredicate(
-            (w) =>
-                w is Image &&
-                w.image is AssetImage &&
-                (w.image as AssetImage).assetName ==
-                    'assets/images/PowerUp_Free.png',
-          ),
-        ),
-        findsOneWidget,
+        find.byKey(const ValueKey('mechanic_next_level_btn')),
+        findsNothing,
       );
 
       final gameL17 =
           tester.widget<GameWidget<BlockOrderGame>>(find.byType(GameWidget<BlockOrderGame>)).game!;
-      final piecesBeforeFreeLvUp = gameL17.debugPieces.length;
+      final piecesBeforeLvUp = gameL17.debugPieces.length;
 
-      // Tap `"FREE"` -> closes FTUE, executes LevelUp merge immediately, and keeps inventory at `3`!
-      await tester.tap(freeLvUpBtn);
+      // Tap `Claim` -> closes modal, grants +1 (`3 -> 4`), and shows HUD pointer arrow above `hud_level_up_btn`
+      await tester.tap(find.byKey(const ValueKey('mechanic_claim_btn')));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(MechanicUnlockDialog), findsNothing);
+      expect(progressL17.levelUpCount, 4);
+      expect(
+        find.byKey(const ValueKey('booster_hud_arrow_hint')),
+        findsOneWidget,
+      );
+
+      // Tap `hud_level_up_btn` directly in gameplay -> clears arrow hint, executes merge, consumes 1 (`4 -> 3`)!
+      await tester.tap(find.byKey(const ValueKey('hud_level_up_btn')));
       for (int i = 0; i < 30; i++) {
         await tester.pump(const Duration(milliseconds: 32));
       }
-      expect(find.byType(PowerUpFtueOverlay), findsNothing);
+      expect(
+        find.byKey(const ValueKey('booster_hud_arrow_hint')),
+        findsNothing,
+      );
       expect(progressL17.levelUpCount, 3);
-      expect(gameL17.debugPieces.length, piecesBeforeFreeLvUp - 1);
+      expect(gameL17.debugPieces.length, piecesBeforeLvUp - 1);
 
-      // 4. Level 27 first entry -> 2-step `PowerUpFtueOverlay` -> FREE Time Freeze flies clock & freezes 20s keeping `timeFreezeCount == 3`
+      // 4. Level 27 first entry -> "New Feature" unlock popup -> `Claim X2` grants +2 (`3 -> 5`), HUD arrow hint -> tap HUD `Time Freeze` engages 20s (`5 -> 4`)
       SharedPreferences.setMockInitialValues({
         'bo_current_level': 27,
         'bo_highest_level': 27,
@@ -1371,26 +1368,36 @@ void main() {
         await tester.pump(const Duration(milliseconds: 32));
       }
 
-      expect(find.byType(PowerUpFtueOverlay), findsOneWidget);
+      expect(find.byType(MechanicUnlockDialog), findsOneWidget);
+      expect(find.text('New Feature'), findsWidgets);
       expect(find.text('Time Freeze'), findsWidgets);
       expect(find.text('Freezes the timer for 20 seconds'), findsOneWidget);
-
-      await tester.tap(find.byType(UnityCtaButton));
-      await tester.pump(const Duration(milliseconds: 100));
-      final freeTfBtn =
-          find.byKey(const ValueKey('ftue_free_time_freeze_btn'));
-      expect(freeTfBtn, findsOneWidget);
+      expect(find.byKey(const ValueKey('mechanic_claim_x2_btn')), findsOneWidget);
 
       final gameL27 =
           tester.widget<GameWidget<BlockOrderGame>>(find.byType(GameWidget<BlockOrderGame>)).game!;
       expect(gameL27.isTimeFrozen, isFalse);
 
-      await tester.tap(freeTfBtn);
-      // Advance past 820ms clock flight (`t >= 0.66` impact) -> 20s freeze engages even before first drag!
+      // Tap `Claim X2` -> grants +2 (`3 -> 5`) and shows HUD pointer arrow above `hud_time_freeze_btn`
+      await tester.tap(find.byKey(const ValueKey('mechanic_claim_x2_btn')));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(MechanicUnlockDialog), findsNothing);
+      expect(progressL27.timeFreezeCount, 5);
+      expect(
+        find.byKey(const ValueKey('booster_hud_arrow_hint')),
+        findsOneWidget,
+      );
+
+      // Tap `hud_time_freeze_btn` -> clears arrow hint, flies clock & engages 20s freeze (`5 -> 4`)!
+      await tester.tap(find.byKey(const ValueKey('hud_time_freeze_btn')));
       for (int i = 0; i < 28; i++) {
         await tester.pump(const Duration(milliseconds: 32));
       }
-      expect(progressL27.timeFreezeCount, 3);
+      expect(
+        find.byKey(const ValueKey('booster_hud_arrow_hint')),
+        findsNothing,
+      );
+      expect(progressL27.timeFreezeCount, 4);
       expect(gameL27.isTimeFrozen, isTrue);
       expect(gameL27.timeFreezeNotifier.value, greaterThan(18.0));
 
@@ -1488,6 +1495,7 @@ void main() {
           'IceLock.png',
           'IceBlocks.png',
           'Ice_Shards.png',
+          'Icon_Mechanic_Blocker.png',
           'Screw_Greyscale_01.png',
           'Screw_Greyscale_02.png',
           'Screw_Greyscale_03.png',
@@ -1642,7 +1650,7 @@ void main() {
       expect(find.byKey(const ValueKey('level1_spotlight_banner')), findsNothing);
       expect(game.debugHasTutorialHand, isFalse);
 
-      // 6. Verify `MechanicUnlockDialog` (`MechanicFTUE.prefab`) hides `"New mechanic unlocked!"` across all 4 obstacles
+      // 6. Verify `MechanicUnlockDialog` displays `"New Mechanic"` + single long green `"Next Level"` button across all 4 obstacles
       for (final info in const [
         MechanicUnlockInfo.ice,
         MechanicUnlockInfo.dud,
@@ -1662,10 +1670,14 @@ void main() {
           ),
         );
         await tester.pump(const Duration(milliseconds: 200));
+        expect(find.text('New Mechanic'), findsWidgets);
+        expect(find.text('New Feature'), findsNothing);
         expect(find.text(info.title), findsWidgets);
         expect(find.text(info.note), findsOneWidget);
-        expect(find.text('New mechanic unlocked!'), findsNothing);
-        await tester.tap(find.byType(UnityCtaButton));
+        expect(find.text('Next Level'), findsWidgets);
+        expect(find.byKey(const ValueKey('mechanic_claim_btn')), findsNothing);
+        expect(find.byKey(const ValueKey('mechanic_claim_x2_btn')), findsNothing);
+        await tester.tap(find.byKey(const ValueKey('mechanic_next_level_btn')));
         await tester.pump(const Duration(milliseconds: 50));
         expect(dismissed, isTrue);
       }

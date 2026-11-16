@@ -157,6 +157,19 @@ void main() {
       await tester.tap(find.text('Next Level').first, warnIfMissed: false);
       await tester.pump();
       expect(nextLevelTapped, isTrue);
+
+      // Verify on tall modern phone (412x915): header stays strictly above flower stage
+      // and Next Level button is lifted comfortably above the bottom edge.
+      await tester.binding.setSurfaceSize(const Size(412, 915));
+      await tester.pump();
+      final headerRect =
+          tester.getRect(find.byKey(const ValueKey<String>('Level Complete!')));
+      final stageRect =
+          tester.getRect(find.byKey(const ValueKey('garden_vase_stage')));
+      final nextBtnRect =
+          tester.getRect(find.byKey(const ValueKey('garden_next_level_btn')));
+      expect(stageRect.top, greaterThanOrEqualTo(headerRect.bottom));
+      expect(nextBtnRect.bottom, lessThan(915.0 - 80.0));
     });
 
     testWidgets('5. WaterGardenView tap-to-skip fast forwards pouring and triggers completion immediately', (tester) async {

@@ -12,6 +12,7 @@ import 'package:block_order_2048/services/player_progress_service.dart';
 import 'package:block_order_2048/ui/gameplay_screen.dart';
 import 'package:block_order_2048/ui/intro_splash_view.dart';
 import 'package:block_order_2048/ui/lose_overlay.dart';
+import 'package:block_order_2048/ui/mechanic_unlock_dialog.dart';
 import 'package:block_order_2048/ui/powerup_buy_popup.dart';
 import 'package:block_order_2048/ui/unity_ui_kit.dart';
 import 'package:flame/flame.dart';
@@ -55,6 +56,7 @@ Future<void> _preloadGameTestAssets(WidgetTester tester) async {
       'IceLock.png',
       'IceBlocks.png',
       'Ice_Shards.png',
+      'Icon_Mechanic_Blocker.png',
       'Screw_Greyscale_01.png',
       'Screw_Greyscale_02.png',
       'Screw_Greyscale_03.png',
@@ -75,6 +77,7 @@ Future<void> _preloadGameTestAssets(WidgetTester tester) async {
       await Flame.images.load(s);
     }
     await ScrewTextureCleaner.ensureCleanedScrewsLoaded();
+    await SparkleAtlas.ensureLoaded();
   });
 }
 
@@ -630,6 +633,112 @@ void main() {
       expect(loggedEvents.first.$2['level'], 2);
       expect(loggedEvents.where((e) => e.$1 == 'tut_action'), isEmpty);
       expect(firebaseDirectCalls, isEmpty);
+    },
+  );
+
+  testWidgets(
+    '6. Feature (Booster) vs Mechanic unlock popups: "New Feature" grants Claim/+1 & Claim X2/+2 (or X closes to arrow hint), "New Mechanic" shows single "Next Level" button',
+    (tester) async {
+      await _preloadGameTestAssets(tester);
+      final repo = await tester.runAsync(() => LevelRepository.loadFromAssets());
+      final palette =
+          await tester.runAsync(() => BlockOrderPalette.loadFromAssets());
+      final settings =
+          await tester.runAsync(() => PieceVisualSettings.loadFromAssets());
+
+      await tester.binding.setSurfaceSize(const Size(540, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // A. Generic custom Booster renders as "New Feature" with Claim + Claim X2
+      const customBooster = MechanicUnlockInfo(
+        id: 'pu_custom_bomb',
+        title: 'Color Bomb',
+        note: 'Clears matching tiles on board',
+        iconAsset: 'assets/images/PowerUp_LevelUp.png',
+        isPowerUp: true,
+        unlockRewardCount: 1,
+        hudHorizontalOffsetUnity: -135.0,
+        analyticsName: 'color_bomb',
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MechanicUnlockDialog(
+              info: customBooster,
+              onDismiss: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('New Feature'), findsWidgets);
+      expect(find.text('New Mechanic'), findsNothing);
+      expect(find.byKey(const ValueKey('mechanic_claim_btn')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mechanic_claim_x2_btn')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mechanic_next_level_btn')), findsNothing);
+
+      // B. Generic custom Mechanic renders as "New Mechanic" with ONLY 1 long green "Next Level" button
+      const customMechanic = MechanicUnlockInfo(
+        id: 'mech_chain',
+        title: 'Chain Lock',
+        note: 'Break the chain to slide',
+        iconAsset: 'assets/images/Icon_Mechanic_SingleAxis.png',
+      );
+      bool mechDismissed = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MechanicUnlockDialog(
+              info: customMechanic,
+              onDismiss: () => mechDismissed = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('New Mechanic'), findsWidgets);
+      expect(find.text('New Feature'), findsNothing);
+      expect(find.text('Next Level'), findsWidgets);
+      expect(find.byKey(const ValueKey('mechanic_claim_btn')), findsNothing);
+      expect(find.byKey(const ValueKey('mechanic_claim_x2_btn')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('mechanic_next_level_btn')));
+      await tester.pump();
+      expect(mechDismissed, isTrue);
+
+      // C. Closing "New Feature" via `X` keeps inventory unchanged (`3`) & still shows HUD pointer arrow
+      SharedPreferences.setMockInitialValues({
+        'bo_current_level': 17,
+        'bo_highest_level': 17,
+        'bo_coins': 500,
+      });
+      final progress = PlayerProgressService();
+      await tester.runAsync(() => progress.init());
+      expect(progress.levelUpCount, 3);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GameplayScreen(
+            repository: repo!,
+            palette: palette!,
+            visualSettings: settings!,
+            audio: _SilentAudioService(),
+            progress: progress,
+          ),
+        ),
+      );
+      for (int i = 0; i < 15; i++) {
+        await tester.pump(const Duration(milliseconds: 32));
+      }
+      expect(find.byType(MechanicUnlockDialog), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('mechanic_close_btn')));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(MechanicUnlockDialog), findsNothing);
+      expect(progress.levelUpCount, 3);
+      expect(progress.coins, 500);
+      expect(
+        find.byKey(const ValueKey('booster_hud_arrow_hint')),
+        findsOneWidget,
+      );
     },
   );
 }

@@ -24,8 +24,8 @@ class BoardComponent extends PositionComponent {
   bool isSuperseded = false;
   final Paint _imagePaint = Paint()..filterQuality = FilterQuality.low;
 
-  static const double _cellTrailFadeSeconds = 0.36;
-  static const double _wakeFadeSeconds = 0.20;
+  static const double _cellTrailFadeSeconds = 0.20;
+  static const double _wakeFadeSeconds = 0.13;
   static const int _maxWakeStamps = 8;
 
   late final int _gridCols;
@@ -447,18 +447,18 @@ class BoardComponent extends PositionComponent {
       final double rimAlpha;
       if (isHeld) {
         final pulse = 0.5 + 0.5 * math.sin(_holdPulseClock);
-        scale = 0.96 + 0.03 * pulse;
-        fillAlpha = 0.36 + 0.08 * pulse;
-        rimAlpha = 0.70 + 0.12 * pulse;
+        scale = 0.96 + 0.025 * pulse;
+        fillAlpha = 0.20 + 0.05 * pulse;
+        rimAlpha = 0.42 + 0.08 * pulse;
       } else {
         final u = rawAge.clamp(0.0, 1.0);
-        final eased = Curves.easeOutCubic.transform(u);
+        final fade = u * u;
         final popBump = u > 0.72
-            ? ((1.0 - (u - 0.72) / 0.28).clamp(0.0, 1.0) * 0.05)
+            ? ((1.0 - (u - 0.72) / 0.28).clamp(0.0, 1.0) * 0.035)
             : 0.0;
-        scale = (0.64 + 0.38 * eased + popBump).clamp(0.4, 1.08);
-        fillAlpha = 0.60 * eased;
-        rimAlpha = 0.86 * eased;
+        scale = (0.62 + 0.36 * u + popBump).clamp(0.4, 1.04);
+        fillAlpha = 0.32 * fade;
+        rimAlpha = 0.48 * fade;
       }
 
       final span = baseTileSpan * scale;
@@ -483,8 +483,8 @@ class BoardComponent extends PositionComponent {
       if (rawAge <= 0.0) continue;
 
       final u = rawAge.clamp(0.0, 1.0);
-      final scale = 0.76 + 0.22 * u;
-      final alpha = 0.18 * u * u;
+      final scale = 0.74 + 0.22 * u;
+      final alpha = 0.10 * u * u;
       final rrect = RRect.fromRectAndRadius(
         Rect.fromCenter(
           center: Offset(_wakeCx[idx], _wakeCy[idx]),

@@ -282,25 +282,32 @@ class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
   }
 }
 
-/// Redesigned `New mechanic` Unlock Overlay matching `assets/UI Bo Sung/New mechanic/New_feature.png` (`1080x2160`):
-/// - Dark backdrop (`0xE00A051C`)
-/// - Top Header Image: `assets/images/text_newfeature.png` (`756x219`, `"NEW FEATURE\nUnlocked!"`)
-/// - Center Hero Illustration (`_FtueHeroIllustration`):
-///   - `assets/images/effect_outerglow.png` (`1080x1335` purple radial glow)
-///   - `assets/images/effect_star.png` (`703x527` golden 4-point sparkle stars)
-///   - Center `Icon_Mechanic_*.png` (`362x312`)
-/// - Below the Icon:
-///   - Golden-yellow `info.title` (`#FFD11A`, `fontSize = 68`)
-///   - Crisp white `info.note` (`#FFFFFF`, `fontSize = 48`)
-/// - Bottom CTA Button: `btn_green.png` / `UnityCtaButton` (`500 x 221`, `"Continue"`, `fontSize = 68`)
+/// Redesigned `New Feature` Unlock Popup matching `assets/UI Fix/New mechanic/New_Mechanic.png` (`884x1044` Unity px):
+/// - Dark backdrop (`0xCC060414`)
+/// - `popup_bg.png` (`884x1021` at `top = 23`)
+/// - `Frame_Popup_Title.png` (`558x143` centered at `top = 0`) with `"New Feature"`
+/// - `Button_Close.png` (`139x139` at `right = 14, top = 4`)
+/// - `frame_content.png` (`784x495` at `left = 50, top = 167`):
+///   - Top `#5A270B` mechanic title (`info.title`)
+///   - Center `Icon_Mechanic_*.png`
+///   - Bottom `#5A270B` mechanic description (`info.note`)
+/// - Bottom Buttons Row (`top = 725`):
+///   - Left green `"Claim"` button (`Button_Green.png`, `393x221`)
+///   - Right yellow `"Claim X2"` button (`Button_Yellow.png`, `386x221` + `Icon_Ads.png` `122x127`)
 class MechanicUnlockDialog extends StatefulWidget {
   final MechanicUnlockInfo info;
   final VoidCallback onDismiss;
+  final VoidCallback? onClaim;
+  final VoidCallback? onClaimX2;
+  final VoidCallback? onClose;
 
   const MechanicUnlockDialog({
     super.key,
     required this.info,
     required this.onDismiss,
+    this.onClaim,
+    this.onClaimX2,
+    this.onClose,
   });
 
   @override
@@ -309,134 +316,307 @@ class MechanicUnlockDialog extends StatefulWidget {
 
 class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
+  late final AnimationController _entranceCtrl;
+  bool _claimPressed = false;
+  bool _claimX2Pressed = false;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
+    _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
-    )..repeat();
+      duration: const Duration(milliseconds: 280),
+    )..forward();
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _entranceCtrl.dispose();
     super.dispose();
   }
+
+  void _handleClaim() => (widget.onClaim ?? widget.onDismiss).call();
+  void _handleClaimX2() => (widget.onClaimX2 ?? widget.onDismiss).call();
+  void _handleClose() => (widget.onClose ?? widget.onDismiss).call();
 
   @override
   Widget build(BuildContext context) {
     final info = widget.info;
 
-    return Container(
-      color: const Color(0xE00A051C),
+    return ColoredBox(
+      color: const Color(0xCC060414),
       child: SafeArea(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.82, end: 1.0),
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOutBack,
-          builder: (context, pop, child) => Transform.scale(
-            scale: pop,
-            child: Opacity(
-              opacity: pop.clamp(0.0, 1.0),
-              child: child,
-            ),
-          ),
-          child: Column(
-            children: [
-              const Spacer(flex: 3),
-
-              // 1. Top `"NEW FEATURE / Unlocked!"` Header (`text_newfeature.png`, `756x219`)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: ux(context, 64)),
-                child: Image.asset(
-                  'assets/images/text_newfeature.png',
-                  width: ux(context, 756),
-                  height: ux(context, 219),
-                  fit: BoxFit.contain,
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _entranceCtrl,
+            builder: (context, child) {
+              final t = Curves.easeOutBack.transform(_entranceCtrl.value);
+              return Transform.scale(
+                scale: 0.84 + 0.16 * t,
+                child: Opacity(
+                  opacity: _entranceCtrl.value.clamp(0.0, 1.0),
+                  child: child,
                 ),
-              ),
+              );
+            },
+            child: SizedBox(
+              key: const ValueKey('new_feature_popup_card'),
+              width: ux(context, 884),
+              height: ux(context, 1044),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // 1. Gold-Rimmed Royal-Blue Popup Body (`popup_bg.png`, `884x1021` at `top = 23`)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: ux(context, 23),
+                    height: ux(context, 1021),
+                    child: Image.asset(
+                      'assets/images/popup_bg.png',
+                      width: ux(context, 884),
+                      height: ux(context, 1021),
+                      fit: BoxFit.fill,
+                    ),
+                  ),
 
-              const Spacer(flex: 2),
+                  // 2. Cream Inner Content Well (`frame_content.png`, `784x495` at `left = 50, top = 167`)
+                  Positioned(
+                    left: ux(context, 50),
+                    top: ux(context, 167),
+                    width: ux(context, 784),
+                    height: ux(context, 495),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.asset(
+                          'assets/images/frame_content.png',
+                          fit: BoxFit.fill,
+                        ),
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            ux(context, 40),
+                            ux(context, 22),
+                            ux(context, 40),
+                            ux(context, 24),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              // Top Brown Mechanic Title (`info.title`)
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  info.title,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontFamily: 'Baloo2',
+                                    fontSize: ux(context, 56),
+                                    fontWeight: FontWeight.w800,
+                                    fontVariations: const [
+                                      FontVariation('wght', 800),
+                                    ],
+                                    color: const Color(0xFF5A270B),
+                                    height: 1.08,
+                                  ),
+                                ),
+                              ),
 
-              // 2. Hero Illustration (`effect_outerglow.png` + `effect_star.png` + `Icon_Mechanic_*.png`)
-              _FtueHeroIllustration(
-                controller: _ctrl,
-                iconAsset: info.iconAsset,
-                iconUnityWidth: 362,
-                iconUnityHeight: 332,
-              ),
+                              SizedBox(height: ux(context, 10)),
 
-              const Spacer(flex: 1),
+                              // Center Reworked Mechanic Icon (`Icon_Mechanic_*.png`)
+                              Expanded(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: ux(context, 4),
+                                  ),
+                                  child: Image.asset(
+                                    info.iconAsset,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              ),
 
-              // 3. Golden Mechanic Title (`info.title`, e.g. `"Ice Blocks"` / `"Block Ice"`)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: ux(context, 64)),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    info.title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Baloo2',
-                      fontSize: ux(context, 72),
-                      fontWeight: FontWeight.w800,
-                      fontVariations: const [FontVariation('wght', 800)],
-                      color: const Color(0xFFFFD11A),
-                      height: 1.08,
-                      shadows: const [
-                        Shadow(
-                          color: Color(0xCC180636),
-                          offset: Offset(0, 3.0),
-                          blurRadius: 6.0,
+                              SizedBox(height: ux(context, 10)),
+
+                              // Bottom Brown Description (`info.note`)
+                              Text(
+                                info.note,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Baloo2',
+                                  fontSize: ux(context, 40),
+                                  fontWeight: FontWeight.w800,
+                                  fontVariations: const [
+                                    FontVariation('wght', 800),
+                                  ],
+                                  color: const Color(0xFF5A270B),
+                                  height: 1.12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ),
 
-              SizedBox(height: ux(context, 16)),
-
-              // 4. Crisp White Description Text (`info.note`)
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: ux(context, 96)),
-                child: Text(
-                  info.note,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Baloo2',
-                    fontSize: ux(context, 48),
-                    fontWeight: FontWeight.w700,
-                    fontVariations: const [FontVariation('wght', 700)],
-                    color: Colors.white,
-                    height: 1.22,
-                    shadows: const [
-                      Shadow(
-                        color: Color(0xCC0D0422),
-                        offset: Offset(0, 2.5),
-                        blurRadius: 5.0,
+                  // 3. Bottom-Left Green `"Claim"` Button (`Button_Green.png`, `393x221` at `left = 51, top = 727`)
+                  Positioned(
+                    left: ux(context, 51),
+                    top: ux(context, 727),
+                    width: ux(context, 393),
+                    height: ux(context, 221),
+                    child: GestureDetector(
+                      key: const ValueKey('mechanic_claim_btn'),
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (_) => setState(() => _claimPressed = true),
+                      onTapUp: (_) {
+                        setState(() => _claimPressed = false);
+                        _handleClaim();
+                      },
+                      onTapCancel: () => setState(() => _claimPressed = false),
+                      child: AnimatedScale(
+                        scale: _claimPressed ? 0.94 : 1.0,
+                        duration: const Duration(milliseconds: 80),
+                        curve: Curves.easeOutCubic,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Positioned.fill(
+                              child: Image.asset(
+                                'assets/images/Button_Green.png',
+                                fit: BoxFit.fill,
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.only(
+                                left: ux(context, 32),
+                                right: ux(context, 32),
+                                bottom: ux(context, 12),
+                              ),
+                              child: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: UnitySdfText(
+                                  'Claim',
+                                  unityFontSize: 64,
+                                  material: UnityTextMaterial.ctaGreen,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+
+                  // 4. Bottom-Right Yellow `"Claim X2"` Ad Button (`Button_Yellow.png`, `386x221` at `right = 45, top = 725`)
+                  Positioned(
+                    right: ux(context, 45),
+                    top: ux(context, 725),
+                    width: ux(context, 386),
+                    height: ux(context, 221),
+                    child: GestureDetector(
+                      key: const ValueKey('mechanic_claim_x2_btn'),
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (_) => setState(() => _claimX2Pressed = true),
+                      onTapUp: (_) {
+                        setState(() => _claimX2Pressed = false);
+                        _handleClaimX2();
+                      },
+                      onTapCancel: () =>
+                          setState(() => _claimX2Pressed = false),
+                      child: AnimatedScale(
+                        scale: _claimX2Pressed ? 0.94 : 1.0,
+                        duration: const Duration(milliseconds: 80),
+                        curve: Curves.easeOutCubic,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned.fill(
+                              child: Image.asset(
+                                'assets/images/Button_Yellow.png',
+                                fit: BoxFit.fill,
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.only(
+                                left: ux(context, 36),
+                                right: ux(context, 28),
+                                bottom: ux(context, 10),
+                              ),
+                              child: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: UnitySdfText(
+                                  'Claim X2',
+                                  unityFontSize: 58,
+                                  material: UnityTextMaterial.ctaYellowButton,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: -ux(context, 8),
+                              top: -ux(context, 42),
+                              width: ux(context, 122),
+                              height: ux(context, 127),
+                              child: Image.asset(
+                                'assets/images/Icon_Ads.png',
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // 5. Top Header Ribbon (`Frame_Popup_Title.png`, `558x143` centered at `top = 0`, `"New Feature"`)
+                  Positioned(
+                    left: ux(context, (884 - 558) * 0.5),
+                    top: 0,
+                    width: ux(context, 558),
+                    height: ux(context, 143),
+                    child: IgnorePointer(
+                      child: UnityNineSlice(
+                        sprite: 'Frame_Popup_Title.png',
+                        padding: EdgeInsets.fromLTRB(
+                          ux(context, 40),
+                          ux(context, 8),
+                          ux(context, 40),
+                          ux(context, 16),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: UnitySdfText(
+                            'New Feature',
+                            unityFontSize: 64,
+                            material: UnityTextMaterial.popupTitle,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // 6. Top-Right Red-Gold Close Button (`Button_Close.png`, `139x139` at `right = 14, top = 4`)
+                  Positioned(
+                    right: ux(context, 14),
+                    top: ux(context, 4),
+                    width: ux(context, 139),
+                    height: ux(context, 139),
+                    child: UnitySpriteButton(
+                      key: const ValueKey('mechanic_close_btn'),
+                      asset: 'Button_Close.png',
+                      unitySize: 139,
+                      onTap: _handleClose,
+                    ),
+                  ),
+                ],
               ),
-
-              const Spacer(flex: 2),
-
-              // 5. Green `"Continue"` CTA Button (`500 x 221`, `fontSize = 68`)
-              UnityCtaButton(
-                label: 'Continue',
-                unityWidth: 500,
-                unityHeight: 221,
-                unityFontSize: 68,
-                onTap: widget.onDismiss,
-              ),
-
-              const Spacer(flex: 3),
-            ],
+            ),
           ),
         ),
       ),

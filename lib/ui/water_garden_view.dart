@@ -261,13 +261,13 @@ class _WaterGardenViewState extends State<WaterGardenView>
           context,
           UnityCoinsWidget.hudTopUnity + UnityCoinsWidget.heightUnity + 14.0,
         );
-        final ribbonTop = math.max(coinsBottomSafeY, safeH * 0.066);
-        final ribbonH = (safeH * 0.112).clamp(68.0, 92.0);
-        final ribbonW = math.min(352.0, safeW - 20.0);
+        final ribbonTop = math.max(coinsBottomSafeY - 6.0, safeH * 0.048);
+        final ribbonH = (safeH * 0.146).clamp(96.0, 136.0);
+        final ribbonW = math.min(safeW - 12.0, 412.0);
 
         final bottomPad = math.max(12.0, safeH * 0.020);
         final bottomControlsEstimatedH = 92.0 + ux(context, 224.0);
-        final stageTop = ribbonTop + ribbonH - 10.0;
+        final stageTop = ribbonTop + ribbonH - 12.0;
         final stageBottom = math.max(
           stageTop + 176.0,
           safeH - bottomPad - bottomControlsEstimatedH + 8.0,
@@ -976,6 +976,7 @@ class _OldThemeStageBackdropPainter extends CustomPainter {
   final double stageCenterYFraction;
 
   static final Paint _paint = Paint()..isAntiAlias = true;
+  static final Path _conePath = Path();
 
   _OldThemeStageBackdropPainter({
     required this.drawSolidScrim,
@@ -995,9 +996,9 @@ class _OldThemeStageBackdropPainter extends CustomPainter {
           Offset(size.width * 0.5, 0),
           Offset(size.width * 0.5, size.height),
           const [
-            Color(0xFF1B1046),
-            Color(0xFF120B32),
-            Color(0xFF0A0720),
+            Color(0xFF1D114D),
+            Color(0xFF130B35),
+            Color(0xFF09061E),
           ],
           const [0.0, 0.52, 1.0],
         );
@@ -1005,67 +1006,93 @@ class _OldThemeStageBackdropPainter extends CustomPainter {
       _paint.shader = null;
     }
 
-    // 1. Soft Magical Royal-Violet & Cyan Aura behind the 3D Crystal Vase
-    final breathe = 1.0 + 0.04 * math.sin(ambientPhase);
+    final breathe = 1.0 + 0.045 * math.sin(ambientPhase);
     final stageCenter = Offset(
       size.width * 0.5,
       size.height * stageCenterYFraction,
     );
-    final outerR = math.min(size.width, size.height) * 0.62 * breathe;
+
+    // 0. Soft overhead volumetric stage spotlight cone illuminating the 3D vase & pedestal
+    _conePath
+      ..reset()
+      ..moveTo(size.width * 0.34, 0)
+      ..lineTo(size.width * 0.66, 0)
+      ..lineTo(size.width * 0.90, stageCenter.dy + 135)
+      ..lineTo(size.width * 0.10, stageCenter.dy + 135)
+      ..close();
     _paint
       ..style = PaintingStyle.fill
       ..blendMode = BlendMode.plus
-      ..shader = ui.Gradient.radial(
-        stageCenter,
-        outerR,
+      ..shader = ui.Gradient.linear(
+        Offset(size.width * 0.5, 0),
+        Offset(size.width * 0.5, stageCenter.dy + 135),
         const [
-          Color(0x4242E8FF),
-          Color(0x287E57C2),
-          Color(0x12FFD54F),
+          Color(0x16FFF6C8),
+          Color(0x186BEBFF),
           Color(0x001A1046),
         ],
-        const [0.0, 0.42, 0.72, 1.0],
+        const [0.0, 0.56, 1.0],
       );
+    canvas.drawPath(_conePath, _paint);
+
+    // 1. Soft Magical Royal-Violet & Cyan Aura behind the 3D Crystal Vase
+    final outerR = math.min(size.width, size.height) * 0.64 * breathe;
+    _paint.shader = ui.Gradient.radial(
+      stageCenter,
+      outerR,
+      const [
+        Color(0x4C4CEBFF),
+        Color(0x2E8458D6),
+        Color(0x16FFD54F),
+        Color(0x001A1046),
+      ],
+      const [0.0, 0.42, 0.72, 1.0],
+    );
     canvas.drawCircle(stageCenter, outerR, _paint);
 
     // 2. Warm Golden Halo behind the Top `'Level / Complete!'` Wave Header
     final headerCenter = Offset(size.width * 0.5, size.height * 0.12);
-    final headerR = math.min(size.width, size.height) * 0.36 * breathe;
+    final headerR = math.min(size.width, size.height) * 0.38 * breathe;
     _paint.shader = ui.Gradient.radial(
       headerCenter,
       headerR,
       const [
-        Color(0x3EFFE082),
-        Color(0x1CFFB300),
+        Color(0x46FFE082),
+        Color(0x20FFB300),
         Color(0x00FFB300),
       ],
       const [0.0, 0.52, 1.0],
     );
     canvas.drawCircle(headerCenter, headerR, _paint);
     _paint.shader = null;
-    _paint.blendMode = BlendMode.srcOver;
 
-    // 3. Subtle Floating Golden & Cyan Starlight Bokeh Motes
-    for (int i = 0; i < 14; i++) {
+    // 3. Subtle Floating Golden & Cyan Starlight Bokeh Motes (additive glow)
+    for (int i = 0; i < 16; i++) {
       final seed = i * 1.73;
       final fx = 0.08 +
           ((i * 0.193) % 0.84) +
-          0.020 * math.sin(ambientPhase + seed);
+          0.022 * math.sin(ambientPhase + seed);
       final rawY =
           ((i * 0.137) - (ambientPhase / (math.pi * 2.0)) * 0.16) % 1.0;
       final fy = rawY < 0 ? rawY + 1.0 : rawY;
-      final radius = 2.2 + (i % 4) * 2.1;
-      final alpha = (0.08 + 0.10 * math.sin(ambientPhase * 2.0 + seed))
-          .clamp(0.02, 0.20);
+      final radius = 2.6 + (i % 4) * 2.4;
+      final alpha = (0.09 + 0.12 * math.sin(ambientPhase * 2.0 + seed))
+          .clamp(0.02, 0.24);
       final baseColor =
           i.isEven ? const Color(0xFFFFE082) : const Color(0xFF80F8FF);
-      _paint.color = baseColor.withValues(alpha: alpha);
-      canvas.drawCircle(
-        Offset(fx * size.width, fy * size.height),
-        radius,
-        _paint,
+      final pos = Offset(fx * size.width, fy * size.height);
+      _paint.shader = ui.Gradient.radial(
+        pos,
+        radius * 2.1,
+        [
+          baseColor.withValues(alpha: alpha),
+          baseColor.withValues(alpha: 0.0),
+        ],
       );
+      canvas.drawCircle(pos, radius * 2.1, _paint);
     }
+    _paint.shader = null;
+    _paint.blendMode = BlendMode.srcOver;
   }
 
   @override
@@ -1084,20 +1111,21 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
   final double ambientValue;
 
   static final TextPainter _tp = TextPainter(textDirection: TextDirection.ltr);
+  static final Paint _sparkPaint = Paint()..isAntiAlias = true;
 
   _OldThemeLevelCompleteHeaderPainter({required this.ambientValue});
 
   @override
   void paint(Canvas canvas, Size size) {
     final h = size.height;
-    final fs1 = (h * 0.44).clamp(26.0, 42.0);
-    final fs2 = (h * 0.40).clamp(24.0, 38.0);
-    final waveAmp = (h * 0.032).clamp(1.8, 3.0);
+    final fs1 = (h * 0.46).clamp(34.0, 56.0);
+    final fs2 = (h * 0.42).clamp(31.0, 51.0);
+    final waveAmp = (h * 0.028).clamp(2.2, 4.0);
 
     _drawWaveLine(
       canvas: canvas,
       centerX: size.width * 0.5,
-      baselineCenterY: h * 0.29,
+      baselineCenterY: h * 0.27,
       text: 'Level',
       fontSize: fs1,
       phaseOffset: 1.4,
@@ -1114,6 +1142,42 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
       waveAmp: waveAmp,
       maxWidth: size.width * 0.96,
     );
+
+    _drawHeaderSparkles(canvas, size);
+  }
+
+  void _drawHeaderSparkles(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    const spots = [
+      (0.16, 0.24, 6.2, 0.0),
+      (0.84, 0.22, 5.4, 1.7),
+      (0.10, 0.74, 5.0, 3.1),
+      (0.90, 0.70, 6.6, 4.4),
+    ];
+    for (final (fx, fy, r, phase) in spots) {
+      final twinkle =
+          (0.45 + 0.55 * math.sin(ambientValue * math.pi * 4.0 + phase))
+              .clamp(0.15, 1.0);
+      final c = Offset(w * fx, h * fy);
+      final rad = r * (0.72 + 0.28 * twinkle);
+      final p = Path()
+        ..moveTo(c.dx, c.dy - rad)
+        ..quadraticBezierTo(c.dx, c.dy, c.dx + rad * 0.85, c.dy)
+        ..quadraticBezierTo(c.dx, c.dy, c.dx, c.dy + rad)
+        ..quadraticBezierTo(c.dx, c.dy, c.dx - rad * 0.85, c.dy)
+        ..quadraticBezierTo(c.dx, c.dy, c.dx, c.dy - rad)
+        ..close();
+      _sparkPaint
+        ..style = PaintingStyle.fill
+        ..maskFilter = null
+        ..color = Color.lerp(
+          const Color(0xFFFFE57F),
+          Colors.white,
+          twinkle,
+        )!.withValues(alpha: 0.88 * twinkle);
+      canvas.drawPath(p, _sparkPaint);
+    }
   }
 
   void _drawWaveLine({
@@ -1127,16 +1191,16 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
     required double maxWidth,
   }) {
     const mat = UnityTextMaterial.levelCompleteWave;
-    final innerSw = (fontSize * mat.strokeRatio).clamp(1.6, 12.0);
-    final outerSw =
-        (fontSize * mat.outerStrokeRatio).clamp(innerSw + 0.8, 16.0);
-    final dropY = fontSize * mat.underlayYRatio;
+    final innerSw = (fontSize * 0.095).clamp(2.0, 7.5);
+    final outerSw = (fontSize * 0.148).clamp(innerSw + 1.0, 11.2);
+    final dropY = fontSize * 0.092;
 
     TextStyle styleWith(Paint foreground) => TextStyle(
           fontFamily: mat.fontFamily,
           fontSize: fontSize,
           fontWeight: mat.fontWeight,
           height: 1.05,
+          letterSpacing: fontSize * 0.012,
           foreground: foreground,
         );
 
@@ -1145,49 +1209,70 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
       fontSize: fontSize,
       fontWeight: mat.fontWeight,
       height: 1.05,
+      letterSpacing: fontSize * 0.012,
       color: Colors.white,
     );
 
-    final widths = <double>[];
-    double totalW = 0.0;
-    double lineH = fontSize;
-    for (int i = 0; i < text.length; i++) {
-      _tp.text = TextSpan(text: text[i], style: measureStyle);
-      _tp.layout();
-      widths.add(_tp.width);
-      totalW += _tp.width;
-      lineH = _tp.height;
-    }
+    // Measure full word once for natural font kerning positions
+    _tp.text = TextSpan(text: text, style: measureStyle);
+    _tp.layout();
+    final totalW = _tp.width;
+    final lineH = _tp.height;
+    final charXs = List<double>.generate(
+      text.length,
+      (i) => _tp.getOffsetForCaret(TextPosition(offset: i), Rect.zero).dx,
+    );
 
     final scale = totalW > maxWidth ? (maxWidth / totalW) : 1.0;
 
+    final glowShadowStyle = styleWith(
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = outerSw * 1.18
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..maskFilter = ui.MaskFilter.blur(
+          ui.BlurStyle.normal,
+          (fontSize * 0.075).clamp(2.0, 5.0),
+        )
+        ..color = const Color(0x9E2C0600),
+    );
     final underlayStyle = styleWith(
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = outerSw
+        ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = mat.underlayColor,
+        ..color = const Color(0xE84B0D00),
     );
     final outerStrokeStyle = styleWith(
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = outerSw
+        ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = mat.outerStrokeColor!,
+        ..color = const Color(0xFF8C1800),
     );
     final innerStrokeStyle = styleWith(
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = innerSw
+        ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = mat.strokeColor,
+        ..color = const Color(0xFFE96D24),
     );
     final faceStyle = styleWith(
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(0, fontSize * 0.12),
-          Offset(0, fontSize * 0.96),
-          [mat.faceTop, mat.faceBottom],
+          Offset(0, fontSize * 0.14),
+          Offset(0, fontSize * 0.94),
+          const [
+            Color(0xFFFFFFFF),
+            Color(0xFFFFF8D0),
+            Color(0xFFFFDF6A),
+            Color(0xFFFFB528),
+          ],
+          const [0.0, 0.34, 0.70, 1.0],
         ),
     );
 
@@ -1197,42 +1282,44 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
       canvas.scale(scale, scale);
     }
 
-    // Pass 1: 3D Drop Underlay + Outer Crimson-Brown Stroke + Inner Warm-Orange Stroke
-    double cursorX = -totalW * 0.5;
+    final startX = -totalW * 0.5;
+
+    // Pass 1: Soft ambient drop shadow + 3D mahogany underlay + cherry/tangerine beveled outlines
     for (int i = 0; i < text.length; i++) {
       final ch = text[i];
+      final x = startX + charXs[i];
       final waveAngle = ambientValue * math.pi * 4.0 - (i + phaseOffset) * 0.42;
       final waveDy = math.sin(waveAngle) * waveAmp;
       final topY = -lineH * 0.5 + waveDy;
 
+      _tp.text = TextSpan(text: ch, style: glowShadowStyle);
+      _tp.layout();
+      _tp.paint(canvas, Offset(x, topY + dropY * 1.15));
+
       _tp.text = TextSpan(text: ch, style: underlayStyle);
       _tp.layout();
-      _tp.paint(canvas, Offset(cursorX, topY + dropY));
+      _tp.paint(canvas, Offset(x, topY + dropY));
 
       _tp.text = TextSpan(text: ch, style: outerStrokeStyle);
       _tp.layout();
-      _tp.paint(canvas, Offset(cursorX, topY));
+      _tp.paint(canvas, Offset(x, topY));
 
       _tp.text = TextSpan(text: ch, style: innerStrokeStyle);
       _tp.layout();
-      _tp.paint(canvas, Offset(cursorX, topY));
-
-      cursorX += widths[i];
+      _tp.paint(canvas, Offset(x, topY));
     }
 
-    // Pass 2: Crisp White-to-Gold Gradient Faces
-    cursorX = -totalW * 0.5;
+    // Pass 2: Smooth Ivory-to-Honey-Gold Gradient Faces
     for (int i = 0; i < text.length; i++) {
       final ch = text[i];
+      final x = startX + charXs[i];
       final waveAngle = ambientValue * math.pi * 4.0 - (i + phaseOffset) * 0.42;
       final waveDy = math.sin(waveAngle) * waveAmp;
       final topY = -lineH * 0.5 + waveDy;
 
       _tp.text = TextSpan(text: ch, style: faceStyle);
       _tp.layout();
-      _tp.paint(canvas, Offset(cursorX, topY));
-
-      cursorX += widths[i];
+      _tp.paint(canvas, Offset(x, topY));
     }
 
     canvas.restore();
@@ -1661,7 +1748,7 @@ class _RewardShowcasePainter extends CustomPainter {
       oldDelegate.drawCustomIceCube != drawCustomIceCube;
 }
 
-/// Parametric geometry metrics for each of the 5 sculpted 3D Vase shapes.
+/// Parametric 3D silhouette metrics for the 5 sculpted vase shapes.
 class _VaseMetrics {
   final double topRimY;
   final double neckY;
@@ -1670,6 +1757,9 @@ class _VaseMetrics {
   final double neckHalfW;
   final double bellyHalfW;
   final double baseHalfW;
+  final double bellyYFrac;
+  final double wallThickness;
+  final double baseCushionH;
 
   const _VaseMetrics({
     required this.topRimY,
@@ -1679,78 +1769,241 @@ class _VaseMetrics {
     required this.neckHalfW,
     required this.bellyHalfW,
     required this.baseHalfW,
+    required this.bellyYFrac,
+    required this.wallThickness,
+    required this.baseCushionH,
   });
+
+  double get innerBaseY => baseY - baseCushionH;
 
   static _VaseMetrics forShape(VaseShapeType type, double centerY) {
     return switch (type) {
-      // Plump spherical glass fishbowl (Panel 3!)
+      // Plump spherical blown-glass fishbowl orb
       VaseShapeType.fishbowl => _VaseMetrics(
-          topRimY: centerY - 64,
-          neckY: centerY - 46,
-          baseY: centerY + 116,
-          mouthHalfW: 59,
-          neckHalfW: 52,
-          bellyHalfW: 108,
-          baseHalfW: 61,
+          topRimY: centerY - 76,
+          neckY: centerY - 52,
+          baseY: centerY + 112,
+          mouthHalfW: 64,
+          neckHalfW: 54,
+          bellyHalfW: 112,
+          baseHalfW: 60,
+          bellyYFrac: 0.50,
+          wallThickness: 5.8,
+          baseCushionH: 13.5,
         ),
-      // Plump rounded crystal-ceramic bowl (Panels 4 & 5!)
+      // Graceful pearl-azure translucent teardrop amphora-urn
       VaseShapeType.ovalCeramic => _VaseMetrics(
-          topRimY: centerY - 66,
-          neckY: centerY - 47,
-          baseY: centerY + 116,
-          mouthHalfW: 57,
-          neckHalfW: 50,
-          bellyHalfW: 105,
-          baseHalfW: 59,
-        ),
-      // Melon-ribbed fluted crystal vase (Panel 6!)
-      VaseShapeType.flutedCrystal => _VaseMetrics(
-          topRimY: centerY - 72,
-          neckY: centerY - 50,
+          topRimY: centerY - 74,
+          neckY: centerY - 48,
           baseY: centerY + 116,
           mouthHalfW: 54,
-          neckHalfW: 46,
-          bellyHalfW: 108,
-          baseHalfW: 58,
-        ),
-      // Regal high-shoulder royal amphora
-      VaseShapeType.royalTall => _VaseMetrics(
-          topRimY: centerY - 80,
-          neckY: centerY - 54,
-          baseY: centerY + 116,
-          mouthHalfW: 51,
-          neckHalfW: 40,
+          neckHalfW: 41,
           bellyHalfW: 98,
-          baseHalfW: 56,
+          baseHalfW: 53,
+          bellyYFrac: 0.54,
+          wallThickness: 6.0,
+          baseCushionH: 15.0,
         ),
-      // Faceted diamond-lotus crystal vase
-      VaseShapeType.prismLotus => _VaseMetrics(
-          topRimY: centerY - 70,
+      // Baroque melon-ribbed fluted crystal carafe
+      VaseShapeType.flutedCrystal => _VaseMetrics(
+          topRimY: centerY - 78,
           neckY: centerY - 50,
           baseY: centerY + 116,
-          mouthHalfW: 56,
-          neckHalfW: 47,
-          bellyHalfW: 105,
-          baseHalfW: 58,
+          mouthHalfW: 58,
+          neckHalfW: 43,
+          bellyHalfW: 108,
+          baseHalfW: 56,
+          bellyYFrac: 0.50,
+          wallThickness: 5.8,
+          baseCushionH: 14.5,
+        ),
+      // Regal high-shouldered slender amphora with flared base foot
+      VaseShapeType.royalTall => _VaseMetrics(
+          topRimY: centerY - 92,
+          neckY: centerY - 62,
+          baseY: centerY + 118,
+          mouthHalfW: 49,
+          neckHalfW: 31,
+          bellyHalfW: 86,
+          baseHalfW: 48,
+          bellyYFrac: 0.28,
+          wallThickness: 6.0,
+          baseCushionH: 17.0,
+        ),
+      // Geometric faceted lotus-cut crystal chalice
+      VaseShapeType.prismLotus => _VaseMetrics(
+          topRimY: centerY - 75,
+          neckY: centerY - 49,
+          baseY: centerY + 116,
+          mouthHalfW: 58,
+          neckHalfW: 41,
+          bellyHalfW: 104,
+          baseHalfW: 52,
+          bellyYFrac: 0.44,
+          wallThickness: 6.5,
+          baseCushionH: 16.0,
         ),
     };
   }
 
-  /// Half-width of the interior chamber at height `y` (used for the 3D elliptical meniscus!).
+  /// Single geometric source of truth for the outer radius of any vase cross-section at `y`.
+  double outerHalfWidthAt(double y, VaseShapeType type) {
+    if (y <= neckY) {
+      final tNeck = ((y - topRimY) / math.max(1.0, neckY - topRimY)).clamp(
+        0.0,
+        1.0,
+      );
+      final flare = 0.5 + 0.5 * math.cos(tNeck * math.pi);
+      return ui.lerpDouble(neckHalfW, mouthHalfW, flare)!;
+    }
+
+    final t = ((y - neckY) / math.max(1.0, baseY - neckY)).clamp(0.0, 1.0);
+
+    if (type == VaseShapeType.prismLotus) {
+      if (t < 0.28) {
+        return ui.lerpDouble(neckHalfW, bellyHalfW * 0.90, t / 0.28)!;
+      } else if (t < 0.48) {
+        return ui.lerpDouble(
+          bellyHalfW * 0.90,
+          bellyHalfW,
+          (t - 0.28) / 0.20,
+        )!;
+      } else if (t < 0.74) {
+        return ui.lerpDouble(
+          bellyHalfW,
+          bellyHalfW * 0.80,
+          (t - 0.48) / 0.26,
+        )!;
+      } else {
+        return ui.lerpDouble(
+          bellyHalfW * 0.80,
+          baseHalfW,
+          (t - 0.74) / 0.26,
+        )!;
+      }
+    }
+
+    if (type == VaseShapeType.fishbowl) {
+      // True spherical arc `sqrt(1 - u^2)` between truncated top (`-0.875`) and bottom (`+0.845`)
+      // with a gentle C1 collar blend in the top 5% so the mouth meets the orb without pinching.
+      final p = bellyYFrac;
+      final u = t <= p
+          ? -0.875 * (1.0 - (t / p).clamp(0.0, 1.0))
+          : 0.845 * ((t - p) / math.max(0.01, 1.0 - p)).clamp(0.0, 1.0);
+      final orbW = bellyHalfW * math.sqrt((1.0 - u * u).clamp(0.0, 1.0));
+      if (t < 0.055) {
+        final k = Curves.easeInOutSine.transform((t / 0.055).clamp(0.0, 1.0));
+        return ui.lerpDouble(neckHalfW, orbW, k)!;
+      }
+      return orbW;
+    }
+
+    final p = bellyYFrac;
+    if (type == VaseShapeType.ovalCeramic || type == VaseShapeType.flutedCrystal) {
+      final normU = t <= p
+          ? 0.5 * (t / p).clamp(0.0, 1.0)
+          : 0.5 + 0.5 * ((t - p) / math.max(0.01, 1.0 - p)).clamp(0.0, 1.0);
+      final bulge = math.pow(
+        math.sin(normU * math.pi).clamp(0.0, 1.0),
+        0.74,
+      ).toDouble();
+      final edgeW = ui.lerpDouble(neckHalfW, baseHalfW, t)!;
+      final rawW = ui.lerpDouble(edgeW, bellyHalfW, bulge)!;
+      if (t < 0.05) {
+        final k = Curves.easeInOutSine.transform((t / 0.05).clamp(0.0, 1.0));
+        return ui.lerpDouble(neckHalfW, rawW, k)!;
+      }
+      return rawW;
+    }
+
+    final easedT = t <= p
+        ? 0.5 * Curves.easeInOutSine.transform((t / p).clamp(0.0, 1.0))
+        : 0.5 +
+              0.5 *
+                  Curves.easeInOutSine.transform(
+                    ((t - p) / math.max(0.01, 1.0 - p)).clamp(0.0, 1.0),
+                  );
+    final bulge = math.sin(easedT * math.pi);
+
+    final edgeW = ui.lerpDouble(neckHalfW, baseHalfW, t)!;
+    final rawW = ui.lerpDouble(edgeW, bellyHalfW, bulge)!;
+
+    if (type == VaseShapeType.royalTall && t > 0.86) {
+      final footT = ((t - 0.86) / 0.14).clamp(0.0, 1.0);
+      return rawW + 5.5 * Curves.easeOutCubic.transform(footT);
+    }
+    return rawW;
+  }
+
+  /// Half-width of the interior chamber at height `y`, matching the exact wall thickness.
   double innerHalfWidthAt(double y, VaseShapeType type) {
-    final t = ((y - neckY) / (baseY - neckY)).clamp(0.0, 1.0);
-    final profile = switch (type) {
-      VaseShapeType.fishbowl => math.sin(t * math.pi * 0.88 + 0.18),
-      VaseShapeType.ovalCeramic => math.sin(t * math.pi * 0.88 + 0.18),
-      VaseShapeType.flutedCrystal => math.sin(t * math.pi * 0.85 + 0.20),
-      VaseShapeType.royalTall =>
-        math.pow(math.sin(t * math.pi * 0.90 + 0.14), 0.78).toDouble(),
-      VaseShapeType.prismLotus => math.sin(t * math.pi * 0.88 + 0.16),
+    return math.max(15.0, outerHalfWidthAt(y, type) - wallThickness);
+  }
+
+  /// Perspective vertical radius (semi-minor axis) for horizontal 3D ellipses inside the vase.
+  double ellipseHalfHeight(double halfW) => (halfW * 0.23).clamp(8.5, 25.0);
+}
+
+class _GlassPalette {
+  final Color edgeDark;
+  final Color edgeMid;
+  final Color coreTint;
+  final Color innerTint;
+  final Color rimHighlight;
+  final Color accentTint;
+
+  const _GlassPalette({
+    required this.edgeDark,
+    required this.edgeMid,
+    required this.coreTint,
+    required this.innerTint,
+    required this.rimHighlight,
+    required this.accentTint,
+  });
+
+  static _GlassPalette forShape(VaseShapeType type) {
+    return switch (type) {
+      VaseShapeType.fishbowl => const _GlassPalette(
+          edgeDark: Color(0xCC0D5A88),
+          edgeMid: Color(0x883CC4EC),
+          coreTint: Color(0x28D6FBFF),
+          innerTint: Color(0x6494ECFF),
+          rimHighlight: Color(0xEEECFEFF),
+          accentTint: Color(0xFF80EEFF),
+        ),
+      VaseShapeType.ovalCeramic => const _GlassPalette(
+          edgeDark: Color(0xDE0B6478),
+          edgeMid: Color(0xA63ED4CA),
+          coreTint: Color(0x3CDDFDFB),
+          innerTint: Color(0x7AA6F9EE),
+          rimHighlight: Color(0xF0FFF8E6),
+          accentTint: Color(0xFF7AF2DD),
+        ),
+      VaseShapeType.flutedCrystal => const _GlassPalette(
+          edgeDark: Color(0xCC284B9E),
+          edgeMid: Color(0x8E56B4F9),
+          coreTint: Color(0x2CEEF8FF),
+          innerTint: Color(0x6CBBE8FF),
+          rimHighlight: Color(0xF2F4FBFF),
+          accentTint: Color(0xFF9ED5FF),
+        ),
+      VaseShapeType.royalTall => const _GlassPalette(
+          edgeDark: Color(0xCC13548E),
+          edgeMid: Color(0x8C42C8E8),
+          coreTint: Color(0x2CFFF9E8),
+          innerTint: Color(0x6CA4EFFF),
+          rimHighlight: Color(0xF4FFF2CE),
+          accentTint: Color(0xFFFFE08A),
+        ),
+      VaseShapeType.prismLotus => const _GlassPalette(
+          edgeDark: Color(0xCC3B3B98),
+          edgeMid: Color(0x9050D6FF),
+          coreTint: Color(0x2CF0ECFF),
+          innerTint: Color(0x6AC6D8FF),
+          rimHighlight: Color(0xF2F7F0FF),
+          accentTint: Color(0xFFD0A8FF),
+        ),
     };
-    final rawW = ui.lerpDouble(neckHalfW, bellyHalfW, profile.clamp(0.0, 1.0))!;
-    final baseTaper = t > 0.82 ? ((t - 0.82) / 0.18).clamp(0.0, 1.0) : 0.0;
-    final outerW = ui.lerpDouble(rawW, baseHalfW, baseTaper * 0.75)!;
-    return math.max(18.0, outerW - 6.5);
   }
 }
 
@@ -1775,8 +2028,18 @@ class _WaterGardenMasterPainter extends CustomPainter {
   static final Path _scratchPath = Path();
   static final Path _petalPath = Path();
   static final Paint _paint = Paint()..isAntiAlias = true;
+  static final Paint _fxPaint = Paint()..isAntiAlias = true;
   static final TextPainter _textPainter = TextPainter(
     textDirection: TextDirection.ltr,
+  );
+
+  static const ui.MaskFilter _blurSoft = ui.MaskFilter.blur(
+    ui.BlurStyle.normal,
+    6.5,
+  );
+  static const ui.MaskFilter _blurTight = ui.MaskFilter.blur(
+    ui.BlurStyle.normal,
+    2.6,
   );
 
   _WaterGardenMasterPainter({
@@ -1799,56 +2062,65 @@ class _WaterGardenMasterPainter extends CustomPainter {
     _paint
       ..color = Colors.white
       ..shader = null
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver
+      ..style = PaintingStyle.fill;
+    _fxPaint
+      ..color = Colors.white
+      ..shader = null
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver
       ..style = PaintingStyle.fill;
 
     final cx = size.width * 0.5;
     final cy = size.height * 0.575;
     final metrics = _VaseMetrics.forShape(config.shapeType, cy);
 
-    // 0. Celebration Sunburst God-Rays behind the vase (on 100% bloom or new-vase reveal)
+    // 0. Celebration Sunburst God-Rays & Shockwave behind the vase
     if (raysProgress > 0.01) {
       _drawCelebrationSunburst(
         canvas,
-        Offset(cx, metrics.topRimY + 28),
+        Offset(cx, metrics.topRimY + 12),
         raysProgress,
       );
     }
 
-    // 1. 3D Cream-Ivory Stone Pedestal + Refracted Cyan Water Caustics
+    // 1. Multi-Tier 3D Cream-Marble & Gold Plinth + Refracted Cyan Water Caustics
     _drawPedestal(
       canvas,
       cx: cx,
       topSurfaceY: metrics.baseY + 2,
+      baseHalfW: metrics.baseHalfW,
       causticIntensity: waterProgress.clamp(0.0, 1.0),
     );
 
-    // Build exact outer & inner 3D sculpted vase paths
+    // Build synchronized outer & inner 3D sculpted vase contours
     _buildVaseSilhouettePath(
       _vaseOuterPath,
       cx: cx,
       m: metrics,
       type: config.shapeType,
-      inset: 0.0,
+      isInner: false,
     );
     _buildVaseSilhouettePath(
       _vaseInnerPath,
       cx: cx,
       m: metrics,
       type: config.shapeType,
-      inset: 6.0,
+      isInner: true,
     );
 
-    // Compute live rising water surface Y
+    // Compute live rising water surface Y inside the inner chamber
     final clampedFill = waterProgress.clamp(0.0, 1.0);
     final maxFillTopY = metrics.neckY + 11.0;
-    final minFillBottomY = metrics.baseY - 8.0;
+    final minFillBottomY = metrics.innerBaseY - 4.0;
     final waterTopY =
         ui.lerpDouble(minFillBottomY, maxFillTopY, clampedFill)!;
 
-    // 2. Back Crystal Glass Wall & Back Rim Half
-    _drawBackGlassWall(canvas, cx, metrics);
+    // 2. Back Fresnel Crystal Glass Wall, Recessed Throat Bowl & Heavy Crystal Base Cushion
+    _drawBackGlassWall(canvas, cx, metrics, config.shapeType);
 
-    // 3. Underwater Refracted Stem Segment (drawn behind the water volume!)
+    // 3. Underwater Refracted Stem Segment (drawn behind the water volume)
     _drawUnderwaterStems(
       canvas: canvas,
       cx: cx,
@@ -1865,18 +2137,19 @@ class _WaterGardenMasterPainter extends CustomPainter {
     final isStreamTouchingWater =
         isStreamActive && streamHeadT >= 0.92 && streamTailT < 0.95;
 
-    // 4. Volumetric 3D Water Body + Sloshing Perspective Elliptical Meniscus + Ripples + 20 Bubbles
+    // 4. Zero-Seam Volumetric 3D Water Body + Perspective Elliptical Meniscus + Caustics + Bubbles
     _drawVolumetricWater(
       canvas: canvas,
       cx: cx,
       metrics: metrics,
+      type: config.shapeType,
       fillFraction: clampedFill,
       waterTopY: waterTopY,
       isStreamImpacting: isStreamTouchingWater,
       pourT: pourProgress,
     );
 
-    // 5. Above-Water Botanical Stems, Curled Two-Tone Leaves & Continuous Bud -> 3/4 Bouquet Bloom!
+    // 5. Above-Water Botanical Stems, Curled Two-Tone Leaves & 3D Buds / Blossoms
     _drawAboveWaterBotanicals(
       canvas: canvas,
       cx: cx,
@@ -1888,12 +2161,11 @@ class _WaterGardenMasterPainter extends CustomPainter {
       flowerType: config.flowerType,
     );
 
-    // 6. Parabolic Trajectory of Mini `2048` Potion Jar & Progressive Waterfall Stream
+    // 6. Parabolic Trajectory of 3D Mini Potion Jar & Progressive Waterfall Stream
     final enterT = jarEnterProgress.clamp(0.0, 1.0);
     final exitT = jarExitProgress.clamp(0.0, 1.0);
     final jarVisibility = (enterT * (1.0 - exitT)).clamp(0.0, 1.0);
 
-    // Smooth curved flight arc from upper-left into pouring hover spot, then graceful upward exit
     final targetJarPos = Offset(cx - 93, metrics.topRimY - 47);
     final startJarPos = Offset(cx - 156, metrics.topRimY - 94);
     final enterArcLift = -22.0 * math.sin(enterT * math.pi);
@@ -1906,7 +2178,6 @@ class _WaterGardenMasterPainter extends CustomPainter {
           exitT * 34.0,
     );
 
-    // Smooth wrist-pour rotation (`0.18 rad` upright -> `1.02 rad` pouring -> `0.42 rad` upright exit)
     final pourTiltWeight =
         (Curves.easeInOutCubic.transform((enterT - 0.25).clamp(0.0, 0.75) / 0.75) *
                 (1.0 - Curves.easeInCubic.transform(exitT)))
@@ -1921,7 +2192,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
         vaseMouthCenter: Offset(cx - 4, metrics.topRimY + 3),
         waterImpactPt: Offset(
           cx + 2,
-          clampedFill > 0.03 ? waterTopY : (metrics.baseY - 14),
+          clampedFill > 0.03 ? waterTopY : (metrics.innerBaseY - 8),
         ),
         headT: streamHeadT,
         tailT: streamTailT,
@@ -1929,7 +2200,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       );
     }
 
-    // 7. Front Crystal Glass Wall, Sculpted Flutes/Facets, Warm Gold Neck Ring & Rolled Rim
+    // 7. Front Crystal Glass Wall, Flutes/Facets, Gold Rim Band & Specular Highlights
     _drawFrontGlassOverlay(
       canvas,
       cx,
@@ -1938,7 +2209,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       hasWater: clampedFill > 0.02,
     );
 
-    // 8. Tilted Mini Crystal Potion Jar + Gravity-Level Draining Liquid + Golden Rope + `2048` Tag
+    // 8. Tilted 3D Mini Crystal Potion Jar + Gravity-Level Liquid + Golden Rope + Tag
     if (jarVisibility > 0.02) {
       _drawTiltedMiniPotionJar(
         canvas: canvas,
@@ -1951,7 +2222,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       );
     }
 
-    // 9. Cupped 3D Drifting Petals & 4-Point Starlight Sparkles (100% Bloom or New Vase Reveal)
+    // 9. 3D Tumbling Drifting Petals, Pollen Motes & Halo Sparkles
     if (bloomProgress > 0.14) {
       _drawFloatingPetalsAndSparkles(
         canvas: canvas,
@@ -1976,302 +2247,498 @@ class _WaterGardenMasterPainter extends CustomPainter {
     double progress,
   ) {
     final p = progress.clamp(0.0, 1.0);
-    const maxR = 192.0;
+    const maxR = 205.0;
 
-    _paint
-      ..style = PaintingStyle.fill
-      ..color = Colors.white
+    _fxPaint
+      ..blendMode = BlendMode.plus
+      ..maskFilter = null
       ..shader = ui.Gradient.radial(
         center,
         maxR,
         [
-          const Color(0xFFFFF9C4).withValues(alpha: 0.58 * p),
-          const Color(0xFFFFE082).withValues(alpha: 0.22 * p),
-          const Color(0x00FFE082),
+          const Color(0xFFFFF8C4).withValues(alpha: 0.46 * p),
+          const Color(0xFFFFD86B).withValues(alpha: 0.18 * p),
+          const Color(0xFF4FF6FF).withValues(alpha: 0.08 * p),
+          const Color(0x004FF6FF),
         ],
-        const [0.0, 0.55, 1.0],
+        const [0.0, 0.36, 0.72, 1.0],
       );
-    canvas.drawCircle(center, maxR, _paint);
-    _paint.shader = null;
+    canvas.drawCircle(center, maxR, _fxPaint);
 
-    const rayCount = 16;
-    final rot = ambientPhase * 0.30;
+    const rayCount = 14;
+    final rot = ambientPhase * 0.22;
+    _fxPaint.maskFilter = _blurSoft;
     for (int i = 0; i < rayCount; i++) {
       final a = (i * math.pi * 2.0) / rayCount + rot;
-      const halfSpan = 0.072;
+      final isMajor = i.isEven;
+      final halfSpan = isMajor ? 0.088 : 0.042;
+      final rayR = isMajor ? maxR : maxR * 0.82;
       _scratchPath
         ..reset()
         ..moveTo(center.dx, center.dy)
         ..lineTo(
-          center.dx + maxR * math.cos(a - halfSpan),
-          center.dy + maxR * math.sin(a - halfSpan),
+          center.dx + rayR * math.cos(a - halfSpan),
+          center.dy + rayR * math.sin(a - halfSpan),
         )
         ..lineTo(
-          center.dx + maxR * math.cos(a + halfSpan),
-          center.dy + maxR * math.sin(a + halfSpan),
+          center.dx + rayR * math.cos(a + halfSpan),
+          center.dy + rayR * math.sin(a + halfSpan),
         )
         ..close();
 
-      _paint
-        ..color = Colors.white
-        ..shader = ui.Gradient.radial(
-          center,
-          maxR,
-          [
-            const Color(0xFFFFFDE7).withValues(alpha: 0.36 * p),
-            const Color(0x00FFFDE7),
-          ],
-        );
-      canvas.drawPath(_scratchPath, _paint);
+      _fxPaint.shader = ui.Gradient.radial(
+        center,
+        rayR,
+        [
+          (isMajor ? const Color(0xFFFFF8D2) : const Color(0xFF9DF8FF))
+              .withValues(alpha: (isMajor ? 0.34 : 0.22) * p),
+          const Color(0x00FFFDE7),
+        ],
+      );
+      canvas.drawPath(_scratchPath, _fxPaint);
     }
-    _paint.shader = null;
+
+    if (p > 0.05 && p < 0.88) {
+      final ringT = Curves.easeOutCubic.transform((p / 0.88).clamp(0.0, 1.0));
+      final ringR = ui.lerpDouble(42.0, 188.0, ringT)!;
+      _fxPaint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5.5 * (1.0 - ringT)
+        ..shader = null
+        ..maskFilter = _blurTight
+        ..color = const Color(0xFFFFF4B8).withValues(
+          alpha: (0.48 * (1.0 - ringT)).clamp(0.0, 1.0),
+        );
+      canvas.drawCircle(center, ringR, _fxPaint);
+    }
+
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..shader = null
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver;
   }
 
   void _drawPedestal(
     Canvas canvas, {
     required double cx,
     required double topSurfaceY,
+    required double baseHalfW,
     required double causticIntensity,
   }) {
-    const topW = 240.0;
-    const topH = 40.0;
-    const rimThickness = 16.5;
+    const deckW = 224.0;
+    const deckH = 36.0;
+    const upperWallH = 11.0;
+    const goldBandH = 4.5;
+    const footW = 248.0;
+    const footH = 40.0;
+    const footWallH = 9.0;
 
-    // 1. Deep royal-indigo floor shadow on dark stage
-    _paint
+    final deckTopY = topSurfaceY;
+    final goldTopY = deckTopY + upperWallH;
+    final footTopY = goldTopY + goldBandH;
+
+    // 1. Soft Blurred Stage Floor Drop Shadow
+    _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..color = const Color(0x7804021A);
+      ..maskFilter = _blurSoft
+      ..color = const Color(0x90030114);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(cx, topSurfaceY + rimThickness + 8),
-        width: topW + 24,
-        height: topH + 14,
+        center: Offset(cx, footTopY + footWallH + 6),
+        width: footW + 30,
+        height: footH + 14,
       ),
-      _paint,
+      _fxPaint,
     );
+    _fxPaint.maskFilter = null;
 
-    // 2. Seamless 3D Solid Warm-Ivory Stone Cylinder Wall
-    final bottomRect = Rect.fromCenter(
-      center: Offset(cx, topSurfaceY + rimThickness),
-      width: topW,
-      height: topH,
+    // 2. Lower Marble Base Foot Tier (3D shaded cylinder)
+    final footBottomRect = Rect.fromCenter(
+      center: Offset(cx, footTopY + footWallH),
+      width: footW,
+      height: footH,
     );
-    final sideWallRect = Rect.fromLTRB(
-      cx - topW * 0.5,
-      topSurfaceY,
-      cx + topW * 0.5,
-      topSurfaceY + rimThickness,
+    final footTopRect = Rect.fromCenter(
+      center: Offset(cx, footTopY),
+      width: footW,
+      height: footH,
     );
-
+    final footSideRect = Rect.fromLTRB(
+      cx - footW * 0.5,
+      footTopY,
+      cx + footW * 0.5,
+      footTopY + footWallH,
+    );
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
-        Offset(cx - topW * 0.5, topSurfaceY),
-        Offset(cx + topW * 0.5, topSurfaceY),
+        Offset(cx - footW * 0.5, footTopY),
+        Offset(cx + footW * 0.5, footTopY),
         const [
-          Color(0xFFCBBBA0),
-          Color(0xFFF0E7D4),
-          Color(0xFFDDD1B8),
-          Color(0xFFB39E7F),
+          Color(0xFF9A866A),
+          Color(0xFFE7DBC5),
+          Color(0xFFD0C0A4),
+          Color(0xFF7D694D),
         ],
-        const [0.0, 0.32, 0.68, 1.0],
+        const [0.0, 0.30, 0.68, 1.0],
       );
-    canvas.drawOval(bottomRect, _paint);
-    canvas.drawRect(sideWallRect, _paint);
+    canvas.drawOval(footBottomRect, _paint);
+    canvas.drawRect(footSideRect, _paint);
+    canvas.drawOval(footTopRect, _paint);
     _paint.shader = null;
 
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..color = const Color(0x668D7759);
-    canvas.drawArc(bottomRect, 0.0, math.pi, false, _paint);
+      ..strokeWidth = 1.6
+      ..color = const Color(0x704E3B20);
+    canvas.drawArc(footBottomRect, 0.08, math.pi - 0.16, false, _paint);
 
-    // 3. Sunlit stone top ellipse
-    final topRect = Rect.fromCenter(
-      center: Offset(cx, topSurfaceY),
-      width: topW,
-      height: topH,
+    // 3. Beveled Antique Brushed-Gold Waist Band
+    final goldBottomRect = Rect.fromCenter(
+      center: Offset(cx, goldTopY + goldBandH),
+      width: deckW + 6,
+      height: deckH + 2,
+    );
+    final goldSideRect = Rect.fromLTRB(
+      cx - (deckW + 6) * 0.5,
+      goldTopY,
+      cx + (deckW + 6) * 0.5,
+      goldTopY + goldBandH,
     );
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
-        Offset(cx, topSurfaceY - topH * 0.5),
-        Offset(cx, topSurfaceY + topH * 0.5),
+        Offset(cx - (deckW + 6) * 0.5, goldTopY),
+        Offset(cx + (deckW + 6) * 0.5, goldTopY),
         const [
-          Color(0xFFFFFEF9),
-          Color(0xFFF0E3C9),
+          Color(0xFF8C6214),
+          Color(0xFFF6D978),
+          Color(0xFFFFF6C9),
+          Color(0xFFD1962E),
+          Color(0xFF754E0C),
         ],
+        const [0.0, 0.28, 0.44, 0.72, 1.0],
       );
+    canvas.drawOval(goldBottomRect, _paint);
+    canvas.drawRect(goldSideRect, _paint);
+    _paint.shader = null;
+
+    // 4. Upper Sunlit Ivory-Marble Drum & Top Deck
+    final deckBottomRect = Rect.fromCenter(
+      center: Offset(cx, goldTopY),
+      width: deckW,
+      height: deckH,
+    );
+    final deckSideRect = Rect.fromLTRB(
+      cx - deckW * 0.5,
+      deckTopY,
+      cx + deckW * 0.5,
+      goldTopY,
+    );
+    _paint
+      ..style = PaintingStyle.fill
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        Offset(cx - deckW * 0.5, deckTopY),
+        Offset(cx + deckW * 0.5, deckTopY),
+        const [
+          Color(0xFFBBA98E),
+          Color(0xFFF6EFE0),
+          Color(0xFFE0D4BD),
+          Color(0xFF9F8B6D),
+        ],
+        const [0.0, 0.30, 0.68, 1.0],
+      );
+    canvas.drawOval(deckBottomRect, _paint);
+    canvas.drawRect(deckSideRect, _paint);
+
+    final topRect = Rect.fromCenter(
+      center: Offset(cx, deckTopY),
+      width: deckW,
+      height: deckH,
+    );
+    _paint.shader = ui.Gradient.radial(
+      Offset(cx - 22, deckTopY - 4),
+      deckW * 0.62,
+      const [
+        Color(0xFFFFFEFA),
+        Color(0xFFF5EAD6),
+        Color(0xFFE3D3B7),
+      ],
+      const [0.0, 0.60, 1.0],
+    );
     canvas.drawOval(topRect, _paint);
     _paint.shader = null;
 
     _paint
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0
-      ..color = const Color(0xEEFFFFFF);
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        Offset(cx - deckW * 0.45, deckTopY - deckH * 0.4),
+        Offset(cx + deckW * 0.45, deckTopY + deckH * 0.4),
+        const [
+          Color(0xEEFFFFFF),
+          Color(0xAAFFF5DD),
+          Color(0x55B89E7C),
+        ],
+        const [0.0, 0.55, 1.0],
+      );
     canvas.drawOval(topRect.deflate(1.2), _paint);
+    _paint.shader = null;
 
-    // 4. Glass base contact shadow + refracted cyan caustic glow on stone!
-    _paint
+    // 5. Soft Blurred Vase Contact AO + Dual-Lobe Refracted Cyan Caustic Glow
+    final footBaseW = baseHalfW * 2.15;
+    _fxPaint
       ..style = PaintingStyle.fill
-      ..color = const Color(0x2C084B66);
+      ..maskFilter = _blurTight
+      ..color = const Color(0x5806283D);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(cx, topSurfaceY + 1),
-        width: 140,
-        height: 21,
+        center: Offset(cx, deckTopY + 1.5),
+        width: footBaseW + 18,
+        height: 22,
       ),
-      _paint,
+      _fxPaint,
     );
+    _fxPaint.maskFilter = null;
 
     if (causticIntensity > 0.02) {
+      final shimmer = 0.88 + 0.12 * math.sin(ambientPhase * 2.4);
+      final caustAlpha = causticIntensity * shimmer;
       _paint
+        ..style = PaintingStyle.fill
         ..color = Colors.white
         ..shader = ui.Gradient.radial(
-          Offset(cx + 6, topSurfaceY + 2),
-          64,
+          Offset(cx + 8, deckTopY + 2.5),
+          68,
           [
-            const Color(0xFF5CF4FF).withValues(alpha: 0.48 * causticIntensity),
-            const Color(0x005CF4FF),
+            const Color(0xFF72FAFF).withValues(alpha: 0.56 * caustAlpha),
+            const Color(0xFF1EC8EE).withValues(alpha: 0.24 * caustAlpha),
+            const Color(0x001EC8EE),
           ],
+          const [0.0, 0.55, 1.0],
         );
       canvas.drawOval(
         Rect.fromCenter(
-          center: Offset(cx + 6, topSurfaceY + 2),
-          width: 126,
-          height: 20,
+          center: Offset(cx + 8, deckTopY + 2.5),
+          width: footBaseW + 28,
+          height: 21,
         ),
         _paint,
       );
-      _paint.shader = null;
+
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.6
+        ..shader = null
+        ..color = const Color(0xFFB4FFFF).withValues(alpha: 0.42 * caustAlpha);
+      canvas.drawArc(
+        Rect.fromCenter(
+          center: Offset(cx + 10, deckTopY + 3),
+          width: footBaseW + 6,
+          height: 15,
+        ),
+        0.2,
+        math.pi * 0.72,
+        false,
+        _paint,
+      );
     }
   }
 
+  /// Builds exact closed outer or inner chamber path by sampling `outerHalfWidthAt`
+  /// so the glass wall, crystal base cushion, and water meniscus align with zero gap.
   void _buildVaseSilhouettePath(
     Path path, {
     required double cx,
     required _VaseMetrics m,
     required VaseShapeType type,
-    required double inset,
+    required bool isInner,
   }) {
     path.reset();
-    final neckW = math.max(14.0, m.neckHalfW - inset * 0.75);
-    final bellyW = math.max(24.0, m.bellyHalfW - inset);
-    final baseW = math.max(18.0, m.baseHalfW - inset * 0.8);
-    final topY = m.topRimY + (inset > 0 ? 4.0 : 0.0);
-    final neckY = m.neckY;
-    final baseY = m.baseY - inset;
-    final midH = baseY - neckY;
+    final topY = isInner ? (m.topRimY + 4.5) : m.topRimY;
+    final bottomY = isInner ? m.innerBaseY : m.baseY;
+    const steps = 56;
+    final rightXs = List<double>.filled(steps + 1, 0.0);
+    final rightYs = List<double>.filled(steps + 1, 0.0);
 
-    if (type == VaseShapeType.prismLotus) {
-      final upperFacetY = neckY + midH * 0.30;
-      final lowerFacetY = neckY + midH * 0.72;
-      path.moveTo(cx - neckW, topY);
-      path.lineTo(cx - neckW, neckY);
-      path.lineTo(cx - bellyW * 0.90, upperFacetY);
-      path.lineTo(cx - bellyW, (upperFacetY + lowerFacetY) * 0.5);
-      path.lineTo(cx - bellyW * 0.84, lowerFacetY);
-      path.lineTo(cx - baseW, baseY - 6);
-      path.quadraticBezierTo(cx, baseY + 8, cx + baseW, baseY - 6);
-      path.lineTo(cx + bellyW * 0.84, lowerFacetY);
-      path.lineTo(cx + bellyW, (upperFacetY + lowerFacetY) * 0.5);
-      path.lineTo(cx + bellyW * 0.90, upperFacetY);
-      path.lineTo(cx + neckW, neckY);
-      path.lineTo(cx + neckW, topY);
-      path.close();
-      return;
+    for (int i = 0; i <= steps; i++) {
+      final y = ui.lerpDouble(topY, bottomY - 5.0, i / steps)!;
+      final hw = isInner
+          ? m.innerHalfWidthAt(y, type)
+          : m.outerHalfWidthAt(y, type);
+      rightXs[i] = hw;
+      rightYs[i] = y;
     }
 
-    final shoulderCtrlY = switch (type) {
-      VaseShapeType.royalTall => neckY + midH * 0.12,
-      VaseShapeType.ovalCeramic => neckY + midH * 0.17,
-      _ => neckY + midH * 0.16,
-    };
-    final lowerCtrlY = switch (type) {
-      VaseShapeType.royalTall => neckY + midH * 0.72,
-      _ => neckY + midH * 0.84,
-    };
+    path.moveTo(cx - rightXs[0], rightYs[0]);
+    for (int i = 1; i < steps; i++) {
+      final mx = cx - (rightXs[i] + rightXs[i + 1]) * 0.5;
+      final my = (rightYs[i] + rightYs[i + 1]) * 0.5;
+      path.quadraticBezierTo(cx - rightXs[i], rightYs[i], mx, my);
+    }
+    path.lineTo(cx - rightXs[steps], rightYs[steps]);
 
-    path.moveTo(cx - neckW, topY);
-    path.quadraticBezierTo(
-      cx - neckW * 0.95,
-      (topY + neckY) * 0.5,
-      cx - neckW,
-      neckY,
-    );
+    final botHW = rightXs[steps];
+    final botY = rightYs[steps];
+    final botCurveDepth = (botHW * 0.25).clamp(7.0, 15.0);
     path.cubicTo(
-      cx - bellyW * 1.07,
-      shoulderCtrlY,
-      cx - bellyW * 1.05,
-      lowerCtrlY,
-      cx - baseW,
-      baseY - 6,
+      cx - botHW * 0.72,
+      bottomY + botCurveDepth,
+      cx + botHW * 0.72,
+      bottomY + botCurveDepth,
+      cx + botHW,
+      botY,
     );
-    path.quadraticBezierTo(cx, baseY + 9, cx + baseW, baseY - 6);
-    path.cubicTo(
-      cx + bellyW * 1.05,
-      lowerCtrlY,
-      cx + bellyW * 1.07,
-      shoulderCtrlY,
-      cx + neckW,
-      neckY,
-    );
-    path.quadraticBezierTo(
-      cx + neckW * 0.95,
-      (topY + neckY) * 0.5,
-      cx + neckW,
-      topY,
-    );
+
+    for (int i = steps - 1; i > 0; i--) {
+      final mx = cx + (rightXs[i] + rightXs[i - 1]) * 0.5;
+      final my = (rightYs[i] + rightYs[i - 1]) * 0.5;
+      path.quadraticBezierTo(cx + rightXs[i], rightYs[i], mx, my);
+    }
+    path.lineTo(cx + rightXs[0], rightYs[0]);
     path.close();
   }
 
-  void _drawBackGlassWall(Canvas canvas, double cx, _VaseMetrics m) {
+  void _drawBackGlassWall(
+    Canvas canvas,
+    double cx,
+    _VaseMetrics m,
+    VaseShapeType type,
+  ) {
+    final palette = _GlassPalette.forShape(type);
+
+    // 1. Fresnel 3D Cylindrical Glass Back Shell
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
         Offset(cx - m.bellyHalfW, m.neckY),
-        Offset(cx + m.bellyHalfW, m.baseY),
-        const [
-          Color(0x98ECFDFF),
-          Color(0x6464D8F6),
-          Color(0x583BB9E2),
-          Color(0x8CC8F9FF),
+        Offset(cx + m.bellyHalfW, m.neckY),
+        [
+          palette.edgeDark,
+          palette.edgeMid,
+          palette.coreTint,
+          palette.coreTint,
+          palette.edgeMid,
+          palette.edgeDark,
         ],
-        const [0.0, 0.38, 0.72, 1.0],
+        const [0.0, 0.14, 0.34, 0.66, 0.86, 1.0],
       );
     canvas.drawPath(_vaseOuterPath, _paint);
     _paint.shader = null;
 
+    // 2. Heavy Solid Crystal Base Puck
+    _drawCrystalBasePuck(canvas, cx, m, palette);
+
+    // 3. Soft internal chamber rim line
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..color = const Color(0x78B8F6FF);
+      ..strokeWidth = 1.1
+      ..color = palette.innerTint.withValues(alpha: 0.26);
     canvas.drawPath(_vaseInnerPath, _paint);
 
+    // 4. Recessed Dark Mouth Interior Bowl + Back Rolled Glass Rim
+    final rimEH = m.ellipseHalfHeight(m.mouthHalfW);
+    final mouthCenter = Offset(cx, m.topRimY + 1.5);
     final rimRect = Rect.fromCenter(
-      center: Offset(cx, m.topRimY + 2),
+      center: mouthCenter,
       width: m.mouthHalfW * 2.0,
-      height: 20,
+      height: rimEH * 2.0,
     );
+
     _paint
       ..style = PaintingStyle.fill
-      ..color = const Color(0x42AEEFFF);
-    canvas.drawOval(rimRect, _paint);
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        Offset(cx, m.topRimY - rimEH),
+        Offset(cx, m.topRimY + rimEH),
+        [
+          const Color(0x52052E4A),
+          palette.edgeMid.withValues(alpha: 0.28),
+        ],
+      );
+    canvas.drawOval(rimRect.deflate(2.5), _paint);
+    _paint.shader = null;
 
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.4
-      ..color = const Color(0xCCE8FCFF);
+      ..strokeWidth = 4.0
+      ..color = palette.rimHighlight.withValues(alpha: 0.62);
     canvas.drawArc(rimRect, math.pi, math.pi, false, _paint);
+
+    _paint
+      ..strokeWidth = 1.4
+      ..color = Colors.white.withValues(alpha: 0.82);
+    canvas.drawArc(
+      rimRect.deflate(1.2),
+      math.pi + 0.18,
+      math.pi - 0.36,
+      false,
+      _paint,
+    );
   }
 
-  /// Draws the submerged portion of the botanical stems.
-  /// Notice in Panel 6 (`!hasWater`, empty crystal vase), the stem softly fades right inside the frosted neck
-  /// instead of sticking down like a rigid pole to the bottom!
+  /// Renders the thick solid refractive crystal puck at the bottom of the vase.
+  void _drawCrystalBasePuck(
+    Canvas canvas,
+    double cx,
+    _VaseMetrics m,
+    _GlassPalette palette,
+  ) {
+    canvas.save();
+    canvas.clipPath(_vaseOuterPath);
+
+    final puckTopY = m.innerBaseY - 4.0;
+    final puckRect = Rect.fromLTRB(
+      cx - m.baseHalfW - 14,
+      puckTopY,
+      cx + m.baseHalfW + 14,
+      m.baseY + 16,
+    );
+
+    _paint
+      ..style = PaintingStyle.fill
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        Offset(cx, puckTopY),
+        Offset(cx, m.baseY + 8),
+        [
+          const Color(0x0080EEFF),
+          palette.innerTint.withValues(alpha: 0.65),
+          palette.edgeDark.withValues(alpha: 0.78),
+        ],
+        const [0.0, 0.45, 1.0],
+      );
+    canvas.drawRect(puckRect, _paint);
+
+    final floorEH = m.ellipseHalfHeight(m.baseHalfW) * 0.82;
+    _paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4
+      ..shader = null
+      ..color = const Color(0xAAE2FDFF);
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(cx, m.innerBaseY),
+        width: (m.baseHalfW - m.wallThickness) * 1.92,
+        height: floorEH * 2.0,
+      ),
+      0.12,
+      math.pi - 0.24,
+      false,
+      _paint,
+    );
+
+    canvas.restore();
+  }
+
+  /// Draws the submerged botanical stems with authentic Snell refraction jump at `waterTopY`.
   void _drawUnderwaterStems({
     required Canvas canvas,
     required double cx,
@@ -2281,14 +2748,13 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required double bloomFraction,
   }) {
     if (!hasWater) {
-      // Empty crystal vase (Panel 6): soft short refracted neck stem fading smoothly into frosted glass
       canvas.save();
       canvas.clipPath(_vaseInnerPath);
       final fadeTop = metrics.topRimY + 6;
       final fadeBot = metrics.neckY + 22;
       _paint
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 5.8
+        ..strokeWidth = 5.4
         ..strokeCap = StrokeCap.round
         ..color = Colors.white
         ..shader = ui.Gradient.linear(
@@ -2306,37 +2772,36 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.clipPath(_vaseInnerPath);
     canvas.clipRect(
       Rect.fromLTRB(
-        cx - metrics.bellyHalfW,
+        cx - metrics.bellyHalfW - 4,
         waterTopY,
-        cx + metrics.bellyHalfW,
-        metrics.baseY,
+        cx + metrics.bellyHalfW + 4,
+        metrics.innerBaseY + 6,
       ),
     );
 
-    const refractShift = 2.6;
-    final stemBaseY = math.min(metrics.baseY - 34, waterTopY + 95);
+    const refractShift = 3.2;
+    final stemBaseY = math.min(metrics.innerBaseY - 12, waterTopY + 95);
     final neckMidY = metrics.topRimY + 6;
     final stemExitX = ui.lerpDouble(cx + 12, cx + 1, bloomFraction.clamp(0.0, 1.0))!;
 
-    // Soft underwater depth-faded main stem
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.0
+      ..strokeWidth = 6.2
       ..strokeCap = StrokeCap.round
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
         Offset(stemExitX, waterTopY),
         Offset(cx + 2, stemBaseY),
         const [
-          Color(0xC8248B58),
-          Color(0x52166954),
+          Color(0xD827965E),
+          Color(0x66166D56),
           Color(0x000E524E),
         ],
         const [0.0, 0.65, 1.0],
       );
     _scratchPath
       ..reset()
-      ..moveTo(stemExitX + refractShift * 0.4, neckMidY)
+      ..moveTo(stemExitX + refractShift * 0.5, neckMidY)
       ..quadraticBezierTo(
         cx + 6 + refractShift,
         (neckMidY + stemBaseY) * 0.55,
@@ -2345,24 +2810,22 @@ class _WaterGardenMasterPainter extends CustomPainter {
       );
     canvas.drawPath(_scratchPath, _paint);
 
-    // Side bouquet stems smoothly fading in during 100% bloom
     if (bloomFraction > 0.05) {
       final sideAlpha = bloomFraction.clamp(0.0, 1.0);
       _paint
-        ..strokeWidth = 5.0
-        ..color = Colors.white
+        ..strokeWidth = 4.8
         ..shader = ui.Gradient.linear(
           Offset(cx, waterTopY),
           Offset(cx, stemBaseY - 12),
           [
-            const Color(0xBC228654).withValues(alpha: 0.72 * sideAlpha),
+            const Color(0xCC248F59).withValues(alpha: 0.78 * sideAlpha),
             const Color(0x00125B4A),
           ],
         );
 
       _scratchPath
         ..reset()
-        ..moveTo(cx - 8 + refractShift * 0.4, neckMidY)
+        ..moveTo(cx - 8 + refractShift * 0.5, neckMidY)
         ..quadraticBezierTo(
           cx - 11 + refractShift,
           (neckMidY + stemBaseY) * 0.5,
@@ -2373,7 +2836,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
       _scratchPath
         ..reset()
-        ..moveTo(cx + 9 + refractShift * 0.4, neckMidY)
+        ..moveTo(cx + 9 + refractShift * 0.5, neckMidY)
         ..quadraticBezierTo(
           cx + 12 + refractShift,
           (neckMidY + stemBaseY) * 0.5,
@@ -2386,157 +2849,226 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// Seamless 3D Volumetric Water Renderer:
+  /// Eliminates polygon-vs-oval seam by bounding the water fill directly to the
+  /// perspective 3D elliptical meniscus contour and adding Beer-Lambert depth + caustics.
   void _drawVolumetricWater({
     required Canvas canvas,
     required double cx,
     required _VaseMetrics metrics,
+    required VaseShapeType type,
     required double fillFraction,
     required double waterTopY,
     required bool isStreamImpacting,
     required double pourT,
   }) {
-    if (fillFraction <= 0.008) return;
+    if (fillFraction <= 0.01) return;
 
     canvas.save();
     canvas.clipPath(_vaseInnerPath);
 
-    final leftBound = cx - metrics.bellyHalfW - 6;
-    final rightBound = cx + metrics.bellyHalfW + 6;
-
-    // Smooth damped slosh & wave amplitude reactive to live pouring
     final impactEnvelope = isStreamImpacting
         ? 1.0
-        : (pourT >= 0.86 ? (1.0 - ((pourT - 0.86) / 0.14)).clamp(0.0, 1.0) : 0.0);
-    final waveAmp = 1.6 + 2.8 * impactEnvelope;
-    final sloshTilt = 2.6 * impactEnvelope * math.sin(ambientPhase * 5.0);
+        : (pourT >= 0.82 ? (1.0 - ((pourT - 0.82) / 0.18)).clamp(0.0, 1.0) : 0.0);
+    final sloshTilt = 2.8 * impactEnvelope * math.sin(ambientPhase * 5.2);
 
-    // 1. Main Volumetric Liquid Body with Animated S-Wave + Slosh Profile
+    final meniscusHalfW = metrics.innerHalfWidthAt(waterTopY, type) + 0.8;
+    final meniscusEH = metrics.ellipseHalfHeight(meniscusHalfW);
+    final meniscusCenter = Offset(cx, waterTopY + sloshTilt * 0.25);
+    final meniscusRect = Rect.fromCenter(
+      center: meniscusCenter,
+      width: meniscusHalfW * 2.0,
+      height: meniscusEH * 2.0,
+    );
+
+    // 1. Seamless Water Body Fill bounded cleanly by the elliptical meniscus arc
     _scratchPath
       ..reset()
-      ..moveTo(leftBound, metrics.baseY + 14)
-      ..lineTo(leftBound, waterTopY - sloshTilt);
-
-    const segs = 18;
-    final dx = (rightBound - leftBound) / segs;
-    for (int i = 0; i <= segs; i++) {
-      final frac = (i / segs) * 2.0 - 1.0;
-      final x = leftBound + i * dx;
-      final wave = waveAmp * math.sin(i * 0.62 + ambientPhase * 3.0) +
-          (waveAmp * 0.42) * math.cos(i * 1.15 - ambientPhase * 2.0) +
-          sloshTilt * frac;
-      _scratchPath.lineTo(x, waterTopY + wave);
-    }
-    _scratchPath
-      ..lineTo(rightBound, metrics.baseY + 14)
+      ..moveTo(cx - meniscusHalfW, meniscusCenter.dy)
+      ..arcTo(meniscusRect, math.pi, math.pi, false)
+      ..lineTo(cx + metrics.bellyHalfW + 12, meniscusCenter.dy)
+      ..lineTo(cx + metrics.bellyHalfW + 12, metrics.innerBaseY + 20)
+      ..lineTo(cx - metrics.bellyHalfW - 12, metrics.innerBaseY + 20)
+      ..lineTo(cx - metrics.bellyHalfW - 12, meniscusCenter.dy)
       ..close();
 
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
-        Offset(cx, waterTopY - 4),
-        Offset(cx, metrics.baseY),
+        Offset(cx, waterTopY - meniscusEH),
+        Offset(cx, metrics.innerBaseY + 6),
         const [
-          Color(0xF07EFBFF),
-          Color(0xF020C6EE),
-          Color(0xF20A92D6),
-          Color(0xF50564A8),
+          Color(0xD876FBFF),
+          Color(0xE222B6E8),
+          Color(0xEB0E78AF),
+          Color(0xF5074B7D),
         ],
-        const [0.0, 0.28, 0.72, 1.0],
+        const [0.0, 0.26, 0.68, 1.0],
       );
     canvas.drawPath(_scratchPath, _paint);
-    _paint.shader = null;
 
-    // Luminous inner aqua caustic core glow
-    final waterMidY = (waterTopY + metrics.baseY) * 0.54;
-    final glowR = math.max(30.0, (metrics.baseY - waterTopY) * 0.60);
-    _paint
-      ..color = Colors.white
-      ..shader = ui.Gradient.radial(
-        Offset(cx - 6, waterMidY),
-        glowR,
-        const [
-          Color(0x6896FFFF),
-          Color(0x0020C6EE),
-        ],
-      );
-    canvas.drawCircle(Offset(cx - 6, waterMidY), glowR, _paint);
-    _paint.shader = null;
-
-    // 2. 18 Buoyant 3D Effervescent Bubbles + Turbulent Plunge Bubble Plume under stream!
-    final colHeight = math.max(14.0, metrics.baseY - waterTopY - 10);
-    final normPhase = ambientPhase / (math.pi * 2.0);
-
-    for (int b = 0; b < 18; b++) {
-      final rise = ((normPhase * (1.3 + (b % 3) * 0.45) + b * 0.163) % 1.0);
-      final by = metrics.baseY - 8 - rise * colHeight;
-      if (by <= waterTopY + 5 || by >= metrics.baseY - 6) continue;
-
-      final maxHalfW = metrics.innerHalfWidthAt(by, config.shapeType) - 10;
-      final spread = ((b * 0.37) % 1.0) * 2.0 - 1.0;
-      final wobble = 3.8 * math.sin(ambientPhase * 2.0 + b * 1.3);
-      final bx = cx + spread * maxHalfW * 0.78 + wobble;
-      final br = 1.9 + (b % 4) * 1.45;
-      _drawGlossyBubble(canvas, Offset(bx, by), br, 1.0);
-    }
-
-    // Extra plunging micro-bubbles right below the waterfall impact!
-    if (impactEnvelope > 0.05) {
-      for (int p = 0; p < 7; p++) {
-        final cyc = ((normPhase * 3.2 + p * 0.14) % 1.0);
-        final plungeDepth = math.min(colHeight * 0.65, 48.0) * math.sin(cyc * math.pi);
-        final py = waterTopY + 6 + plungeDepth;
-        if (py >= metrics.baseY - 6) continue;
-        final px = cx + 2 + (p - 3) * 4.5 + 5.0 * math.sin(cyc * 6.0 + p);
-        final pr = (1.8 + (p % 3) * 1.1) * impactEnvelope;
-        _drawGlossyBubble(canvas, Offset(px, py), pr, impactEnvelope);
-      }
-    }
-
-    // 3. 3D Perspective Elliptical Meniscus Surface (Matches Panels 3 & 4!)
-    final meniscusHalfW = metrics.innerHalfWidthAt(waterTopY, config.shapeType);
-    final meniscusH = (meniscusHalfW * 0.22).clamp(9.0, 21.0);
-    final meniscusRect = Rect.fromCenter(
-      center: Offset(cx, waterTopY),
-      width: meniscusHalfW * 2.0,
-      height: meniscusH,
+    // Lateral cylindrical Fresnel water shading
+    _paint.shader = ui.Gradient.linear(
+      Offset(cx - metrics.bellyHalfW, waterTopY),
+      Offset(cx + metrics.bellyHalfW, waterTopY),
+      const [
+        Color(0x5288FFFF),
+        Color(0x001CA8DC),
+        Color(0x18042E4C),
+        Color(0x4674F4FF),
+      ],
+      const [0.0, 0.22, 0.72, 1.0],
     );
+    canvas.drawPath(_scratchPath, _paint);
 
+    // 2. Animated Diagonal Underwater Caustic Light Ribbons
+    for (int i = 0; i < 3; i++) {
+      final offsetT = math.sin(ambientPhase * 1.4 + i * 2.1);
+      final rx = cx + (-26.0 + i * 28.0) + offsetT * 8.0;
+      _scratchPath
+        ..reset()
+        ..moveTo(rx - 12, waterTopY + 4)
+        ..lineTo(rx + 6, waterTopY + 4)
+        ..lineTo(rx - 18, metrics.innerBaseY + 4)
+        ..lineTo(rx - 40, metrics.innerBaseY + 4)
+        ..close();
+      _paint.shader = ui.Gradient.linear(
+        Offset(rx, waterTopY),
+        Offset(rx - 22, metrics.innerBaseY),
+        const [
+          Color(0x36CCFFFF),
+          Color(0x1450E8FF),
+          Color(0x0050E8FF),
+        ],
+        const [0.0, 0.55, 1.0],
+      );
+      canvas.drawPath(_scratchPath, _paint);
+    }
+
+    // Internal bottom water-chamber glow pool
+    _paint.shader = ui.Gradient.radial(
+      Offset(cx + 4, metrics.innerBaseY - 4),
+      metrics.baseHalfW * 1.25,
+      const [
+        Color(0x789EFFFF),
+        Color(0x2832D4F4),
+        Color(0x0032D4F4),
+      ],
+      const [0.0, 0.55, 1.0],
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx + 4, metrics.innerBaseY - 4),
+        width: metrics.baseHalfW * 2.0,
+        height: 22,
+      ),
+      _paint,
+    );
+    _paint.shader = null;
+
+    // 3. Effervescent 3D Glass Bubbles (plus turbulent splash-entry plunge plume)
+    final waterDepth = math.max(20.0, metrics.innerBaseY - waterTopY);
+    final normPhase = ambientPhase / (math.pi * 2.0);
+    const bubbleCount = 16;
+    for (int i = 0; i < bubbleCount; i++) {
+      final seed = (i * 0.6180339887) % 1.0;
+      final isPlumeBubble = isStreamImpacting && i >= 10;
+      final cycle = (normPhase * (isPlumeBubble ? 2.4 : 1.0) + seed) % 1.0;
+      final by = isPlumeBubble
+          ? ui.lerpDouble(
+              waterTopY + 6,
+              math.min(metrics.innerBaseY - 8, waterTopY + waterDepth * 0.62),
+              cycle,
+            )!
+          : ui.lerpDouble(metrics.innerBaseY - 6, waterTopY + 8, cycle)!;
+      final localHalfW =
+          math.max(12.0, metrics.innerHalfWidthAt(by, type) - 9.0);
+      final laneOffset = isPlumeBubble
+          ? (seed - 0.5) * 28.0 + math.sin(ambientPhase * 6.0 + i) * 4.5
+          : (seed * 2.0 - 1.0) * localHalfW * 0.85 +
+                math.sin(ambientPhase * 1.7 + i * 1.9) * 5.0;
+      final bx = cx + laneOffset;
+      final radius =
+          (2.0 + (i % 4) * 1.05) * (0.72 + 0.28 * math.sin(cycle * math.pi));
+      final alpha = math.sin(cycle * math.pi).clamp(0.0, 1.0);
+      _drawGlossyBubble(canvas, Offset(bx, by), radius, alpha);
+    }
+
+    // 4. Unified Mirror-Luminous 3D Elliptical Surface Meniscus (zero seam!)
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        Offset(cx, waterTopY - meniscusH * 0.5),
-        Offset(cx, waterTopY + meniscusH * 0.5),
+      ..shader = ui.Gradient.radial(
+        Offset(cx - meniscusHalfW * 0.20, meniscusCenter.dy - meniscusEH * 0.28),
+        meniscusHalfW * 1.15,
         const [
-          Color(0xF0B2FFFF),
-          Color(0xD448E6FA),
+          Color(0xEBEEFFFF),
+          Color(0xCE9CF8FF),
+          Color(0xD83AD4F4),
         ],
+        const [0.0, 0.56, 1.0],
       );
     canvas.drawOval(meniscusRect, _paint);
     _paint.shader = null;
 
+    if (impactEnvelope > 0.08) {
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..color = Colors.white.withValues(alpha: 0.45 * impactEnvelope);
+      final crestPath = _scratchPath..reset();
+      const segs = 14;
+      for (int i = 0; i <= segs; i++) {
+        final f = i / segs;
+        final x = ui.lerpDouble(
+          cx - meniscusHalfW * 0.86,
+          cx + meniscusHalfW * 0.86,
+          f,
+        )!;
+        final y = meniscusCenter.dy +
+            math.sin(f * math.pi * 2.6 + ambientPhase * 5.0) *
+                2.0 *
+                impactEnvelope;
+        if (i == 0) {
+          crestPath.moveTo(x, y);
+        } else {
+          crestPath.lineTo(x, y);
+        }
+      }
+      canvas.drawPath(crestPath, _paint);
+    }
+
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = const Color(0xDEFFFFFF);
-    canvas.drawOval(meniscusRect.deflate(0.8), _paint);
+      ..strokeWidth = 1.8
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        Offset(cx, meniscusCenter.dy - meniscusEH),
+        Offset(cx, meniscusCenter.dy + meniscusEH),
+        const [
+          Color(0x88D8FFFF),
+          Color(0xECFFFFFF),
+        ],
+      );
+    canvas.drawOval(meniscusRect.deflate(0.7), _paint);
+    _paint.shader = null;
 
-    // Concentric elliptical impact ripples
+    // 5. Concentric Elliptical Impact Ripples
     if (impactEnvelope > 0.05) {
       for (int r = 0; r < 3; r++) {
-        final rippleT = ((normPhase * 3.0) + r * 0.33) % 1.0;
-        final rw = meniscusHalfW * 1.78 * rippleT;
-        final rh = meniscusH * 0.86 * rippleT;
+        final rippleT = ((normPhase * 3.2) + r * 0.33) % 1.0;
+        final rw = meniscusHalfW * 1.72 * rippleT;
+        final rh = meniscusEH * 1.65 * rippleT;
         _paint
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.9 * (1.0 - rippleT)
+          ..strokeWidth = 2.0 * (1.0 - rippleT)
           ..color = Colors.white.withValues(
-            alpha: (0.76 * (1.0 - rippleT) * impactEnvelope).clamp(0.0, 1.0),
+            alpha: (0.78 * (1.0 - rippleT) * impactEnvelope).clamp(0.0, 1.0),
           );
         canvas.drawOval(
           Rect.fromCenter(
-            center: Offset(cx + 2, waterTopY),
+            center: Offset(cx + 2, meniscusCenter.dy),
             width: rw,
             height: rh,
           ),
@@ -2556,33 +3088,40 @@ class _WaterGardenMasterPainter extends CustomPainter {
   ) {
     _paint
       ..style = PaintingStyle.fill
-      ..shader = null
-      ..color = Colors.white.withValues(alpha: 0.26 * alphaScale);
+      ..color = Colors.white
+      ..shader = ui.Gradient.radial(
+        Offset(center.dx + radius * 0.25, center.dy + radius * 0.28),
+        radius * 1.1,
+        [
+          const Color(0xFFB8FFFF).withValues(alpha: 0.42 * alphaScale),
+          const Color(0x4442E2FF).withValues(alpha: 0.22 * alphaScale),
+        ],
+      );
     canvas.drawCircle(center, radius, _paint);
+    _paint.shader = null;
 
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.9
-      ..color = const Color(0xFFE0FFFF).withValues(alpha: 0.62 * alphaScale);
+      ..strokeWidth = 0.85
+      ..color = const Color(0xFFE8FFFF).withValues(alpha: 0.70 * alphaScale);
     canvas.drawCircle(center, radius, _paint);
 
     _paint
       ..style = PaintingStyle.fill
-      ..color = Colors.white.withValues(alpha: 0.92 * alphaScale);
+      ..color = Colors.white.withValues(alpha: 0.94 * alphaScale);
     canvas.drawCircle(
       Offset(center.dx - radius * 0.34, center.dy - radius * 0.34),
-      radius * 0.32,
+      radius * 0.33,
       _paint,
     );
   }
 
-  /// Seamless, Zero-Hard-Cut Botanical Renderer:
-  /// - When `bloomFraction == 0.0` (Panels 3 & 6): renders the S-curved green stem,
-  ///   2 asymmetrical curled two-tone leaves, and the signature plump 3-petal cupped Pink Tulip Bud!
-  /// - As `bloomFraction` progresses `0.0 -> 1.0` (Panels 4 & 5):
-  ///   NO sudden pop! The main stem smoothly straightens & rises into the hero center blossom while
-  ///   the Left & Right stems sprout outward along Bezier paths, collar leaves unfurl, and all 3 buds
-  ///   continuously open their 6 ruffled velvet petals in 3/4 perspective!
+  /// Seamless, Zero-Hard-Cut 3D Botanical Renderer:
+  /// - When `bloomFraction == 0.0`: renders the sculpted S-curved cylindrical stem,
+  ///   2 asymmetrical twisted 3D leaves with lateral veins, and a 4-layer 3D Pink Tulip Bud!
+  /// - As `bloomFraction` progresses `0.0 -> 1.0`:
+  ///   the main stem smoothly straightens into the tall hero blossom while left & right
+  ///   bouquet stems unfurl and all 3 buds open into lush 3D spherical-cup blossoms!
   void _drawAboveWaterBotanicals({
     required Canvas canvas,
     required double cx,
@@ -2601,8 +3140,6 @@ class _WaterGardenMasterPainter extends CustomPainter {
     final tB = bloomFraction.clamp(0.0, 1.0);
     final centerMorph = Curves.easeOutCubic.transform(tB);
 
-    // Smoothly interpolate the primary stem from Panel 3's graceful right-leaning S-curve
-    // into Panel 4's tall hero center stem — ZERO discontinuity at `bloomFraction == 0`!
     final growthLift = 12.0 * waterFraction.clamp(0.0, 1.0);
     final preBloomBudPos = Offset(
       cx + 26.0 + 4.0 * math.sin(ambientPhase),
@@ -2620,7 +3157,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       centerMorph,
     )!;
 
-    // 1. Background collar leaves that unfurl around the crystal rim during bloom
+    // 1. Background Collar Leaves unfurling around the vase rim during bloom
     if (tB > 0.04) {
       final collarScale = Curves.easeOutBack
           .transform(((tB - 0.04) / 0.72).clamp(0.0, 1.0))
@@ -2629,37 +3166,37 @@ class _WaterGardenMasterPainter extends CustomPainter {
         canvas,
         origin: Offset(cx - 17, metrics.topRimY - 3),
         angle: -2.58 + sway,
-        length: 41 * collarScale,
-        width: 13.5,
+        length: 42 * collarScale,
+        width: 13.8,
         curlSign: -1.0,
       );
       _drawCurledBotanicalLeaf(
         canvas,
         origin: Offset(cx + 17, metrics.topRimY - 3),
         angle: -0.54 + sway,
-        length: 41 * collarScale,
-        width: 13.5,
+        length: 42 * collarScale,
+        width: 13.8,
         curlSign: 1.0,
       );
       _drawCurledBotanicalLeaf(
         canvas,
         origin: Offset(cx - 7, metrics.topRimY - 22),
         angle: -2.06 + sway,
-        length: 36 * collarScale,
-        width: 12.0,
+        length: 37 * collarScale,
+        width: 12.2,
         curlSign: -1.0,
       );
       _drawCurledBotanicalLeaf(
         canvas,
         origin: Offset(cx + 8, metrics.topRimY - 20),
         angle: -1.06 + sway,
-        length: 36 * collarScale,
-        width: 12.0,
+        length: 37 * collarScale,
+        width: 12.2,
         curlSign: 1.0,
       );
     }
 
-    // Helper for cylindrical 3D shaded stems
+    // Helper for true cylindrical 3D shaded stems (shadow right, core emerald, specular left)
     void drawCylindricalStem(Offset start, Offset ctrl, Offset end, double sw) {
       canvas.save();
       canvas.clipRect(Rect.fromLTRB(0, upperClipTop, 380, upperClipBottom + 3));
@@ -2668,20 +3205,23 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ..moveTo(start.dx, start.dy)
         ..quadraticBezierTo(ctrl.dx, ctrl.dy, end.dx, end.dy);
 
-      // Rich emerald outer stem body
       _paint
         ..style = PaintingStyle.stroke
         ..strokeWidth = sw
         ..strokeCap = StrokeCap.round
         ..shader = null
-        ..color = const Color(0xFF237B2B);
+        ..color = const Color(0xFF175E22);
       canvas.drawPath(_scratchPath, _paint);
 
-      // Sunlit lime highlight along left-center of stem cylinder
       _paint
-        ..strokeWidth = sw * 0.48
-        ..color = const Color(0xFF7CE84F);
-      canvas.drawPath(_scratchPath.shift(const Offset(-1.0, 0)), _paint);
+        ..strokeWidth = sw * 0.72
+        ..color = const Color(0xFF339E39);
+      canvas.drawPath(_scratchPath.shift(const Offset(-0.45, 0)), _paint);
+
+      _paint
+        ..strokeWidth = sw * 0.34
+        ..color = const Color(0xFFA2F763);
+      canvas.drawPath(_scratchPath.shift(const Offset(-1.25, -0.2)), _paint);
       canvas.restore();
     }
 
@@ -2722,7 +3262,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
           leftExtendT,
         )!,
         leftTipPos,
-        5.5,
+        5.6,
       );
     }
     if (rightExtendT > 0.02) {
@@ -2734,7 +3274,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
           rightExtendT,
         )!,
         rightTipPos,
-        5.5,
+        5.6,
       );
     }
 
@@ -2743,10 +3283,10 @@ class _WaterGardenMasterPainter extends CustomPainter {
       Offset(primaryBaseX, stemBaseY),
       primaryCtrl,
       centerPos,
-      6.2,
+      6.4,
     );
 
-    // 4. Primary Stem's 2 Signature Asymmetrical Curled Leaves (Panels 3 & 6 -> gracefully tucked in Panel 4!)
+    // 4. Primary Stem's 2 Signature Asymmetrical Twisted 3D Leaves
     final leafNodeL = Offset.lerp(
       Offset(primaryBaseX + 6, metrics.topRimY - 18 - growthLift * 0.45),
       Offset(cx - 18, metrics.topRimY - 16),
@@ -2762,26 +3302,26 @@ class _WaterGardenMasterPainter extends CustomPainter {
       canvas,
       origin: leafNodeL,
       angle: ui.lerpDouble(-2.32, -2.38, centerMorph)! + sway,
-      length: ui.lerpDouble(31.0, 30.0, centerMorph)!,
-      width: 11.5,
+      length: ui.lerpDouble(33.0, 31.0, centerMorph)!,
+      width: 12.0,
       curlSign: -1.0,
     );
     _drawCurledBotanicalLeaf(
       canvas,
       origin: leafNodeR,
       angle: ui.lerpDouble(-0.42, -0.74, centerMorph)! + sway,
-      length: ui.lerpDouble(34.0, 30.0, centerMorph)!,
-      width: 12.2,
+      length: ui.lerpDouble(36.0, 31.0, centerMorph)!,
+      width: 12.6,
       curlSign: 1.0,
     );
 
-    // 5. Render Pre-Bloom Pink Tulip Bud OR Continuous Unfurling 3/4-Perspective Bouquet!
+    // 5. Render Pre-Bloom Sculpted 3D Tulip Bud OR Continuous Unfurling 3D Bouquet!
     if (tB <= 0.01) {
       _drawOrganicPinkTulipBud(
         canvas,
         center: centerPos,
-        tiltAngle: 0.40 + sway * 1.2,
-        scale: 1.02 + 0.10 * waterFraction.clamp(0.0, 1.0),
+        tiltAngle: 0.36 + sway * 1.2,
+        scale: 1.06 + 0.10 * waterFraction.clamp(0.0, 1.0),
       );
       return;
     }
@@ -2805,8 +3345,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     );
   }
 
-  /// Renders the 3-blossom 3/4-perspective bouquet with bespoke palettes & petal shapes per milestone,
-  /// smoothly morphing each flower from a cupped bud (`unfurl == 0`) into a lush open blossom (`unfurl == 1`).
+  /// Renders the 3-blossom 3D bouquet with bespoke palettes & petal geometry per milestone.
   void _drawBouquetByType({
     required Canvas canvas,
     required FlowerType flowerType,
@@ -2823,11 +3362,8 @@ class _WaterGardenMasterPainter extends CustomPainter {
     switch (flowerType) {
       case FlowerType.trioDaisy:
       case FlowerType.tulipPink:
-        // Signature Reference Art Trio Bouquet (`media_1794542250218_05b9588a.jpg` Panels 4 & 5):
-        // Left: Warm Coral-Rose | Center: Tall Sunny Buttercup Gold | Right: Soft Lavender-Orchid Violet!
         final isVase1 = flowerType == FlowerType.tulipPink;
 
-        // Draw side blossoms slightly behind or beside hero center for natural bouquet depth
         if (leftAppear > 0.05) {
           _drawCupped3DGardenBlossom(
             canvas,
@@ -2836,16 +3372,16 @@ class _WaterGardenMasterPainter extends CustomPainter {
             appearScale: 0.98 * leftAppear,
             faceTilt: -0.24 + sway,
             tipCol: isVase1
-                ? const Color(0xFFFFB8D2)
-                : const Color(0xFFFFAB98),
+                ? const Color(0xFFFFC5DA)
+                : const Color(0xFFFFB5A4),
             midCol: isVase1
-                ? const Color(0xFFFF5286)
-                : const Color(0xFFFF5A52),
+                ? const Color(0xFFFF4D88)
+                : const Color(0xFFFF5950),
             throatCol: isVase1
-                ? const Color(0xFFC2185B)
-                : const Color(0xFFC92626),
-            stamenLight: const Color(0xFFFFF3A1),
-            stamenDeep: const Color(0xFFEA7B00),
+                ? const Color(0xFFB31252)
+                : const Color(0xFFB81E24),
+            stamenLight: const Color(0xFFFFF5AD),
+            stamenDeep: const Color(0xFFE67800),
           );
         }
         if (rightAppear > 0.05) {
@@ -2855,25 +3391,24 @@ class _WaterGardenMasterPainter extends CustomPainter {
             unfurlT: rightUnfurl,
             appearScale: 0.95 * rightAppear,
             faceTilt: 0.25 + sway,
-            tipCol: const Color(0xFFEBD6FF),
-            midCol: const Color(0xFFB162FF),
-            throatCol: const Color(0xFF6B21A8),
-            stamenLight: const Color(0xFFFFF3A1),
-            stamenDeep: const Color(0xFFEA7B00),
+            tipCol: const Color(0xFFF0DBFF),
+            midCol: const Color(0xFFB360FF),
+            throatCol: const Color(0xFF611CA0),
+            stamenLight: const Color(0xFFFFF5AD),
+            stamenDeep: const Color(0xFFE67800),
           );
         }
-        // Hero Tall Center Sunny Golden-Yellow Blossom
         _drawCupped3DGardenBlossom(
           canvas,
           center: centerPos,
           unfurlT: centerUnfurl,
-          appearScale: 1.08,
+          appearScale: 1.10,
           faceTilt: 0.03 + sway * 0.8,
-          tipCol: const Color(0xFFFFF9B2),
-          midCol: const Color(0xFFFFCF2E),
-          throatCol: const Color(0xFFE07200),
-          stamenLight: const Color(0xFFFFF8C8),
-          stamenDeep: const Color(0xFFD95308),
+          tipCol: const Color(0xFFFFFBB8),
+          midCol: const Color(0xFFFFCE2A),
+          throatCol: const Color(0xFFD96A00),
+          stamenLight: const Color(0xFFFFFAD2),
+          stamenDeep: const Color(0xFFD64B08),
         );
         break;
 
@@ -2883,7 +3418,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
             canvas,
             center: leftPos,
             unfurlT: leftUnfurl,
-            appearScale: 0.86 * leftAppear,
+            appearScale: 0.88 * leftAppear,
             faceTilt: -0.22 + sway,
           );
         }
@@ -2892,7 +3427,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
             canvas,
             center: rightPos,
             unfurlT: rightUnfurl,
-            appearScale: 0.86 * rightAppear,
+            appearScale: 0.88 * rightAppear,
             faceTilt: 0.22 + sway,
           );
         }
@@ -2900,7 +3435,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
           canvas,
           center: centerPos.translate(0, 4),
           unfurlT: centerUnfurl,
-          appearScale: 1.10,
+          appearScale: 1.12,
           faceTilt: sway * 0.7,
         );
         break;
@@ -2913,10 +3448,10 @@ class _WaterGardenMasterPainter extends CustomPainter {
             unfurlT: leftUnfurl,
             appearScale: 0.94 * leftAppear,
             faceTilt: -0.24 + sway,
-            tipCol: const Color(0xFFFF9E80),
-            midCol: const Color(0xFFFF3D32),
-            throatCol: const Color(0xFF9A0007),
-            stamenLight: const Color(0xFFFFE082),
+            tipCol: const Color(0xFFFFA890),
+            midCol: const Color(0xFFFF362B),
+            throatCol: const Color(0xFF8C000A),
+            stamenLight: const Color(0xFFFFE588),
             stamenDeep: const Color(0xFF3E1C33),
           );
         }
@@ -2927,9 +3462,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
             unfurlT: rightUnfurl,
             appearScale: 0.94 * rightAppear,
             faceTilt: 0.24 + sway,
-            tipCol: const Color(0xFFFFCC80),
+            tipCol: const Color(0xFFFFD08A),
             midCol: const Color(0xFFFF6D00),
-            throatCol: const Color(0xFFBF360C),
+            throatCol: const Color(0xFFB33208),
             stamenLight: const Color(0xFFFFF59D),
             stamenDeep: const Color(0xFF4A192C),
           );
@@ -2938,11 +3473,11 @@ class _WaterGardenMasterPainter extends CustomPainter {
           canvas,
           center: centerPos,
           unfurlT: centerUnfurl,
-          appearScale: 1.08,
+          appearScale: 1.10,
           faceTilt: sway * 0.8,
-          tipCol: const Color(0xFFFF8A80),
-          midCol: const Color(0xFFE52521),
-          throatCol: const Color(0xFF880E25),
+          tipCol: const Color(0xFFFF968C),
+          midCol: const Color(0xFFE52220),
+          throatCol: const Color(0xFF800B22),
           stamenLight: const Color(0xFFFFE57F),
           stamenDeep: const Color(0xFF2D122B),
         );
@@ -2954,7 +3489,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
             canvas,
             center: leftPos,
             unfurlT: leftUnfurl,
-            appearScale: 0.88 * leftAppear,
+            appearScale: 0.90 * leftAppear,
             faceTilt: -0.22 + sway,
           );
         }
@@ -2963,7 +3498,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
             canvas,
             center: rightPos,
             unfurlT: rightUnfurl,
-            appearScale: 0.88 * rightAppear,
+            appearScale: 0.90 * rightAppear,
             faceTilt: 0.22 + sway,
           );
         }
@@ -2971,15 +3506,16 @@ class _WaterGardenMasterPainter extends CustomPainter {
           canvas,
           center: centerPos.translate(0, 3),
           unfurlT: centerUnfurl,
-          appearScale: 1.12,
+          appearScale: 1.14,
           faceTilt: sway * 0.6,
         );
         break;
     }
   }
 
-  /// Two-Tone Curled 3D Botanical Leaf (`media_1794542235625_7780e9a4.png`):
-  /// Sunlit chartreuse-lime upper half + shaded emerald-forest lower half along an S-curved midrib!
+  /// Sculpted 3D Twisted Leaf:
+  /// Soft blurred cast shadow, two-tone lamina divided by S-curved midrib,
+  /// delicate lateral venation, and curled-over glossy underside tip fold.
   void _drawCurledBotanicalLeaf(
     Canvas canvas, {
     required Offset origin,
@@ -2988,121 +3524,173 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required double width,
     required double curlSign,
   }) {
-    if (length <= 2.0) return;
+    if (length <= 2.5) return;
     canvas.save();
     canvas.translate(origin.dx, origin.dy);
     canvas.rotate(angle);
 
-    final tip = Offset(length, curlSign * width * 0.18);
+    final tip = Offset(length, curlSign * width * 0.20);
 
-    // Subtle underside shadow
+    // 1. Soft Blurred Cast AO Shadow underneath leaf
     _scratchPath
       ..reset()
-      ..moveTo(0, 1.5)
+      ..moveTo(0, 2.0)
       ..cubicTo(
         length * 0.30,
-        -width * 0.95 + 1.5,
+        -width * 0.95 + 2.0,
         length * 0.72,
-        -width * 0.75 + 1.5,
+        -width * 0.75 + 2.0,
         tip.dx,
-        tip.dy + 1.5,
+        tip.dy + 2.2,
       )
       ..cubicTo(
         length * 0.70,
-        width * 0.92 + 1.5,
+        width * 0.92 + 2.0,
         length * 0.28,
-        width * 1.02 + 1.5,
+        width * 1.02 + 2.0,
         0,
-        1.5,
+        2.0,
       )
       ..close();
-    _paint
+    _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..color = const Color(0x28043847);
-    canvas.drawPath(_scratchPath, _paint);
+      ..maskFilter = _blurTight
+      ..color = const Color(0x3C032D3B);
+    canvas.drawPath(_scratchPath, _fxPaint);
+    _fxPaint.maskFilter = null;
 
-    // Upper sunlit lime half of leaf blade
+    // 2. Upper Sunlit Chartreuse-Lime Lamina
     _scratchPath
       ..reset()
       ..moveTo(0, 0)
       ..cubicTo(
         length * 0.28,
-        -width * 1.05,
+        -width * 1.06,
         length * 0.70,
-        -width * 0.82,
+        -width * 0.80,
         tip.dx,
         tip.dy,
       )
-      ..quadraticBezierTo(length * 0.50, tip.dy * 0.35, 0, 0)
+      ..quadraticBezierTo(length * 0.48, tip.dy * 0.34, 0, 0)
       ..close();
     _paint
+      ..style = PaintingStyle.fill
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
-        Offset(0, -width),
-        tip,
-        const [Color(0xFFB4FA6B), Color(0xFF5BCE35)],
+        Offset(length * 0.1, -width),
+        Offset(tip.dx, tip.dy * 0.4),
+        const [
+          Color(0xFFD2FF86),
+          Color(0xFF70DF3C),
+          Color(0xFF39A32A),
+        ],
+        const [0.0, 0.52, 1.0],
       );
     canvas.drawPath(_scratchPath, _paint);
 
-    // Lower shaded emerald half of leaf blade
+    // 3. Lower Shaded Emerald Lamina
     _scratchPath
       ..reset()
       ..moveTo(0, 0)
-      ..quadraticBezierTo(length * 0.50, tip.dy * 0.35, tip.dx, tip.dy)
+      ..quadraticBezierTo(length * 0.48, tip.dy * 0.34, tip.dx, tip.dy)
       ..cubicTo(
         length * 0.68,
-        width * 0.96,
+        width * 0.98,
         length * 0.28,
-        width * 1.05,
+        width * 1.06,
         0,
         0,
       )
       ..close();
-    _paint
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        Offset.zero,
-        Offset(length * 0.8, width),
-        const [Color(0xFF43AD29), Color(0xFF1E6E22)],
-      );
+    _paint.shader = ui.Gradient.linear(
+      Offset.zero,
+      Offset(length * 0.85, width),
+      const [
+        Color(0xFF47B82C),
+        Color(0xFF207724),
+        Color(0xFF104919),
+      ],
+      const [0.0, 0.60, 1.0],
+    );
     canvas.drawPath(_scratchPath, _paint);
     _paint.shader = null;
 
-    // Curved midrib highlight vein
+    // 4. Subtle Botanical Lateral Veins
+    _paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.85
+      ..strokeCap = StrokeCap.round
+      ..color = const Color(0x52DCEDC8);
+    for (int v = 1; v <= 3; v++) {
+      final vf = v * 0.22;
+      final mx = length * vf;
+      final my = tip.dy * (vf * 0.65);
+      canvas.drawLine(
+        Offset(mx, my),
+        Offset(mx + length * 0.13, my - width * 0.46),
+        _paint,
+      );
+      canvas.drawLine(
+        Offset(mx, my),
+        Offset(mx + length * 0.12, my + width * 0.44),
+        _paint,
+      );
+    }
+
+    // 5. Specular Sunlit Midrib Highlight Vein
     _scratchPath
       ..reset()
       ..moveTo(1.5, 0)
       ..quadraticBezierTo(
-        length * 0.45,
-        tip.dy * 0.28,
-        length * 0.82,
-        tip.dy * 0.78,
+        length * 0.46,
+        tip.dy * 0.30,
+        length * 0.86,
+        tip.dy * 0.82,
       );
     _paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0xDCDCEDC8);
+      ..strokeWidth = 1.5
+      ..color = const Color(0xD8EBFFC4);
+    canvas.drawPath(_scratchPath, _paint);
+
+    // 6. Visible Turned/Curled Leaf Tip Fold for 3D depth
+    final foldStart = Offset(length * 0.72, tip.dy * 0.72);
+    _scratchPath
+      ..reset()
+      ..moveTo(foldStart.dx, foldStart.dy)
+      ..quadraticBezierTo(
+        length * 0.88,
+        tip.dy - curlSign * width * 0.36,
+        tip.dx + 1.5,
+        tip.dy + curlSign * 2.0,
+      )
+      ..quadraticBezierTo(
+        length * 0.84,
+        tip.dy + curlSign * 0.5,
+        foldStart.dx,
+        foldStart.dy,
+      )
+      ..close();
+    _paint
+      ..style = PaintingStyle.fill
+      ..color = const Color(0xBB9DF55E);
     canvas.drawPath(_scratchPath, _paint);
 
     canvas.restore();
   }
 
-  /// Authentic 3-Petal Cupped Pink Tulip Bud (`media_1794542235625_7780e9a4.png` Panel 3 & Panel 6!):
-  /// Plump egg-cup silhouette with 3 distinct rounded overlapping tulip tips (W-cleft crown),
-  /// sunlit peach-pink foreground belly, deep raspberry crease, and sculpted green receptacle cup!
+  /// Sculpted 4-Layer 3D Tulip Bud with Inter-Petal AO, Subsurface Rim Glow & 3-Sepal Calyx.
   void _drawOrganicPinkTulipBud(
     Canvas canvas, {
     required Offset center,
     required double tiltAngle,
     required double scale,
     Color innerPeakCol = const Color(0xFFE91E63),
-    Color rightLightCol = const Color(0xFFFF8AB8),
-    Color rightDeepCol = const Color(0xFFB81452),
-    Color leftSunCol = const Color(0xFFFFC8DD),
-    Color leftMidCol = const Color(0xFFFF5894),
-    Color leftDeepCol = const Color(0xFFD4185C),
+    Color rightLightCol = const Color(0xFFFF9CC4),
+    Color rightDeepCol = const Color(0xFF9C0E45),
+    Color leftSunCol = const Color(0xFFFFD8E7),
+    Color leftMidCol = const Color(0xFFFF4D8D),
+    Color leftDeepCol = const Color(0xFFB5124E),
   }) {
     if (scale <= 0.02) return;
     canvas.save();
@@ -3110,121 +3698,276 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.rotate(tiltAngle);
     canvas.scale(scale, scale);
 
-    // Subtle soft shadow behind bud
-    _paint
+    // Soft blurred atmospheric AO behind bud
+    _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..color = const Color(0x24043848);
+      ..maskFilter = _blurSoft
+      ..color = const Color(0x36032430);
     canvas.drawOval(
-      Rect.fromCenter(center: const Offset(1.5, -14), width: 28, height: 36),
-      _paint,
+      Rect.fromCenter(center: const Offset(2.0, -14), width: 32, height: 40),
+      _fxPaint,
     );
+    _fxPaint.maskFilter = null;
 
-    // 1. Tucked Inner Center Tulip Petal Tip (forming the middle crown peak!)
+    // 1. Recessed Inner Back Center Petal Peak
     _scratchPath
       ..reset()
-      ..moveTo(-5.5, -10)
-      ..cubicTo(-6.5, -24, -3.0, -36.5, 1.5, -39.0)
-      ..cubicTo(6.2, -36.5, 7.5, -24, 5.5, -10)
+      ..moveTo(-6.0, -8)
+      ..cubicTo(-7.2, -24, -3.5, -37.5, 1.5, -40.5)
+      ..cubicTo(6.8, -37.5, 8.2, -24, 6.0, -8)
       ..close();
     _paint
+      ..style = PaintingStyle.fill
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
-        const Offset(1.5, -39),
-        const Offset(1.5, -10),
-        [rightLightCol, innerPeakCol, const Color(0xFF880E4F)],
-        const [0.0, 0.55, 1.0],
-      );
-    canvas.drawPath(_scratchPath, _paint);
-
-    // 2. Right Cupped Wrapping Outer Petal (forming the right rounded tulip lobe!)
-    _scratchPath
-      ..reset()
-      ..moveTo(-1, 5.5)
-      ..cubicTo(16.5, 3.5, 19.0, -18.0, 9.8, -34.5)
-      ..quadraticBezierTo(7.6, -37.0, 4.4, -33.5)
-      ..cubicTo(1.2, -25.5, 0.8, -9.0, -1, 5.5)
-      ..close();
-    _paint
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        const Offset(10, -35),
-        const Offset(4, 6),
-        [rightLightCol, leftMidCol, rightDeepCol],
+        const Offset(1.5, -40.5),
+        const Offset(1.5, -8),
+        [rightLightCol, innerPeakCol, const Color(0xFF6B0938)],
         const [0.0, 0.52, 1.0],
       );
     canvas.drawPath(_scratchPath, _paint);
     _paint.shader = null;
 
-    // Crease shadow where left hero petal overlaps right petal
-    _scratchPath
-      ..reset()
-      ..moveTo(2, 4.5)
-      ..cubicTo(5.8, -8, 4.8, -24, 0.0, -34.5);
-    _paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0x4A6A0B37);
-    canvas.drawPath(_scratchPath, _paint);
+    // Soft AO shadow cast onto inner peak by overlapping outer petals
+    _fxPaint
+      ..maskFilter = _blurTight
+      ..color = const Color(0x524A0524);
+    canvas.drawOval(
+      Rect.fromCenter(center: const Offset(1.5, -16), width: 12, height: 22),
+      _fxPaint,
+    );
 
-    // 3. Left Sunlit Foreground Hero Petal (full rounded belly + soft rounded top-left tulip peak!)
+    // 2. Right Cupped Wrapping Petal
     _scratchPath
       ..reset()
-      ..moveTo(2.2, 5.8)
-      ..cubicTo(-17.0, 3.5, -19.0, -19.0, -6.8, -36.8)
-      ..quadraticBezierTo(-3.6, -39.2, -0.4, -35.2)
-      ..cubicTo(4.6, -25.0, 5.6, -7.5, 2.2, 5.8)
+      ..moveTo(-1.2, 6.0)
+      ..cubicTo(18.0, 3.8, 20.5, -18.5, 10.2, -35.8)
+      ..quadraticBezierTo(7.8, -38.4, 4.4, -34.2)
+      ..cubicTo(1.2, -26.0, 0.6, -9.0, -1.2, 6.0)
       ..close();
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        const Offset(-14, -35),
-        const Offset(6, 6),
+      ..shader = ui.Gradient.radial(
+        const Offset(10.5, -24),
+        28,
+        [rightLightCol, leftMidCol, rightDeepCol],
+        const [0.0, 0.50, 1.0],
+      );
+    canvas.drawPath(_scratchPath, _paint);
+    _paint.shader = null;
+
+    // Soft blurred overlap AO seam where foreground left petal wraps across right petal
+    _fxPaint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.2
+      ..maskFilter = _blurTight
+      ..color = const Color(0x624A0626);
+    canvas.drawPath(
+      _scratchPath
+        ..reset()
+        ..moveTo(2.4, 5.2)
+        ..cubicTo(6.2, -8, 5.2, -25, 0.0, -35.5),
+      _fxPaint,
+    );
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..maskFilter = null;
+
+    // 3. Foreground Hero Sunlit Belly Petal (3D spherical highlight + translucent rim glow)
+    _scratchPath
+      ..reset()
+      ..moveTo(2.4, 6.2)
+      ..cubicTo(-18.5, 3.6, -20.0, -19.5, -7.2, -37.8)
+      ..quadraticBezierTo(-3.6, -40.5, -0.2, -36.0)
+      ..cubicTo(5.0, -25.2, 6.2, -7.5, 2.4, 6.2)
+      ..close();
+    _paint
+      ..style = PaintingStyle.fill
+      ..color = Colors.white
+      ..shader = ui.Gradient.radial(
+        const Offset(-9.5, -25),
+        32,
         [leftSunCol, leftMidCol, leftDeepCol],
-        const [0.0, 0.55, 1.0],
+        const [0.0, 0.56, 1.0],
       );
     canvas.drawPath(_scratchPath, _paint);
     _paint.shader = null;
 
-    // Creamy-pink sunlit specular highlight crescent on left belly
-    _scratchPath
-      ..reset()
-      ..moveTo(-10.2, -7.0)
-      ..quadraticBezierTo(-12.5, -19.0, -6.5, -30.5);
+    // Subsurface backlit lip sheen
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.8
-      ..strokeCap = StrokeCap.round
-      ..color = Colors.white.withValues(alpha: 0.48);
-    canvas.drawPath(_scratchPath, _paint);
+      ..strokeWidth = 1.6
+      ..color = Colors.white.withValues(alpha: 0.44);
+    canvas.drawPath(
+      _scratchPath
+        ..reset()
+        ..moveTo(-12.2, -16.0)
+        ..quadraticBezierTo(-10.0, -33.0, -2.5, -38.2),
+      _paint,
+    );
 
-    // 4. Seamless 3D Cupped Green Sepal Calyx Base
-    _scratchPath
-      ..reset()
-      ..moveTo(-8.8, 1.5)
-      ..quadraticBezierTo(0, 10.0, 8.8, 1.5)
-      ..quadraticBezierTo(0, 4.8, -8.8, 1.5)
-      ..close();
+    // Specular belly highlight crescent
     _paint
-      ..style = PaintingStyle.fill
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        const Offset(-8, 1),
-        const Offset(8, 9),
-        const [Color(0xFF8BF056), Color(0xFF288226)],
-      );
-    canvas.drawPath(_scratchPath, _paint);
-    _paint.shader = null;
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.white.withValues(alpha: 0.36);
+    canvas.drawPath(
+      _scratchPath
+        ..reset()
+        ..moveTo(-9.6, -6.5)
+        ..quadraticBezierTo(-12.2, -18.5, -6.6, -29.5),
+      _paint,
+    );
+
+    // 4. Sculpted 3-Sepal 3D Green Receptacle Calyx
+    for (int s = -1; s <= 1; s++) {
+      canvas.save();
+      canvas.translate(s * 3.8, 4.0);
+      canvas.rotate(s * 0.42);
+      _scratchPath
+        ..reset()
+        ..moveTo(0, 4.5)
+        ..cubicTo(-5.2, 0.5, -4.6, -7.5, 0, -10.5)
+        ..cubicTo(4.6, -7.5, 5.2, 0.5, 0, 4.5)
+        ..close();
+      _paint
+        ..style = PaintingStyle.fill
+        ..color = Colors.white
+        ..shader = ui.Gradient.linear(
+          const Offset(-3, -10),
+          const Offset(3, 4),
+          const [Color(0xFF9DF75D), Color(0xFF288425), Color(0xFF155417)],
+          const [0.0, 0.62, 1.0],
+        );
+      canvas.drawPath(_scratchPath, _paint);
+      _paint.shader = null;
+      canvas.restore();
+    }
 
     canvas.restore();
   }
 
-  /// 3/4-Perspective Multi-Layered Ruffled Velvet Blossom (`media_1794542250218_05b9588a.jpg` Panels 4 & 5!):
-  /// - Smoothly unfurls from a cupped bud (`unfurlT == 0.0`) into a lush 6-petal 3/4-tilted garden cup (`unfurlT == 1.0`)!
-  /// - 3 tall sunlit back scalloped fan petals + warm throat shadow + foreshortened oval golden stamen cluster
-  ///   with upward-curving golden filaments + 3 foreshortened overlapping front petals cupping the center!
+  /// True 3D Spherical-Bowl Petal Projection Helper:
+  /// Projects a cupped 3D petal oriented at `azimuthRad` around the blossom and `cupPitch`
+  /// into 2D camera space with realistic foreshortening, soft AO shadow, velvety gradient,
+  /// botanical central fold, and backlit subsurface edge glow (no flat cartoon outlines!).
+  void _draw3DSculptedPetal(
+    Canvas canvas, {
+    required double azimuthRad,
+    required double cupElevationRad,
+    required double length,
+    required double halfWidth,
+    required double baseRadius,
+    required Color tipCol,
+    required Color midCol,
+    required Color throatCol,
+    double notchedHeart = 1.0,
+    double cameraTilt = 0.68,
+  }) {
+    final sinA = math.sin(azimuthRad);
+    final cosA = math.cos(azimuthRad);
+    final cosE = math.cos(cupElevationRad);
+    final sinE = math.sin(cupElevationRad);
+
+    // 3D outward petal vector projected into camera space (`cosP = sqrt(1 - cameraTilt^2)`)
+    final cosP = math.sqrt(math.max(0.0, 1.0 - cameraTilt * cameraTilt));
+    final vx = sinA * cosE;
+    final vy = -(sinE * cosP + cosA * cosE * cameraTilt);
+    final apparentAngle = math.atan2(vx, -vy);
+    final foreshorten = math.sqrt(vx * vx + vy * vy).clamp(0.42, 1.08);
+
+    // Depth cue: front petals (`cosA < 0`) lean slightly toward camera, back petals stand tall (`cosA > 0`)
+    final isFrontFacing = cosA < 0.0;
+    final projLen = length * foreshorten;
+    final anchorX = sinA * baseRadius;
+    final anchorY = -cosA * baseRadius * cameraTilt + 2.0;
+
+    canvas.save();
+    canvas.translate(anchorX, anchorY);
+    canvas.rotate(apparentAngle);
+
+    final notchDip = notchedHeart > 0.5 ? 0.94 : 1.0;
+    final shoulderCtrl = notchedHeart > 0.5 ? 1.15 : 0.92;
+    _petalPath
+      ..reset()
+      ..moveTo(0, 0)
+      ..cubicTo(
+        -halfWidth * 0.46,
+        -projLen * 0.24,
+        -halfWidth * shoulderCtrl,
+        -projLen * 0.66,
+        -halfWidth * (notchedHeart > 0.5 ? 0.72 : 0.46),
+        -projLen * 0.92,
+      )
+      ..quadraticBezierTo(
+        -halfWidth * (notchedHeart > 0.5 ? 0.34 : 0.16),
+        -projLen * (notchedHeart > 0.5 ? 1.07 : 1.03),
+        0,
+        -projLen * notchDip,
+      )
+      ..quadraticBezierTo(
+        halfWidth * (notchedHeart > 0.5 ? 0.34 : 0.16),
+        -projLen * (notchedHeart > 0.5 ? 1.07 : 1.03),
+        halfWidth * (notchedHeart > 0.5 ? 0.72 : 0.46),
+        -projLen * 0.92,
+      )
+      ..cubicTo(
+        halfWidth * shoulderCtrl,
+        -projLen * 0.66,
+        halfWidth * 0.46,
+        -projLen * 0.24,
+        0,
+        0,
+      )
+      ..close();
+
+    // 1. Soft Blurred Inter-Petal Ambient Occlusion Shadow
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..shader = null
+      ..maskFilter = _blurTight
+      ..color = throatCol.withValues(alpha: isFrontFacing ? 0.40 : 0.28);
+    canvas.drawPath(_petalPath.shift(const Offset(0.8, 2.4)), _fxPaint);
+    _fxPaint.maskFilter = null;
+
+    // 2. Velvety Spherical Gradient + Cross-Petal Light Shading
+    _paint
+      ..style = PaintingStyle.fill
+      ..color = Colors.white
+      ..shader = ui.Gradient.radial(
+        Offset(-halfWidth * 0.24, -projLen * 0.88),
+        projLen * 1.08,
+        [tipCol, midCol, throatCol],
+        const [0.0, 0.54, 1.0],
+      );
+    canvas.drawPath(_petalPath, _paint);
+    _paint.shader = null;
+
+    // 3. Soft Center Crease Fold & Subsurface Translucent Rim Light
+    _paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25
+      ..strokeCap = StrokeCap.round
+      ..color = throatCol.withValues(alpha: 0.20);
+    canvas.drawLine(
+      Offset(0, -projLen * 0.18),
+      Offset(0, -projLen * 0.72),
+      _paint,
+    );
+
+    _paint
+      ..strokeWidth = 1.35
+      ..color = Colors.white.withValues(alpha: isFrontFacing ? 0.36 : 0.28);
+    canvas.drawPath(_petalPath, _paint);
+
+    canvas.restore();
+  }
+
+  /// True 3D Cupped Multi-Layered Velvet Blossom:
+  /// Replaces flat 2D outlines with back-to-front 3D spherical bowl projection, blurred AO,
+  /// deep sunlit throat, 3D hemispherical pollen cushion, arched filaments & anthers!
   void _drawCupped3DGardenBlossom(
     Canvas canvas, {
     required Offset center,
@@ -3239,9 +3982,8 @@ class _WaterGardenMasterPainter extends CustomPainter {
   }) {
     if (appearScale <= 0.02) return;
 
-    // Smooth cross-morph from closed colored bud (`unfurlT < 0.28`) into open 3/4 cupped flower!
-    if (unfurlT < 0.28) {
-      final budScale = appearScale * (0.85 + 0.25 * (unfurlT / 0.28));
+    if (unfurlT < 0.26) {
+      final budScale = appearScale * (0.86 + 0.24 * (unfurlT / 0.26));
       _drawOrganicPinkTulipBud(
         canvas,
         center: center,
@@ -3257,231 +3999,170 @@ class _WaterGardenMasterPainter extends CustomPainter {
       if (unfurlT <= 0.12) return;
     }
 
-    final openRaw = ((unfurlT - 0.12) / 0.88).clamp(0.0, 1.0);
-    final openBounce = Curves.easeOutBack.transform(openRaw);
-    final spread = (0.32 + 0.68 * openBounce).clamp(0.25, 1.14);
-    final perspY = ui.lerpDouble(0.96, 0.80, openRaw)!;
+    final openRaw = ((unfurlT - 0.10) / 0.90).clamp(0.0, 1.0);
+    final openBounce = Curves.easeOutBack.transform(openRaw).clamp(0.0, 1.08);
+    final spread = ui.lerpDouble(0.36, 1.0, openBounce)!;
+    final cupElevation = ui.lerpDouble(1.12, 0.42, openRaw)!;
 
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.rotate(faceTilt);
-    canvas.scale(appearScale * spread, appearScale * spread * perspY);
+    canvas.scale(appearScale * spread, appearScale * spread);
 
-    // Subtle soft shadow tucked strictly beneath the flower cup
-    _paint
+    // Subtle soft atmospheric shadow behind blossom
+    _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..color = const Color(0x26053645);
+      ..maskFilter = _blurSoft
+      ..color = const Color(0x32042E3B);
     canvas.drawOval(
-      Rect.fromCenter(center: const Offset(0, 6), width: 38, height: 28),
-      _paint,
+      Rect.fromCenter(center: const Offset(0, 6), width: 42, height: 30),
+      _fxPaint,
+    );
+    _fxPaint.maskFilter = null;
+
+    // Layer 1: Tall 3D Back Rim Petals (`azimuth ~ 0`, left/right flanks behind receptacle)
+    _draw3DSculptedPetal(
+      canvas,
+      azimuthRad: -0.78,
+      cupElevationRad: cupElevation,
+      length: 39.0,
+      halfWidth: 13.0,
+      baseRadius: 3.0,
+      tipCol: tipCol,
+      midCol: midCol,
+      throatCol: throatCol,
+    );
+    _draw3DSculptedPetal(
+      canvas,
+      azimuthRad: 0.78,
+      cupElevationRad: cupElevation,
+      length: 39.0,
+      halfWidth: 13.0,
+      baseRadius: 3.0,
+      tipCol: tipCol,
+      midCol: midCol,
+      throatCol: throatCol,
+    );
+    _draw3DSculptedPetal(
+      canvas,
+      azimuthRad: 0.0,
+      cupElevationRad: cupElevation + 0.08,
+      length: 41.0,
+      halfWidth: 14.0,
+      baseRadius: 3.5,
+      tipCol: tipCol,
+      midCol: midCol,
+      throatCol: throatCol,
     );
 
-    void drawPlumpHeartPetal({
-      required double angleDeg,
-      required double length,
-      required double halfWidth,
-      required double baseAnchorY,
-      required bool isFront,
-    }) {
-      canvas.save();
-      canvas.translate(0, baseAnchorY);
-      canvas.rotate(angleDeg * math.pi / 180.0);
-
-      // Plump rounded-heart cupped petal with clear inter-petal separation notch!
-      _petalPath
-        ..reset()
-        ..moveTo(0, 0)
-        ..cubicTo(
-          -halfWidth * 0.42,
-          -length * 0.22,
-          -halfWidth * 1.16,
-          -length * 0.66,
-          -halfWidth * 0.72,
-          -length * 0.94,
-        )
-        // Left rounded heart lobe -> gentle center dimple -> right rounded heart lobe
-        ..quadraticBezierTo(
-          -halfWidth * 0.34,
-          -length * 1.07,
-          0,
-          -length * 0.96,
-        )
-        ..quadraticBezierTo(
-          halfWidth * 0.34,
-          -length * 1.07,
-          halfWidth * 0.72,
-          -length * 0.94,
-        )
-        ..cubicTo(
-          halfWidth * 1.16,
-          -length * 0.66,
-          halfWidth * 0.42,
-          -length * 0.22,
-          0,
-          0,
-        )
-        ..close();
-
-      // Warm ambient occlusion shadow between overlapping petals
-      _paint
-        ..style = PaintingStyle.fill
-        ..shader = null
-        ..color = throatCol.withValues(alpha: isFront ? 0.42 : 0.28);
-      canvas.drawPath(_petalPath.shift(const Offset(1.0, 2.2)), _paint);
-
-      // 3-stop painterly velvet gradient (sunlit rounded tip -> rich mid -> deep warm cup)
-      _paint
-        ..style = PaintingStyle.fill
-        ..color = Colors.white
-        ..shader = ui.Gradient.linear(
-          Offset(0, -length * 1.05),
-          Offset.zero,
-          [tipCol, midCol, throatCol],
-          const [0.0, 0.56, 1.0],
-        );
-      canvas.drawPath(_petalPath, _paint);
-      _paint.shader = null;
-
-      // Subtle warm petal edge definition (prevents adjacent petals from fusing into a flat blob!)
-      _paint
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.15
-        ..color = throatCol.withValues(alpha: 0.34);
-      canvas.drawPath(_petalPath, _paint);
-
-      // Soft central velvet crease & sunlit lobe sheen
-      _paint
-        ..strokeWidth = 1.3
-        ..strokeCap = StrokeCap.round
-        ..color = throatCol.withValues(alpha: 0.20);
-      canvas.drawLine(
-        Offset(0, -length * 0.20),
-        Offset(0, -length * 0.72),
-        _paint,
-      );
-
-      _paint
-        ..strokeWidth = 1.8
-        ..color = Colors.white.withValues(alpha: isFront ? 0.34 : 0.26);
-      canvas.drawLine(
-        Offset(-halfWidth * 0.32, -length * 0.88),
-        Offset(-halfWidth * 0.12, -length * 0.95),
-        _paint,
-      );
-
-      canvas.restore();
-    }
-
-    // Layer 1: 3 Tall Back Petals fanning open behind the cup
-    drawPlumpHeartPetal(
-      angleDeg: -50,
-      length: 37.5,
+    // Layer 2: Lateral Wing Petals cupping sides
+    _draw3DSculptedPetal(
+      canvas,
+      azimuthRad: -1.62,
+      cupElevationRad: cupElevation - 0.08,
+      length: 36.0,
       halfWidth: 12.6,
-      baseAnchorY: -1.5,
-      isFront: false,
+      baseRadius: 3.0,
+      tipCol: tipCol,
+      midCol: midCol,
+      throatCol: throatCol,
     );
-    drawPlumpHeartPetal(
-      angleDeg: 50,
-      length: 37.5,
+    _draw3DSculptedPetal(
+      canvas,
+      azimuthRad: 1.62,
+      cupElevationRad: cupElevation - 0.08,
+      length: 36.0,
       halfWidth: 12.6,
-      baseAnchorY: -1.5,
-      isFront: false,
-    );
-    drawPlumpHeartPetal(
-      angleDeg: 0,
-      length: 39.5,
-      halfWidth: 13.4,
-      baseAnchorY: -2.0,
-      isFront: false,
+      baseRadius: 3.0,
+      tipCol: tipCol,
+      midCol: midCol,
+      throatCol: throatCol,
     );
 
-    // Layer 2: 2 Side Cupping Petals
-    drawPlumpHeartPetal(
-      angleDeg: -104,
-      length: 34.5,
-      halfWidth: 12.4,
-      baseAnchorY: 0.5,
-      isFront: false,
+    // Layer 3: Deep Bowl Throat Shadow + 3D Hemispherical Pollen Cushion & Shaded Stamens
+    _fxPaint
+      ..maskFilter = _blurTight
+      ..color = throatCol.withValues(alpha: 0.62);
+    canvas.drawOval(
+      Rect.fromCenter(center: const Offset(0, 2.5), width: 28, height: 22),
+      _fxPaint,
     );
-    drawPlumpHeartPetal(
-      angleDeg: 104,
-      length: 34.5,
-      halfWidth: 12.4,
-      baseAnchorY: 0.5,
-      isFront: false,
-    );
+    _fxPaint.maskFilter = null;
 
-    // Deep warm cup shadow before the golden pollen heart
-    _paint
-      ..style = PaintingStyle.fill
-      ..color = Colors.white
-      ..shader = ui.Gradient.radial(
-        const Offset(0, 1.5),
-        15.5,
-        [throatCol.withValues(alpha: 0.82), throatCol.withValues(alpha: 0.0)],
-      );
-    canvas.drawCircle(const Offset(0, 1.5), 15.5, _paint);
-    _paint.shader = null;
-
-    // Layer 3: Plump 3D Golden-Amber Pollen Cushion + Tactile Pollen Beads (NO white spider lines!)
     final coreRect = Rect.fromCenter(
-      center: const Offset(0, 1.5),
-      width: 19.5,
-      height: 15.0,
+      center: const Offset(0, 1.8),
+      width: 19.0,
+      height: 14.2,
     );
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
       ..shader = ui.Gradient.radial(
-        const Offset(-2.5, -1.5),
+        const Offset(-2.6, -1.6),
         12.5,
         [stamenLight, const Color(0xFFFFB300), stamenDeep],
-        const [0.0, 0.58, 1.0],
+        const [0.0, 0.56, 1.0],
       );
     canvas.drawOval(coreRect, _paint);
     _paint.shader = null;
 
-    // Ring of plump warm golden pollen spheres around the cushion
-    const beadOffsets = <Offset>[
-      Offset(-6.5, -1.0),
-      Offset(-4.0, -4.2),
-      Offset(0.0, -5.0),
-      Offset(4.0, -4.2),
-      Offset(6.5, -1.0),
-      Offset(5.2, 2.8),
-      Offset(0.0, 3.8),
-      Offset(-5.2, 2.8),
-      Offset(-2.0, -0.8),
-      Offset(2.2, -0.6),
+    // 10 delicate arched stamens + 3D shaded pollen spheres
+    const stamenAngles = <double>[
+      -2.5, -1.9, -1.2, -0.5, 0.2, 0.9, 1.6, 2.3, -0.8, 1.1,
     ];
-    for (int b = 0; b < beadOffsets.length; b++) {
-      final bo = beadOffsets[b];
-      _paint.color = stamenDeep.withValues(alpha: 0.45);
-      canvas.drawCircle(bo.translate(0.5, 1.0), 2.1, _paint);
-      _paint.color = b >= 8 ? const Color(0xFFFFF9C4) : stamenLight;
-      canvas.drawCircle(bo, 2.0, _paint);
-    }
+    for (int b = 0; b < stamenAngles.length; b++) {
+      final sa = stamenAngles[b];
+      final dist = b >= 8 ? 3.8 : 7.6;
+      final tip = Offset(math.cos(sa) * dist, 1.5 + math.sin(sa) * dist * 0.72);
+      final base = Offset(math.cos(sa) * dist * 0.35, 2.0 + math.sin(sa) * dist * 0.2);
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.05
+        ..strokeCap = StrokeCap.round
+        ..color = stamenDeep.withValues(alpha: 0.75);
+      canvas.drawLine(base, tip, _paint);
 
-    // Layer 4: 2 Foreshortened Front-Lip Petals cupping neatly beneath the golden pollen heart!
-    drawPlumpHeartPetal(
-      angleDeg: -152,
-      length: 28.5,
-      halfWidth: 12.4,
-      baseAnchorY: 5.5,
-      isFront: true,
+      _paint
+        ..style = PaintingStyle.fill
+        ..shader = ui.Gradient.radial(
+          tip.translate(-0.6, -0.6),
+          2.6,
+          [const Color(0xFFFFFCE0), stamenLight, stamenDeep],
+          const [0.0, 0.55, 1.0],
+        );
+      canvas.drawCircle(tip, b >= 8 ? 2.1 : 1.85, _paint);
+    }
+    _paint.shader = null;
+
+    // Layer 4: Foreground Lower Cupping Petals (`azimuth ~ ±2.55`) overlapping throat edge
+    _draw3DSculptedPetal(
+      canvas,
+      azimuthRad: -2.48,
+      cupElevationRad: cupElevation - 0.14,
+      length: 30.5,
+      halfWidth: 12.6,
+      baseRadius: 3.8,
+      tipCol: tipCol,
+      midCol: midCol,
+      throatCol: throatCol,
     );
-    drawPlumpHeartPetal(
-      angleDeg: 152,
-      length: 28.5,
-      halfWidth: 12.4,
-      baseAnchorY: 5.5,
-      isFront: true,
+    _draw3DSculptedPetal(
+      canvas,
+      azimuthRad: 2.48,
+      cupElevationRad: cupElevation - 0.14,
+      length: 30.5,
+      halfWidth: 12.6,
+      baseRadius: 3.8,
+      tipCol: tipCol,
+      midCol: midCol,
+      throatCol: throatCol,
     );
 
     canvas.restore();
   }
 
+  /// 3D Sunflower with Alternating Saffron/Gold Ray Petals & 34-Seed Fibonacci Dome.
   void _drawCupped3DSunflower(
     Canvas canvas, {
     required Offset center,
@@ -3497,56 +4178,108 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.rotate(faceTilt);
-    canvas.scale(appearScale * spread, appearScale * spread * 0.84);
+    canvas.scale(appearScale * spread, appearScale * spread * 0.78);
 
+    // 2 Tiers of Golden Sunflower Ray Petals sorted back-to-front by Y!
+    final petalIndices = <({double angle, bool isInner})>[];
     for (int ring = 0; ring < 2; ring++) {
       final offsetAngle = ring * (math.pi / 12.0);
       for (int i = 0; i < 12; i++) {
-        canvas.save();
-        canvas.rotate((i * math.pi * 2.0) / 12.0 + offsetAngle);
-        final tipY = ring == 0 ? -36.0 : -32.0;
-        _petalPath
-          ..reset()
-          ..moveTo(0, -9)
-          ..cubicTo(-7.8, -18, -7.2, tipY * 0.82, 0, tipY)
-          ..cubicTo(7.2, tipY * 0.82, 7.8, -18, 0, -9)
-          ..close();
-        _paint
-          ..style = PaintingStyle.fill
-          ..color = Colors.white
-          ..shader = ui.Gradient.linear(
-            Offset(0, tipY),
-            const Offset(0, -9),
-            ring == 0
-                ? const [Color(0xFFFFE066), Color(0xFFEA6C00)]
-                : const [Color(0xFFFFF59D), Color(0xFFFFA000)],
-          );
-        canvas.drawPath(_petalPath, _paint);
-        canvas.restore();
+        petalIndices.add((
+          angle: (i * math.pi * 2.0) / 12.0 + offsetAngle,
+          isInner: ring == 1,
+        ));
       }
+    }
+    // Sort by cos(angle) descending so back/top petals draw before foreground bottom petals
+    petalIndices.sort(
+      (a, b) => math.cos(b.angle).compareTo(math.cos(a.angle)),
+    );
+
+    for (final p in petalIndices) {
+      canvas.save();
+      canvas.rotate(p.angle);
+      final tipY = p.isInner ? -33.5 : -37.5;
+      _petalPath
+        ..reset()
+        ..moveTo(0, -10)
+        ..cubicTo(-7.2, -18, -6.4, tipY * 0.80, 0, tipY)
+        ..cubicTo(6.4, tipY * 0.80, 7.2, -18, 0, -10)
+        ..close();
+
+      // Subtle inter-petal shadow
+      _paint
+        ..style = PaintingStyle.fill
+        ..shader = null
+        ..color = const Color(0x366D2800);
+      canvas.drawPath(_petalPath.shift(const Offset(0.5, 1.6)), _paint);
+
+      _paint
+        ..color = Colors.white
+        ..shader = ui.Gradient.linear(
+          Offset(0, tipY),
+          const Offset(0, -10),
+          p.isInner
+              ? const [Color(0xFFFFFA9C), Color(0xFFFFB300), Color(0xFFD65E00)]
+              : const [Color(0xFFFFE45E), Color(0xFFFF9300), Color(0xFFB33E00)],
+          const [0.0, 0.56, 1.0],
+        );
+      canvas.drawPath(_petalPath, _paint);
+
+      // Subtle petal longitudinal crease
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.9
+        ..shader = null
+        ..color = const Color(0x389C3C00);
+      canvas.drawLine(const Offset(0, -14), Offset(0, tipY * 0.78), _paint);
+      canvas.restore();
     }
     _paint.shader = null;
 
-    // Rich 3/4 cushioned bronze-amber seed disk
-    _paint
-      ..color = Colors.white
-      ..shader = ui.Gradient.radial(
-        const Offset(-3, -3),
-        16,
-        const [Color(0xFF8D5524), Color(0xFF3E2014)],
-      );
-    canvas.drawCircle(Offset.zero, 14.5, _paint);
-    _paint.shader = null;
+    // 3D Domed Brown-Bronze Capitulum Disk + Fibonnaci Seed Pattern
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..maskFilter = _blurTight
+      ..color = const Color(0x662B1206);
+    canvas.drawCircle(const Offset(0, 1.5), 16.5, _fxPaint);
+    _fxPaint.maskFilter = null;
 
     _paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = const Color(0xDDFFB300);
-    canvas.drawCircle(Offset.zero, 13.0, _paint);
+      ..style = PaintingStyle.fill
+      ..color = Colors.white
+      ..shader = ui.Gradient.radial(
+        const Offset(-3.5, -4.0),
+        17.0,
+        const [
+          Color(0xFFA6662C),
+          Color(0xFF5D3118),
+          Color(0xFF2B1308),
+        ],
+        const [0.0, 0.58, 1.0],
+      );
+    canvas.drawCircle(Offset.zero, 15.2, _paint);
+    _paint.shader = null;
+
+    // 34 Fibonacci Golden-Angle (`2.399963 rad`) florets curving over 3D dome
+    const goldenAngle = 2.3999632297;
+    for (int s = 0; s < 34; s++) {
+      final frac = math.sqrt((s + 0.5) / 34.0);
+      final r = 13.6 * frac;
+      final a = s * goldenAngle;
+      final sx = math.cos(a) * r;
+      final sy = math.sin(a) * r;
+      final isOuterRim = frac > 0.76;
+      _paint.color = isOuterRim
+          ? const Color(0xFFFFCB3B)
+          : (s.isEven ? const Color(0xFFD68D2E) : const Color(0xFF3E1C0C));
+      canvas.drawCircle(Offset(sx, sy), isOuterRim ? 1.45 : 1.15, _paint);
+    }
 
     canvas.restore();
   }
 
+  /// 3-Tier Opalescent 3D Crystal Lotus with Translucent Prismatic Sheen & Nectar Crown.
   void _drawCupped3DCrystalLotus(
     Canvas canvas, {
     required Offset center,
@@ -3562,52 +4295,92 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.rotate(faceTilt);
-    canvas.scale(appearScale * spread, appearScale * spread * 0.84);
+    canvas.scale(appearScale * spread, appearScale * spread * 0.80);
 
+    // 2 Outer Lotus Petal Rings sorted back-to-front by Y
+    final petals = <({double angle, int ring})>[];
     for (int ring = 0; ring < 2; ring++) {
-      const count = 8;
-      final rotOffset = ring * (math.pi / count);
-      final tipY = ring == 0 ? -36.0 : -28.0;
-      for (int i = 0; i < count; i++) {
-        canvas.save();
-        canvas.rotate((i * math.pi * 2.0) / count + rotOffset);
-        _petalPath
-          ..reset()
-          ..moveTo(0, 0)
-          ..cubicTo(-11, -10, -10, tipY * 0.76, 0, tipY)
-          ..cubicTo(10, tipY * 0.76, 11, -10, 0, 0)
-          ..close();
-        _paint
-          ..style = PaintingStyle.fill
-          ..color = Colors.white
-          ..shader = ui.Gradient.linear(
-            Offset(0, tipY),
-            Offset.zero,
-            ring == 0
-                ? const [Color(0xFFF3E5F5), Color(0xFFBA68C8)]
-                : const [Color(0xFFFFFFFF), Color(0xFF80DEEA)],
-          );
-        canvas.drawPath(_petalPath, _paint);
-        _paint.shader = null;
-
-        _paint
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.0
-          ..color = const Color(0xCCFFFFFF);
-        canvas.drawPath(_petalPath, _paint);
-        canvas.restore();
+      final rotOffset = ring * (math.pi / 8.0);
+      for (int i = 0; i < 8; i++) {
+        petals.add((angle: (i * math.pi * 2.0) / 8.0 + rotOffset, ring: ring));
       }
     }
+    petals.sort((a, b) => math.cos(b.angle).compareTo(math.cos(a.angle)));
+
+    for (final p in petals) {
+      canvas.save();
+      canvas.rotate(p.angle);
+      final tipY = p.ring == 0 ? -38.0 : -30.5;
+      _petalPath
+        ..reset()
+        ..moveTo(0, 0)
+        ..cubicTo(-11.5, -10, -10.0, tipY * 0.74, 0, tipY)
+        ..cubicTo(10.0, tipY * 0.74, 11.5, -10, 0, 0)
+        ..close();
+
+      _paint
+        ..style = PaintingStyle.fill
+        ..color = Colors.white
+        ..shader = ui.Gradient.linear(
+          Offset(0, tipY),
+          Offset.zero,
+          p.ring == 0
+              ? const [
+                  Color(0xFFFDF2FF),
+                  Color(0xFFD596F0),
+                  Color(0xFF7B339D),
+                ]
+              : const [
+                  Color(0xFFFFFFFF),
+                  Color(0xFFA8F6FF),
+                  Color(0xFF3CBAD8),
+                ],
+          const [0.0, 0.56, 1.0],
+        );
+      canvas.drawPath(_petalPath, _paint);
+      _paint.shader = null;
+
+      // Iridescent crystal facet edge & central keel line
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.15
+        ..color = Colors.white.withValues(alpha: 0.78);
+      canvas.drawPath(_petalPath, _paint);
+      _paint
+        ..strokeWidth = 0.9
+        ..color = Colors.white.withValues(alpha: 0.42);
+      canvas.drawLine(const Offset(0, -4), Offset(0, tipY * 0.85), _paint);
+      canvas.restore();
+    }
+
+    // Inner upright opalescent crown halo + glowing golden lotus receptacle pod
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..maskFilter = _blurTight
+      ..color = const Color(0x88FFF69E);
+    canvas.drawCircle(Offset.zero, 12.5, _fxPaint);
+    _fxPaint.maskFilter = null;
 
     _paint
       ..style = PaintingStyle.fill
-      ..color = const Color(0xFFFFF59D);
-    canvas.drawCircle(Offset.zero, 8.5, _paint);
+      ..color = Colors.white
+      ..shader = ui.Gradient.radial(
+        const Offset(-2.5, -2.5),
+        10.5,
+        const [
+          Color(0xFFFFFFFF),
+          Color(0xFFFFF39C),
+          Color(0xFFF29C1F),
+        ],
+        const [0.0, 0.55, 1.0],
+      );
+    canvas.drawCircle(Offset.zero, 9.2, _paint);
+    _paint.shader = null;
 
     canvas.restore();
   }
 
-  /// Physics-Driven Progressive Waterfall Ribbon:
+  /// Physics-Driven Progressive Waterfall Ribbon & 3D Crown Splash:
   /// - `headT` (`0 -> 1`): stream shoots from tilted jar lip down to `waterImpactPt`
   /// - `tailT` (`0 -> 1`): stream detaches from jar lip and plunges into the water at finish!
   void _drawProgressiveWaterfallAndSplash({
@@ -3627,7 +4400,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       jarCenter.dy + 4.0 * math.sin(jarTiltRad) - 31.0 * math.cos(jarTiltRad),
     );
 
-    final flutter = 1.3 * math.sin(ambientPhase * 4.0);
+    final flutter = 1.4 * math.sin(ambientPhase * 4.0);
     final c1 = Offset(
       spoutPt.dx + (vaseMouthCenter.dx - spoutPt.dx) * 0.62 + 8,
       spoutPt.dy + 4,
@@ -3659,7 +4432,6 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
     final widthScale = (1.0 - tailT * 0.55).clamp(0.35, 1.0);
 
-    // Sample left & right edges along `[tStart .. tEnd]` for a silky progressive fluid ribbon
     const steps = 14;
     final leftPts = <Offset>[];
     final rightPts = <Offset>[];
@@ -3668,7 +4440,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       final u = i / steps;
       final t = ui.lerpDouble(tStart, tEnd, u)!;
       final pt = evalStream(t);
-      final halfW = ui.lerpDouble(5.6, 8.8, t)! *
+      final halfW = ui.lerpDouble(5.4, 8.8, t)! *
           widthScale *
           (i == 0 && tailT > 0.01 ? 0.35 : 1.0);
       leftPts.add(Offset(pt.dx - halfW, pt.dy + (1.0 - t) * 2.0));
@@ -3691,6 +4463,18 @@ class _WaterGardenMasterPainter extends CustomPainter {
     }
     _scratchPath.close();
 
+    // Soft additive mist sheath around waterfall
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..shader = null
+      ..maskFilter = _blurTight
+      ..blendMode = BlendMode.plus
+      ..color = const Color(0x4064F6FF);
+    canvas.drawPath(_scratchPath, _fxPaint);
+    _fxPaint
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver;
+
     _paint
       ..style = PaintingStyle.fill
       ..color = Colors.white
@@ -3698,8 +4482,8 @@ class _WaterGardenMasterPainter extends CustomPainter {
         spoutPt,
         waterImpactPt,
         const [
-          Color(0xF0A8FFFF),
-          Color(0xF032D8FA),
+          Color(0xF0B2FFFF),
+          Color(0xF038DCFA),
           Color(0xEA0FA4E8),
         ],
         const [0.0, 0.48, 1.0],
@@ -3707,14 +4491,13 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.drawPath(_scratchPath, _paint);
     _paint.shader = null;
 
-    // Glossy outer fluid edge sheen
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = const Color(0xB4FFFFFF);
+      ..strokeWidth = 1.4
+      ..color = const Color(0xC2FFFFFF);
     canvas.drawPath(_scratchPath, _paint);
 
-    // Animated rushing white foam streaks sliding down the waterfall
+    // High-speed fluid foam highlights rushing down stream
     _paint
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
@@ -3726,10 +4509,10 @@ class _WaterGardenMasterPainter extends CustomPainter {
       final st1 = rawT1.clamp(tStart, tEnd);
       final p0 = evalStream(st0);
       final p1 = evalStream(st1);
-      final lateral = (s.isEven ? -1.9 : 1.9) * widthScale;
+      final lateral = (s.isEven ? -1.8 : 1.8) * widthScale;
       _paint
-        ..strokeWidth = (2.3 - (s % 2) * 0.5) * widthScale
-        ..color = Colors.white.withValues(alpha: 0.80);
+        ..strokeWidth = (2.2 - (s % 2) * 0.5) * widthScale
+        ..color = Colors.white.withValues(alpha: 0.84);
       canvas.drawLine(
         p0.translate(lateral, 0),
         p1.translate(lateral, 0),
@@ -3737,7 +4520,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       );
     }
 
-    // Trailing water droplets detaching after the stream tail!
+    // Trailing water droplets detaching after stream tail
     if (tailT > 0.05 && tailT < 0.95) {
       _paint
         ..style = PaintingStyle.fill
@@ -3750,41 +4533,82 @@ class _WaterGardenMasterPainter extends CustomPainter {
       }
     }
 
-    // Crown splash collar & parabolic leaping droplets once stream reaches `waterImpactPt`!
+    // 3D Crown Splash Collar, Spikes, Impact Mist & Parabolic Droplets
     if (headT >= 0.92 && tailT < 0.92) {
       final splashAlpha = (1.0 - tailT).clamp(0.0, 1.0);
-      _paint
+      final wScale = widthScale;
+
+      _fxPaint
         ..style = PaintingStyle.fill
-        ..color = Colors.white.withValues(alpha: 0.86 * splashAlpha);
+        ..maskFilter = _blurTight
+        ..color = const Color(0x88AAFFFF).withValues(alpha: 0.65 * splashAlpha);
       canvas.drawOval(
         Rect.fromCenter(
           center: waterImpactPt,
-          width: 28.0 * widthScale,
-          height: 8.0 * widthScale,
+          width: 34.0 * wScale,
+          height: 11.0 * wScale,
         ),
-        _paint,
+        _fxPaint,
       );
+      _fxPaint.maskFilter = null;
 
+      // Sculpted 5-spike 3D splash crown
+      for (int k = 0; k < 5; k++) {
+        final frac = (k - 2) / 2.0; // -1 .. +1
+        final baseX = waterImpactPt.dx + frac * 11.0 * wScale;
+        final spikeH = (11.0 - frac.abs() * 3.5) * wScale *
+            (0.75 + 0.25 * math.sin(ambientPhase * 5.0 + k));
+        final tipX = baseX + frac * 6.5 * wScale;
+        final tipY = waterImpactPt.dy - spikeH;
+        _scratchPath
+          ..reset()
+          ..moveTo(baseX - 3.2 * wScale, waterImpactPt.dy)
+          ..quadraticBezierTo(baseX, waterImpactPt.dy - spikeH * 0.5, tipX, tipY)
+          ..quadraticBezierTo(
+            baseX + 2.5 * wScale,
+            waterImpactPt.dy - spikeH * 0.45,
+            baseX + 3.4 * wScale,
+            waterImpactPt.dy,
+          )
+          ..close();
+        _paint
+          ..style = PaintingStyle.fill
+          ..color = const Color(0xE8D8FFFF).withValues(alpha: 0.86 * splashAlpha);
+        canvas.drawPath(_scratchPath, _paint);
+      }
+
+      // Parabolic glistening water droplets
       for (int i = 0; i < 8; i++) {
         final cycle = ((ambientPhase * 2.5 / math.pi) + i * 0.125) % 1.0;
         final spreadAngle = -math.pi * 0.12 - (i / 7.0) * math.pi * 0.76;
-        final horiz = math.cos(spreadAngle) * (9.0 + 23.0 * cycle);
+        final horiz = math.cos(spreadAngle) * (9.0 + 24.0 * cycle);
         final vert =
-            math.sin(spreadAngle) * 21.0 * cycle + 18.0 * cycle * cycle;
-        final dropR = (3.4 * (1.0 - cycle * 0.62)) * widthScale;
+            math.sin(spreadAngle) * 22.0 * cycle + 19.0 * cycle * cycle;
+        final dropR = (3.3 * (1.0 - cycle * 0.62)) * wScale;
+        final dp = Offset(waterImpactPt.dx + horiz, waterImpactPt.dy + vert - 4);
 
+        _paint
+          ..style = PaintingStyle.fill
+          ..color = const Color(0xFFB4FFFF).withValues(
+            alpha: (0.90 * (1.0 - cycle) * splashAlpha).clamp(0.0, 1.0),
+          );
+        canvas.drawCircle(dp, dropR, _paint);
         _paint.color = Colors.white.withValues(
-          alpha: (0.92 * (1.0 - cycle) * splashAlpha).clamp(0.0, 1.0),
+          alpha: (0.95 * (1.0 - cycle) * splashAlpha).clamp(0.0, 1.0),
         );
         canvas.drawCircle(
-          Offset(waterImpactPt.dx + horiz, waterImpactPt.dy + vert - 3),
-          dropR,
+          dp.translate(-dropR * 0.28, -dropR * 0.28),
+          dropR * 0.36,
           _paint,
         );
       }
     }
   }
 
+  /// Front Sculptural 3D Glass Wall:
+  /// - Shape-specific 3D convex crystal flutes, faceted diamond planes, or gold/azure trim
+  /// - Feathered studio window reflection & Fresnel rim shading (NO harsh uniform cartoon border!)
+  /// - Heavy crystal base specular lens + 3D toroidal glass mouth collar
   void _drawFrontGlassOverlay(
     Canvas canvas,
     double cx,
@@ -3792,187 +4616,340 @@ class _WaterGardenMasterPainter extends CustomPainter {
     VaseShapeType type, {
     required bool hasWater,
   }) {
-    // 1. Shape-specific Sculpted 3D Crystal Flutes / Facets (Panel 6 `flutedCrystal`!)
-    if (type == VaseShapeType.flutedCrystal) {
-      canvas.save();
-      canvas.clipPath(_vaseOuterPath);
-      const ribFractions = [-0.68, -0.35, 0.0, 0.35, 0.68];
-      for (final f in ribFractions) {
-        _scratchPath
-          ..reset()
-          ..moveTo(cx + m.neckHalfW * f * 0.88, m.neckY)
-          ..cubicTo(
-            cx + m.bellyHalfW * f * 1.06,
-            m.neckY + (m.baseY - m.neckY) * 0.25,
-            cx + m.bellyHalfW * f * 1.05,
-            m.neckY + (m.baseY - m.neckY) * 0.80,
-            cx + m.baseHalfW * f * 0.85,
-            m.baseY,
-          );
-        _paint
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 10.5
-          ..color = const Color(0x30ECFFFF);
-        canvas.drawPath(_scratchPath, _paint);
+    final palette = _GlassPalette.forShape(type);
 
-        _paint
-          ..strokeWidth = 2.6
-          ..color = const Color(0x88FFFFFF);
-        canvas.drawPath(_scratchPath, _paint);
-
-        _paint
-          ..strokeWidth = 2.8
-          ..color = const Color(0x34066280);
-        canvas.drawPath(_scratchPath.shift(const Offset(3.4, 0)), _paint);
-      }
-      canvas.restore();
-    } else if (type == VaseShapeType.prismLotus) {
-      canvas.save();
-      canvas.clipPath(_vaseOuterPath);
-      final midY = (m.neckY + m.baseY) * 0.5;
-      _paint
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0
-        ..color = const Color(0x78FFFFFF);
-      canvas.drawLine(
-        Offset(cx - m.neckHalfW * 0.4, m.neckY),
-        Offset(cx - m.bellyHalfW * 0.5, midY),
-        _paint,
-      );
-      canvas.drawLine(
-        Offset(cx - m.bellyHalfW * 0.5, midY),
-        Offset(cx, m.baseY - 4),
-        _paint,
-      );
-      canvas.drawLine(
-        Offset(cx + m.neckHalfW * 0.4, m.neckY),
-        Offset(cx + m.bellyHalfW * 0.5, midY),
-        _paint,
-      );
-      canvas.drawLine(
-        Offset(cx + m.bellyHalfW * 0.5, midY),
-        Offset(cx, m.baseY - 4),
-        _paint,
-      );
-      canvas.restore();
-    }
-
-    // 2. Signature Left Curved Window-Light Specular Glass Reflection
+    // 1. Shape-Specific Sculpted Surface Details (clipped to outer contour)
     canvas.save();
     canvas.clipPath(_vaseOuterPath);
-    final highlightTopY = m.neckY + 13;
-    final highlightBotY = m.baseY - 24;
+
+    if (type == VaseShapeType.flutedCrystal) {
+      // 6 convex 3D vertical melon ribs sampled along exact profile
+      const ribFractions = [-0.72, -0.44, -0.15, 0.15, 0.44, 0.72];
+      const ribSteps = 18;
+      for (final f in ribFractions) {
+        _scratchPath.reset();
+        for (int i = 0; i <= ribSteps; i++) {
+          final y = ui.lerpDouble(m.neckY + 2, m.baseY - 4, i / ribSteps)!;
+          final x = cx + m.outerHalfWidthAt(y, type) * f;
+          if (i == 0) {
+            _scratchPath.moveTo(x, y);
+          } else {
+            _scratchPath.lineTo(x, y);
+          }
+        }
+        // Broad convex refraction glow + left sunlit highlight + right valley AO groove
+        _paint
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 10.0
+          ..strokeCap = StrokeCap.round
+          ..shader = null
+          ..color = const Color(0x28ECFFFF);
+        canvas.drawPath(_scratchPath, _paint);
+
+        _paint
+          ..strokeWidth = 2.4
+          ..color = const Color(0x8EFFFFFF);
+        canvas.drawPath(_scratchPath.shift(const Offset(-1.2, 0)), _paint);
+
+        _paint
+          ..strokeWidth = 2.4
+          ..color = const Color(0x460D487A);
+        canvas.drawPath(_scratchPath.shift(const Offset(3.0, 0)), _paint);
+      }
+    } else if (type == VaseShapeType.prismLotus) {
+      // Crisp multi-plane diamond facets catching alternating cool highlight & sapphire shadow
+      final midH = m.baseY - m.neckY;
+      final yTop = m.neckY;
+      final yUpper = m.neckY + midH * 0.28;
+      final yBelly = m.neckY + midH * 0.48;
+      final yLower = m.neckY + midH * 0.74;
+      final yBot = m.baseY - 4.0;
+
+      final facetCols = [
+        (0.0, 0.45, const Color(0x26FFFFFF)),
+        (-0.45, 0.0, const Color(0x42D8F7FF)),
+        (-0.98, -0.45, const Color(0x2A143678)),
+        (0.45, 0.98, const Color(0x2E184888)),
+      ];
+
+      final tiers = <(double, double)>[
+        (yTop, yUpper),
+        (yUpper, yBelly),
+        (yBelly, yLower),
+        (yLower, yBot),
+      ];
+
+      for (int ti = 0; ti < tiers.length; ti++) {
+        final (y0, y1) = tiers[ti];
+        final hw0 = m.outerHalfWidthAt(y0, type);
+        final hw1 = m.outerHalfWidthAt(y1, type);
+        for (int fi = 0; fi < facetCols.length; fi++) {
+          final (fL, fR, col) = facetCols[fi];
+          _scratchPath
+            ..reset()
+            ..moveTo(cx + hw0 * fL, y0)
+            ..lineTo(cx + hw0 * fR, y0)
+            ..lineTo(cx + hw1 * fR, y1)
+            ..lineTo(cx + hw1 * fL, y1)
+            ..close();
+          _paint
+            ..style = PaintingStyle.fill
+            ..shader = null
+            ..color = col.withValues(alpha: (ti.isEven ? 0.22 : 0.14));
+          canvas.drawPath(_scratchPath, _paint);
+        }
+      }
+
+      // Luminous diamond ridge lines
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = const Color(0x88FFFFFF);
+      for (final f in const [-0.46, 0.0, 0.46]) {
+        _scratchPath
+          ..reset()
+          ..moveTo(cx + m.outerHalfWidthAt(yTop, type) * f, yTop)
+          ..lineTo(cx + m.outerHalfWidthAt(yUpper, type) * f, yUpper)
+          ..lineTo(cx + m.outerHalfWidthAt(yBelly, type) * f, yBelly)
+          ..lineTo(cx + m.outerHalfWidthAt(yLower, type) * f, yLower)
+          ..lineTo(cx + m.outerHalfWidthAt(yBot, type) * f, yBot);
+        canvas.drawPath(_scratchPath, _paint);
+      }
+      // Horizontal facet waist rings
+      for (final gy in [yUpper, yBelly, yLower]) {
+        final ghw = m.outerHalfWidthAt(gy, type);
+        final geh = m.ellipseHalfHeight(ghw) * 0.7;
+        canvas.drawArc(
+          Rect.fromCenter(center: Offset(cx, gy), width: ghw * 2.0, height: geh * 2),
+          0.06,
+          math.pi - 0.12,
+          false,
+          _paint,
+        );
+      }
+    }
+
+    // 2. Signature Feathered Left Curved Studio Softbox Reflection (smooth spline along exact vase curve)
+    final hlTopY = m.neckY + 8.0;
+    final hlBotY = m.innerBaseY - 10.0;
+    const hlSteps = 32;
+    final leftBandOuter = List<Offset>.generate(hlSteps + 1, (i) {
+      final y = ui.lerpDouble(hlTopY, hlBotY, i / hlSteps)!;
+      final hw = m.outerHalfWidthAt(y, type);
+      return Offset(cx - hw * 0.80, y);
+    });
+    final leftBandInner = List<Offset>.generate(hlSteps + 1, (i) {
+      final y = ui.lerpDouble(hlTopY, hlBotY, i / hlSteps)!;
+      final hw = m.outerHalfWidthAt(y, type);
+      return Offset(cx - hw * 0.61, y);
+    });
     _scratchPath
       ..reset()
-      ..moveTo(cx - m.neckHalfW * 0.68, highlightTopY)
-      ..cubicTo(
-        cx - m.bellyHalfW * 0.92,
-        highlightTopY + (highlightBotY - highlightTopY) * 0.25,
-        cx - m.bellyHalfW * 0.90,
-        highlightTopY + (highlightBotY - highlightTopY) * 0.78,
-        cx - m.baseHalfW * 0.62,
-        highlightBotY,
-      )
-      ..cubicTo(
-        cx - m.bellyHalfW * 0.74,
-        highlightTopY + (highlightBotY - highlightTopY) * 0.74,
-        cx - m.bellyHalfW * 0.76,
-        highlightTopY + (highlightBotY - highlightTopY) * 0.28,
-        cx - m.neckHalfW * 0.52,
-        highlightTopY + 4,
-      )
+      ..moveTo(leftBandOuter.first.dx, leftBandOuter.first.dy);
+    for (int i = 1; i < hlSteps; i++) {
+      final mid = Offset(
+        (leftBandOuter[i].dx + leftBandOuter[i + 1].dx) * 0.5,
+        (leftBandOuter[i].dy + leftBandOuter[i + 1].dy) * 0.5,
+      );
+      _scratchPath.quadraticBezierTo(
+        leftBandOuter[i].dx,
+        leftBandOuter[i].dy,
+        mid.dx,
+        mid.dy,
+      );
+    }
+    _scratchPath.lineTo(leftBandOuter.last.dx, leftBandOuter.last.dy);
+    _scratchPath.lineTo(leftBandInner.last.dx, leftBandInner.last.dy);
+    for (int i = hlSteps - 1; i > 0; i--) {
+      final mid = Offset(
+        (leftBandInner[i].dx + leftBandInner[i - 1].dx) * 0.5,
+        (leftBandInner[i].dy + leftBandInner[i - 1].dy) * 0.5,
+      );
+      _scratchPath.quadraticBezierTo(
+        leftBandInner[i].dx,
+        leftBandInner[i].dy,
+        mid.dx,
+        mid.dy,
+      );
+    }
+    _scratchPath
+      ..lineTo(leftBandInner.first.dx, leftBandInner.first.dy)
       ..close();
 
-    _paint
+    _fxPaint
       ..style = PaintingStyle.fill
+      ..maskFilter = _blurTight
+      ..shader = ui.Gradient.linear(
+        Offset(cx - m.bellyHalfW * 0.8, hlTopY),
+        Offset(cx - m.bellyHalfW * 0.5, hlBotY),
+        const [
+          Color(0xA8FFFFFF),
+          Color(0x52FFFFFF),
+          Color(0x0EFFFFFF),
+        ],
+        const [0.0, 0.52, 1.0],
+      );
+    canvas.drawPath(_scratchPath, _fxPaint);
+    _fxPaint
+      ..shader = null
+      ..maskFilter = null;
+
+    void traceSmoothCurve(double topY, double botY, double xFactor) {
+      const n = 24;
+      final pts = List<Offset>.generate(n + 1, (i) {
+        final y = ui.lerpDouble(topY, botY, i / n)!;
+        return Offset(cx + m.outerHalfWidthAt(y, type) * xFactor, y);
+      });
+      _scratchPath
+        ..reset()
+        ..moveTo(pts.first.dx, pts.first.dy);
+      for (int i = 1; i < n; i++) {
+        final mid = Offset(
+          (pts[i].dx + pts[i + 1].dx) * 0.5,
+          (pts[i].dy + pts[i + 1].dy) * 0.5,
+        );
+        _scratchPath.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
+      }
+      _scratchPath.lineTo(pts.last.dx, pts.last.dy);
+    }
+
+    // Sharp crisp secondary specular glint along left curve
+    _paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..shader = ui.Gradient.linear(
+        Offset(cx, hlTopY),
+        Offset(cx, hlBotY),
+        const [
+          Color(0xD8FFFFFF),
+          Color(0x4EFFFFFF),
+          Color(0x00FFFFFF),
+        ],
+        const [0.0, 0.5, 1.0],
+      );
+    traceSmoothCurve(hlTopY + 4, hlBotY - 12, -0.72);
+    canvas.drawPath(_scratchPath, _paint);
+
+    // Secondary warm cyan/ivory bounce rim along right curve
+    traceSmoothCurve(hlTopY + 12, hlBotY - 6, 0.82);
+    _paint
+      ..strokeWidth = 3.0
+      ..shader = null
+      ..color = palette.accentTint.withValues(alpha: 0.36);
+    canvas.drawPath(_scratchPath, _paint);
+
+    // Heavy Crystal Bottom Puck Front Specular Crescent
+    _scratchPath
+      ..reset()
+      ..moveTo(cx - m.baseHalfW * 0.78, m.baseY - 6)
+      ..quadraticBezierTo(
+        cx,
+        m.baseY + 7,
+        cx + m.baseHalfW * 0.78,
+        m.baseY - 6,
+      );
+    _paint
+      ..strokeWidth = 3.2
+      ..color = Colors.white.withValues(alpha: 0.52);
+    canvas.drawPath(_scratchPath, _paint);
+
+    canvas.restore();
+
+    // 3. Directional Fresnel Crystal Silhouette Edge (sunlit left-top, subtle sapphire right)
+    _paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
-        Offset(cx - m.bellyHalfW, highlightTopY),
-        Offset(cx - m.bellyHalfW * 0.6, highlightBotY),
-        const [
-          Color(0xBCFFFFFF),
-          Color(0x68FFFFFF),
-          Color(0x14FFFFFF),
+        Offset(cx - m.bellyHalfW, m.topRimY),
+        Offset(cx + m.bellyHalfW, m.baseY),
+        [
+          palette.rimHighlight.withValues(alpha: 0.80),
+          palette.edgeMid.withValues(alpha: 0.50),
+          palette.rimHighlight.withValues(alpha: 0.65),
         ],
         const [0.0, 0.55, 1.0],
       );
-    canvas.drawPath(_scratchPath, _paint);
+    canvas.drawPath(_vaseOuterPath, _paint);
     _paint.shader = null;
 
-    // Secondary slender right rim reflection
-    _scratchPath
-      ..reset()
-      ..moveTo(cx + m.neckHalfW * 0.65, highlightTopY + 12)
-      ..quadraticBezierTo(
-        cx + m.bellyHalfW * 0.88,
-        (highlightTopY + highlightBotY) * 0.5,
-        cx + m.baseHalfW * 0.64,
-        highlightBotY - 8,
-      );
-    _paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.6
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0x74FFFFFF);
-    canvas.drawPath(_scratchPath, _paint);
-
-    // Thick crystal glass bottom lens cushion highlight
-    _scratchPath
-      ..reset()
-      ..moveTo(cx - m.baseHalfW * 0.85, m.baseY - 8)
-      ..quadraticBezierTo(
-        cx,
-        m.baseY + 4,
-        cx + m.baseHalfW * 0.85,
-        m.baseY - 8,
-      );
-    _paint
-      ..strokeWidth = 5.6
-      ..color = const Color(0x9EE8FFFF);
-    canvas.drawPath(_scratchPath, _paint);
-    canvas.restore();
-
-    // 3. Outer Fresnel Crystal Rim Stroke
-    _paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.8
-      ..color = const Color(0xD2FFFFFF);
-    canvas.drawPath(_vaseOuterPath, _paint);
-
-    // Warm sunlit champagne-gold neck collar ring (`media_1794542235625_7780e9a4.png` Panel 3!)
+    // 4. Sculpted Neck Collar Band (Beveled brushed gold for royalTall/ovalCeramic or crystal ring)
     final neckRect = Rect.fromCenter(
-      center: Offset(cx, m.neckY + 1),
+      center: Offset(cx, m.neckY + 1.0),
       width: m.neckHalfW * 2.02,
-      height: 11,
+      height: m.ellipseHalfHeight(m.neckHalfW) * 1.32,
     );
-    _paint
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round
-      ..color = hasWater ? const Color(0x98FFE89E) : const Color(0x72E0FFFF);
-    canvas.drawArc(neckRect, 0.06, math.pi - 0.12, false, _paint);
+    if (type == VaseShapeType.royalTall || type == VaseShapeType.ovalCeramic) {
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.4
+        ..strokeCap = StrokeCap.round
+        ..color = Colors.white
+        ..shader = ui.Gradient.linear(
+          Offset(cx - m.neckHalfW, m.neckY),
+          Offset(cx + m.neckHalfW, m.neckY),
+          const [
+            Color(0xCC9E6B12),
+            Color(0xF8FFF2AA),
+            Color(0xEDD1932C),
+            Color(0xCC7A4E0B),
+          ],
+          const [0.0, 0.34, 0.68, 1.0],
+        );
+      canvas.drawArc(neckRect, 0.05, math.pi - 0.10, false, _paint);
+      _paint.shader = null;
 
-    // 4. Rolled 3D Crystal Collar & Front Lip (occluding stems & incoming stream!)
+      // Center neck pearl jewel dot
+      _paint
+        ..style = PaintingStyle.fill
+        ..color = type == VaseShapeType.royalTall
+            ? const Color(0xFFFFD54F)
+            : const Color(0xFFA8F8EC);
+      canvas.drawCircle(
+        Offset(cx, m.neckY + m.ellipseHalfHeight(m.neckHalfW) * 0.72),
+        3.0,
+        _paint,
+      );
+    } else {
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.1
+        ..strokeCap = StrokeCap.round
+        ..color = hasWater
+            ? const Color(0x7CFFEAA4)
+            : const Color(0x66E0FFFF);
+      canvas.drawArc(neckRect, 0.06, math.pi - 0.12, false, _paint);
+    }
+
+    // 5. Rolled 3D Toroidal Glass Mouth Lip (occluding stems cleanly)
+    final rimEH = m.ellipseHalfHeight(m.mouthHalfW);
     final rimRect = Rect.fromCenter(
-      center: Offset(cx, m.topRimY + 2),
+      center: Offset(cx, m.topRimY + 1.5),
       width: m.mouthHalfW * 2.0,
-      height: 20,
+      height: rimEH * 2.0,
     );
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 5.8
+      ..strokeWidth = 5.0
       ..strokeCap = StrokeCap.round
-      ..color = const Color(0x7EB2F5FF);
-    canvas.drawArc(rimRect, 0.05, math.pi - 0.10, false, _paint);
+      ..color = palette.innerTint.withValues(alpha: 0.64);
+    canvas.drawArc(rimRect, 0.04, math.pi - 0.08, false, _paint);
 
     _paint
-      ..strokeWidth = 2.8
-      ..color = const Color(0xF6FFFFFF);
+      ..strokeWidth = 2.4
+      ..color = Colors.white.withValues(alpha: 0.86);
     canvas.drawArc(rimRect, 0.08, math.pi - 0.16, false, _paint);
+
+    _paint
+      ..strokeWidth = 1.4
+      ..color = Colors.white;
+    canvas.drawArc(rimRect, math.pi * 0.62, 0.32, false, _paint);
   }
 
-  /// Miniature twin of the Ingame Crystal Potion Jar (`Panel 3`):
-  /// Bulbous crystal jar tilted ~58°, gravity-level draining cyan liquid inside,
-  /// twisted golden rope collar, and pendulum-swinging butter-cream `2048` tag!
+  /// Detailed 3D Tilted Mini Crystal Potion Jar (matching `MagicSandJarComponent` craft):
+  /// Fresnel glass chamber, thick glass bottom crescent, gravity-leveled cyan potion with
+  /// 3D elliptical top meniscus, braided gold rope + knot, and bevelled `2048` hang-tag!
   void _drawTiltedMiniPotionJar({
     required Canvas canvas,
     required Offset jarCenter,
@@ -3994,20 +4971,33 @@ class _WaterGardenMasterPainter extends CustomPainter {
     _scratchPath
       ..reset()
       ..moveTo(-13, -32)
-      ..lineTo(-12, -21)
-      ..cubicTo(-35, -14, -36, 22, -17, 30)
-      ..quadraticBezierTo(0, 35, 17, 30)
-      ..cubicTo(36, 22, 35, -14, 12, -21)
-      ..lineTo(13, -32)
+      ..quadraticBezierTo(-13, -24, -12, -20)
+      ..cubicTo(-40, -13, -41, 22, -16, 31)
+      ..quadraticBezierTo(0, 36, 16, 31)
+      ..cubicTo(41, 22, 40, -13, 12, -20)
+      ..quadraticBezierTo(13, -24, 13, -32)
       ..close();
 
+    // 1. Fresnel 3D Mini Jar Glass Shell
     _paint
       ..style = PaintingStyle.fill
-      ..shader = null
-      ..color = const Color(0x7CDCFCFF);
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        const Offset(-34, 0),
+        const Offset(34, 0),
+        const [
+          Color(0xB80E6496),
+          Color(0x524ED8FA),
+          Color(0x28DCFDFF),
+          Color(0x584ED8FA),
+          Color(0xB80E6496),
+        ],
+        const [0.0, 0.20, 0.50, 0.80, 1.0],
+      );
     canvas.drawPath(_scratchPath, _paint);
+    _paint.shader = null;
 
-    // Draining cyan water inside the tilted jar (kept horizontal to world gravity!)
+    // 2. Draining Potion Liquid (kept horizontal to world gravity!)
     canvas.save();
     canvas.clipPath(_scratchPath);
     canvas.rotate(-tiltRad);
@@ -4024,14 +5014,24 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.drawRect(Rect.fromLTRB(-44, liquidTop, 44, 44), _paint);
     _paint.shader = null;
 
+    // 3D elliptical liquid top surface in gravity orientation
+    final surfRect = Rect.fromCenter(
+      center: Offset(0, liquidTop),
+      width: 68,
+      height: 11,
+    );
+    _paint
+      ..style = PaintingStyle.fill
+      ..color = const Color(0xE8B4FFFF);
+    canvas.drawOval(surfRect, _paint);
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = const Color(0xEEFFFFFF);
-    canvas.drawLine(Offset(-36, liquidTop), Offset(36, liquidTop), _paint);
+      ..strokeWidth = 1.6
+      ..color = Colors.white;
+    canvas.drawOval(surfRect, _paint);
     canvas.restore();
 
-    // Specular belly highlight & crystal outline
+    // 3. Thick Crystal Belly Glint & Bottom Crescent Lens
     _paint
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.2
@@ -4044,36 +5044,62 @@ class _WaterGardenMasterPainter extends CustomPainter {
       false,
       _paint,
     );
-
     _paint
-      ..strokeWidth = 2.4
-      ..color = const Color(0xEEFFFFFF);
-    canvas.drawPath(_scratchPath, _paint);
-
-    _paint.strokeWidth = 3.0;
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(0, -32), width: 29, height: 8),
+      ..strokeWidth = 2.6
+      ..color = const Color(0x9AE2FDFF);
+    canvas.drawArc(
+      const Rect.fromLTWH(-20, 12, 40, 19),
+      0.16,
+      math.pi - 0.32,
+      false,
       _paint,
     );
 
-    // Twisted Golden Rope Collar around neck (`y = -21`)
+    // Subtle Fresnel glass edge + 3D toroidal jar mouth rim
     _paint
-      ..strokeWidth = 4.0
-      ..color = const Color(0xFFF59E0B);
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..color = const Color(0xDEE8FCFF);
+    canvas.drawPath(_scratchPath, _paint);
+
+    final mouthRect = Rect.fromCenter(
+      center: const Offset(0, -32),
+      width: 29,
+      height: 8.5,
+    );
+    _paint
+      ..strokeWidth = 4.2
+      ..color = const Color(0x889AF4FF);
+    canvas.drawOval(mouthRect, _paint);
+    _paint
+      ..strokeWidth = 2.0
+      ..color = Colors.white;
+    canvas.drawOval(mouthRect, _paint);
+
+    // 4. Sculpted Brushed-Gold Collar Rope & Bead Knot
+    _paint
+      ..strokeWidth = 4.6
+      ..color = const Color(0xFFD97706);
     canvas.drawLine(const Offset(-13, -21), const Offset(13, -21), _paint);
     _paint
-      ..strokeWidth = 1.8
+      ..strokeWidth = 2.0
       ..color = const Color(0xFFFFF59D);
     canvas.drawLine(const Offset(-12, -22), const Offset(12, -22), _paint);
 
     _paint
       ..style = PaintingStyle.fill
-      ..color = const Color(0xFFFFB300);
-    canvas.drawCircle(const Offset(0, -20), 3.8, _paint);
+      ..shader = ui.Gradient.radial(
+        const Offset(-1.0, -21.0),
+        4.2,
+        const [Color(0xFFFFF9C4), Color(0xFFF59E0B), Color(0xFF92400E)],
+        const [0.0, 0.55, 1.0],
+      );
+    canvas.drawCircle(const Offset(0, -20), 4.2, _paint);
+    _paint.shader = null;
 
     canvas.restore();
 
-    // Butter-Cream `2048` Number Tag with natural damped pendulum swing!
+    // 5. Beveled Butter-Cream `2048` Tag with Damped Pendulum Swing
     final knotWorld = Offset(
       20.0 * math.sin(tiltRad),
       -20.0 * math.cos(tiltRad),
@@ -4088,7 +5114,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
     _paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
+      ..strokeWidth = 1.9
       ..strokeCap = StrokeCap.round
       ..color = const Color(0xFFD97706);
     canvas.drawLine(knotWorld, tagTopHole, _paint);
@@ -4102,13 +5128,23 @@ class _WaterGardenMasterPainter extends CustomPainter {
       const Radius.circular(6),
     );
 
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..maskFilter = _blurTight
+      ..color = const Color(0x50042E40);
+    canvas.drawRRect(tagRRect.shift(const Offset(0, 2.5)), _fxPaint);
+    _fxPaint.maskFilter = null;
+
     _paint
       ..style = PaintingStyle.fill
-      ..color = const Color(0x3A042E40);
-    canvas.drawRRect(tagRRect.shift(const Offset(0, 2.5)), _paint);
-
-    _paint.color = const Color(0xFFFFF8E1);
+      ..color = Colors.white
+      ..shader = ui.Gradient.linear(
+        const Offset(0, -12),
+        const Offset(0, 12),
+        const [Color(0xFFFFFDF0), Color(0xFFF7E4B4)],
+      );
     canvas.drawRRect(tagRRect, _paint);
+    _paint.shader = null;
 
     _paint
       ..style = PaintingStyle.stroke
@@ -4141,7 +5177,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// Plump Cupped 3D Floating Petals & Twinkling Starlight Sparkles (Panels 4 & 5!)
+  /// 3D Tumbling Drifting Petals, Fairy-Light Pollen Motes & Haloed 4-Point Starlight Sparkles
   void _drawFloatingPetalsAndSparkles({
     required Canvas canvas,
     required double cx,
@@ -4182,13 +5218,15 @@ class _WaterGardenMasterPainter extends CustomPainter {
       final driftX = 6.5 * math.sin(ambientPhase + i * 1.15);
       final driftY = 5.5 * math.cos(ambientPhase * 1.25 + i * 0.9);
       final pos = Offset(cx + b.dx * intensity + driftX, topY + b.dy + driftY);
+      final tumble = math.cos(ambientPhase * 1.8 + i * 1.3);
+      final flipY = (0.34 + 0.66 * tumble.abs()) * intensity;
+      final isBackSide = tumble < 0;
 
       canvas.save();
       canvas.translate(pos.dx, pos.dy);
-      canvas.rotate(0.45 * i + 0.22 * math.sin(ambientPhase + i));
-      canvas.scale(intensity, intensity);
+      canvas.rotate(0.45 * i + 0.25 * math.sin(ambientPhase + i));
+      canvas.scale(intensity, flipY);
 
-      // Plump cupped 3D teardrop petal (matches floating pink petals on left & right of Panel 4 & 5!)
       _scratchPath
         ..reset()
         ..moveTo(-8.5, 0)
@@ -4201,15 +5239,35 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ..shader = ui.Gradient.linear(
           const Offset(-8, -5),
           const Offset(8, 5),
-          [
-            petalLight.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
-            petalDeep.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
-          ],
+          isBackSide
+              ? [
+                  petalDeep.withValues(alpha: (0.85 * intensity).clamp(0.0, 1.0)),
+                  petalLight.withValues(alpha: (0.72 * intensity).clamp(0.0, 1.0)),
+                ]
+              : [
+                  petalLight.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
+                  petalDeep.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
+                ],
         );
       canvas.drawPath(_scratchPath, _paint);
       _paint.shader = null;
       canvas.restore();
     }
+
+    // Floating warm golden pollen fairy motes
+    for (int m = 0; m < 8; m++) {
+      final angle = m * 0.785 + ambientPhase * 0.4;
+      final r = 54.0 + (m % 3) * 22.0;
+      final mx = cx + math.cos(angle) * r;
+      final my = topY - 22 + math.sin(angle * 1.3) * 44.0 - (ambientPhase % 6.28) * 1.5;
+      final pulse = (0.4 + 0.6 * math.sin(ambientPhase * 2.5 + m)).clamp(0.0, 1.0);
+      _fxPaint
+        ..style = PaintingStyle.fill
+        ..maskFilter = _blurTight
+        ..color = const Color(0xFFFFF59D).withValues(alpha: 0.68 * intensity * pulse);
+      canvas.drawCircle(Offset(mx, my), 2.4, _fxPaint);
+    }
+    _fxPaint.maskFilter = null;
 
     const starOffsets = <Offset>[
       Offset(-78, -56),
@@ -4226,7 +5284,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       _drawFourPointStar(
         canvas,
         Offset(cx + starOffsets[s].dx, topY + starOffsets[s].dy),
-        7.5 * twinkle,
+        7.8 * twinkle,
         const Color(0xFFFFFDE7),
       );
     }
@@ -4245,7 +5303,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       _drawFourPointStar(
         canvas,
         Offset(cx + dist * math.cos(a), cy + dist * math.sin(a) * 0.85),
-        9.0 * fade,
+        9.2 * fade,
         const Color(0xFFFFF9C4).withValues(alpha: fade),
       );
     }
@@ -4258,6 +5316,18 @@ class _WaterGardenMasterPainter extends CustomPainter {
     Color color,
   ) {
     if (radius <= 0.5) return;
+
+    // Soft radial star halo glow
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..maskFilter = _blurTight
+      ..blendMode = BlendMode.plus
+      ..color = color.withValues(alpha: color.a * 0.55);
+    canvas.drawCircle(center, radius * 0.85, _fxPaint);
+    _fxPaint
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver;
+
     final inner = radius * 0.24;
     _scratchPath
       ..reset()

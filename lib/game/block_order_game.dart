@@ -1045,6 +1045,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       'IceLock.png',
       'IceBlocks.png',
       'Ice_Shards.png',
+      'Icon_Mechanic_Blocker.png',
       'Screw_Greyscale_01.png',
       'Screw_Greyscale_02.png',
       'Screw_Greyscale_03.png',

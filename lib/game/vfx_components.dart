@@ -185,6 +185,13 @@ class ScrewTextureCleaner {
     final h = src.height;
     final pixels = Uint8List.fromList(byteData.buffer.asUint8List());
     final total = w * h;
+    // Reworked circular screws already ship with clean transparent alpha outside the bolt.
+    if (pixels[3] == 0 &&
+        pixels[(w - 1) * 4 + 3] == 0 &&
+        pixels[((h - 1) * w) * 4 + 3] == 0 &&
+        pixels[(total - 1) * 4 + 3] == 0) {
+      return src;
+    }
     final visited = Uint8List(total);
     final queue = ListQueue<int>();
 

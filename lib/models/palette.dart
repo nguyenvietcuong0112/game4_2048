@@ -54,7 +54,7 @@ class BlockOrderPalette {
     2048: [Color(0xFFD46A00), Color(0xFFFFA804), Color(0xFFFFD214)], // Golden Mango Nectar
     4096: [Color(0xFF027BA8), Color(0xFF08BFE6), Color(0xFF3CF0FF)], // Crystal Aqua Potion
     8192: [Color(0xFF2812B8), Color(0xFF462EF2), Color(0xFF6852FF)], // Cosmic Blueberry Indigo
-    0: [Color(0xFF743508), Color(0xFFA85C24), Color(0xFFBF6F34)], // Dud
+    0: [Color(0xFF4F5173), Color(0xFF8B94A4), Color(0xFF9EA5B8)], // Dud (Brushed Steel)
     -1: [Color(0xFF197AF0), Color(0xFF63A2FA), Color(0xFF82BEFF)], // Ice
   };
 
@@ -90,7 +90,7 @@ class BlockOrderPalette {
         Colors.white,
         numVal == -1
             ? 0.66
-            : (numVal == 0 ? 0.16 : (numVal == 2 ? 0.50 : 0.38)),
+            : (numVal == 0 ? 0.56 : (numVal == 2 ? 0.50 : 0.38)),
       )!;
 
       final accent =
@@ -171,7 +171,7 @@ class BlockOrderPalette {
       rimHighlight: Color.lerp(
         ramp[2],
         Colors.white,
-        key == -1 ? 0.66 : (key == 0 ? 0.16 : 0.38),
+        key == -1 ? 0.66 : (key == 0 ? 0.56 : 0.38),
       )!,
       accent: ramp[2],
       numberStrokeOuter: const Color(0xFF251506),

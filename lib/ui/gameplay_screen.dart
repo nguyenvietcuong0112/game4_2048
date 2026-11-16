@@ -684,6 +684,41 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
   }
 
+  static const int _mechanicUnlockRewardCoins = 50;
+
+  void _handleMechanicUnlockClaim({required int multiplier}) {
+    final modal = _activeMechanicModal;
+    if (modal == null) return;
+    final reward = _mechanicUnlockRewardCoins * multiplier;
+    widget.audio.playCoinCollect();
+    widget.progress.addCoins(reward);
+    _coinBounceCtrl.forward(from: 0.0);
+    AnalyticsService.logEarnResource(
+      level: _activeLevel.number,
+      type: 'currency',
+      name: 'coins',
+      amount: reward.toDouble(),
+      reason: multiplier > 1 ? 'mechanic_unlock_x2_ad' : 'mechanic_unlock_claim',
+      balance: widget.progress.coins.toDouble(),
+    );
+    widget.progress.markMechanicSeen(modal.id);
+    setState(() {
+      _activeMechanicModal = null;
+      _syncGamePauseState();
+    });
+  }
+
+  void _dismissMechanicUnlockModal() {
+    final modal = _activeMechanicModal;
+    if (modal == null) return;
+    widget.audio.playClick();
+    widget.progress.markMechanicSeen(modal.id);
+    setState(() {
+      _activeMechanicModal = null;
+      _syncGamePauseState();
+    });
+  }
+
   void _handleActivatePowerUpFromFtue(MechanicUnlockInfo modal) {
     final isLvUp = modal.isLevelUpPowerUp;
     setState(() {
@@ -728,9 +763,12 @@ class _GameplayScreenState extends State<GameplayScreen>
 
     final isTutorialLevel1 =
         !_activeLevel.isBonus && _activeLevel.number == 1;
+    final isMechanicFeaturePopup =
+        _activeMechanicModal != null && !_activeMechanicModal!.isPowerUp;
     final hideBaseCoins = _showWinOverlay ||
         (_showLoseOverlay && !_loseInFailedStage) ||
-        _buyPopupIsLevelUp != null;
+        _buyPopupIsLevelUp != null ||
+        isMechanicFeaturePopup;
 
     return Scaffold(
       backgroundColor: const Color(0xFF47279B),
@@ -821,104 +859,105 @@ class _GameplayScreenState extends State<GameplayScreen>
 
           // 5. Redesigned Top HUD (`Play_Scene.png`: `CoinsWidget` left, `Frame_Level.png` center,
           //    `TimerGameplayView` right, + `ComboProgressBar` centered right below `Frame_Level.png`)
+          //    Smoothly hides when the final merge water-into-jar sequence starts so nothing overlaps the jar!
           SafeArea(
             child: RepaintBoundary(
               child: ValueListenableBuilder<bool>(
-                valueListenable: _game.isSpotlightTutorialActiveNotifier,
-                builder: (context, spotlightActive, hudChild) {
-                  return AnimatedOpacity(
-                    opacity: spotlightActive ? 0.38 : 1.0,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                    child: hudChild,
-                  );
-                },
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      height: ux(context, 140),
-                      child: Stack(
-                        alignment: Alignment.topCenter,
-                        clipBehavior: Clip.none,
-                        children: [
-                          // Top-Left `CoinsWidget` (hidden here when elevated above `WinOverlay`, `PlayOnPopupView`, or `PowerUpBuyPopup`)
-                          Positioned(
-                            left: ux(context, UnityCoinsWidget.hudLeftUnity),
-                            top: ux(context, UnityCoinsWidget.hudTopUnity),
-                            child: Opacity(
-                              opacity: hideBaseCoins ? 0.0 : 1.0,
-                              child: IgnorePointer(
-                                ignoring: hideBaseCoins,
-                                child: _buildCoinsWidget(context),
-                              ),
-                            ),
-                          ),
-
-                          // Top-Center `Frame_Level.png` (`Level 15`)
-                          Positioned(
-                            top: ux(context, 10),
-                            child: IgnorePointer(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  minWidth: ux(context, 287),
-                                ),
-                                child: UnityNineSlice(
-                                  sprite: 'Frame_Level.png',
-                                  height: ux(context, 125),
-                                  padding: EdgeInsets.fromLTRB(
-                                    ux(context, 34),
-                                    ux(context, 6),
-                                    ux(context, 34),
-                                    ux(context, 12),
-                                  ),
-                                  child: UnitySdfText(
-                                    _activeLevel.title,
-                                    unityFontSize: 52,
-                                    material: UnityTextMaterial.levelCounter,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          // Top-Right `TimerGameplayView` (`Icon_Clock.png` + `WidgetBase.png` matching `Play_Scene.png`)
-                          if (!_activeLevel.timerDisabled)
-                            Positioned(
-                              right: ux(context, 57),
-                              top: ux(context, 4),
-                              child: ValueListenableBuilder<bool>(
-                                valueListenable:
-                                    _game.isWinSequenceActiveNotifier,
-                                builder: (context, winActive, child) {
-                                  return AnimatedScale(
-                                    scale: winActive ? 0.65 : 1.0,
-                                    duration: const Duration(milliseconds: 180),
-                                    curve: Curves.easeInBack,
-                                    child: AnimatedOpacity(
-                                      opacity: winActive ? 0.0 : 1.0,
-                                      duration:
-                                          const Duration(milliseconds: 160),
-                                      curve: Curves.easeOut,
-                                      child: IgnorePointer(
-                                        ignoring: winActive,
-                                        child: child,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: _buildTimerGameplayView(context),
-                              ),
-                            ),
-                        ],
+                valueListenable: _game.isWinSequenceActiveNotifier,
+                builder: (context, winActive, topHudChild) {
+                  return IgnorePointer(
+                    ignoring: winActive,
+                    child: AnimatedSlide(
+                      key: const ValueKey('gameplay_top_header_hud'),
+                      offset:
+                          winActive ? const Offset(0, -0.35) : Offset.zero,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      child: AnimatedOpacity(
+                        opacity: winActive ? 0.0 : 1.0,
+                        duration: const Duration(milliseconds: 160),
+                        curve: Curves.easeOut,
+                        child: topHudChild,
                       ),
                     ),
+                  );
+                },
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _game.isSpotlightTutorialActiveNotifier,
+                  builder: (context, spotlightActive, hudChild) {
+                    return AnimatedOpacity(
+                      opacity: spotlightActive ? 0.38 : 1.0,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOut,
+                      child: hudChild,
+                    );
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        height: ux(context, 140),
+                        child: Stack(
+                          alignment: Alignment.topCenter,
+                          clipBehavior: Clip.none,
+                          children: [
+                            // Top-Left `CoinsWidget` (hidden here when elevated above `WinOverlay`, `PlayOnPopupView`, or `PowerUpBuyPopup`)
+                            Positioned(
+                              left: ux(context, UnityCoinsWidget.hudLeftUnity),
+                              top: ux(context, UnityCoinsWidget.hudTopUnity),
+                              child: Opacity(
+                                opacity: hideBaseCoins ? 0.0 : 1.0,
+                                child: IgnorePointer(
+                                  ignoring: hideBaseCoins,
+                                  child: _buildCoinsWidget(context),
+                                ),
+                              ),
+                            ),
 
-                    // Top-Center `ComboProgressBar` (`progress_combo_bg.png` + `progress_combo_fg.png`, `Play_Scene.png`)
-                    SizedBox(height: ux(context, 10)),
-                    _buildComboProgressBar(context),
-                  ],
+                            // Top-Center `Frame_Level.png` (`Level 15`)
+                            Positioned(
+                              top: ux(context, 10),
+                              child: IgnorePointer(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    minWidth: ux(context, 287),
+                                  ),
+                                  child: UnityNineSlice(
+                                    sprite: 'Frame_Level.png',
+                                    height: ux(context, 125),
+                                    padding: EdgeInsets.fromLTRB(
+                                      ux(context, 34),
+                                      ux(context, 6),
+                                      ux(context, 34),
+                                      ux(context, 12),
+                                    ),
+                                    child: UnitySdfText(
+                                      _activeLevel.title,
+                                      unityFontSize: 52,
+                                      material: UnityTextMaterial.levelCounter,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // Top-Right `TimerGameplayView` (`Icon_Clock.png` + `WidgetBase.png` matching `Play_Scene.png`)
+                            if (!_activeLevel.timerDisabled)
+                              Positioned(
+                                right: ux(context, 57),
+                                top: ux(context, 4),
+                                child: _buildTimerGameplayView(context),
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      // Top-Center `ComboProgressBar` (`progress_combo_bg.png` + `progress_combo_fg.png`, `Play_Scene.png`)
+                      SizedBox(height: ux(context, 10)),
+                      _buildComboProgressBar(context),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1406,15 +1445,21 @@ class _GameplayScreenState extends State<GameplayScreen>
               MechanicUnlockDialog(
                 key: ValueKey('ftue_${_activeMechanicModal!.id}'),
                 info: _activeMechanicModal!,
-                onDismiss: () {
-                  final modal = _activeMechanicModal!;
-                  widget.audio.playClick();
-                  widget.progress.markMechanicSeen(modal.id);
-                  setState(() {
-                    _activeMechanicModal = null;
-                    _syncGamePauseState();
-                  });
+                onClaim: () => _handleMechanicUnlockClaim(multiplier: 1),
+                onClaimX2: () {
+                  AdsManager.showRewardedAd(
+                    placement: 'mechanic_unlock_x2',
+                    levelNumber: _activeLevel.number,
+                    onAdFailed: _handleRewardedAdFailed,
+                    onRewardResult: (success) {
+                      if (success && mounted && _activeMechanicModal != null) {
+                        _handleMechanicUnlockClaim(multiplier: 2);
+                      }
+                    },
+                  );
                 },
+                onClose: _dismissMechanicUnlockModal,
+                onDismiss: _dismissMechanicUnlockModal,
               ),
 
           // 12. Two-Stage `WinGameplayView.prefab` (`Level complete!` -> `AMAZING!` + Coin Flight or Garden Metagame)
@@ -1504,8 +1549,10 @@ class _GameplayScreenState extends State<GameplayScreen>
               },
             ),
 
-          // 14. Elevated Top-Left `CoinsWidget` (`overrideSorting: true` during `WinGameplayView` & `PlayOnPopupView`)
-          if (_showWinOverlay || (_showLoseOverlay && !_loseInFailedStage))
+          // 14. Elevated Top-Left `CoinsWidget` (`overrideSorting: true` during `WinGameplayView`, `PlayOnPopupView`, & `MechanicUnlockDialog`)
+          if (_showWinOverlay ||
+              (_showLoseOverlay && !_loseInFailedStage) ||
+              isMechanicFeaturePopup)
             SafeArea(
               child: Align(
                 alignment: Alignment.topLeft,
@@ -2121,7 +2168,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                                             );
                                           },
                                           child: Text(
-                                            'v.1.0.6',
+                                            'v.1.0.0',
                                             textAlign: TextAlign.center,
                                             style: TextStyle(
                                               fontFamily: 'Baloo2',

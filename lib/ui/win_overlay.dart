@@ -322,8 +322,8 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
           final safeH = constraints.maxHeight;
           final centerY = safeH * 0.5;
 
-          final headerBoxH = ux(context, 300);
-          final minHeaderCenterY = ux(context, 108) + headerBoxH * 0.5;
+          final headerBoxH = ux(context, 326);
+          final minHeaderCenterY = ux(context, 102) + headerBoxH * 0.5;
           final targetHeaderCenterY = math.max(
             minHeaderCenterY,
             centerY - math.min(ux(context, 495), safeH * 0.308),
@@ -559,7 +559,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                   _buildTwoPassWaveLine(
                     context,
                     text: _line1Text,
-                    unityFontSize: 132,
+                    unityFontSize: 144,
                     seq: seq,
                     baseDelay: 0.00,
                     charStagger: 0.022,
@@ -568,11 +568,11 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                     waveAmp: waveAmp,
                   ),
                   Transform.translate(
-                    offset: Offset(0, -ux(context, 18)),
+                    offset: Offset(0, -ux(context, 16)),
                     child: _buildTwoPassWaveLine(
                       context,
                       text: _line2Text,
-                      unityFontSize: 120,
+                      unityFontSize: 130,
                       seq: seq,
                       baseDelay: 0.068,
                       charStagger: 0.019,
@@ -603,9 +603,9 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   }) {
     const mat = UnityTextMaterial.levelCompleteWave;
     final fs = ux(context, unityFontSize);
-    final innerSw = (fs * mat.strokeRatio).clamp(1.2, 22.0);
-    final outerSw = (fs * mat.outerStrokeRatio).clamp(innerSw + 0.8, 28.0);
-    final dropY = fs * mat.underlayYRatio;
+    final innerSw = (fs * 0.095).clamp(1.6, 16.0);
+    final outerSw = (fs * 0.148).clamp(innerSw + 0.8, 22.0);
+    final dropY = fs * 0.092;
     final riseDist = ux(context, 28);
 
     TextStyle styleWith(Paint foreground) => TextStyle(
@@ -620,29 +620,38 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = outerSw
+        ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = mat.underlayColor,
+        ..color = const Color(0xE84B0D00),
     );
     final outerStrokeStyle = styleWith(
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = outerSw
+        ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = mat.outerStrokeColor!,
+        ..color = const Color(0xFF8C1800),
     );
     final innerStrokeStyle = styleWith(
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = innerSw
+        ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = mat.strokeColor,
+        ..color = const Color(0xFFE96D24),
     );
     final faceStyle = styleWith(
       Paint()
         ..shader = ui.Gradient.linear(
-          Offset(0, fs * 0.12),
-          Offset(0, fs * 0.96),
-          [mat.faceTop, mat.faceBottom],
+          Offset(0, fs * 0.14),
+          Offset(0, fs * 0.94),
+          const [
+            Color(0xFFFFFFFF),
+            Color(0xFFFFF8D0),
+            Color(0xFFFFDF6A),
+            Color(0xFFFFB528),
+          ],
+          const [0.0, 0.34, 0.70, 1.0],
         ),
     );
 

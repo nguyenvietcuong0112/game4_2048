@@ -346,6 +346,7 @@ class PieceComponent extends PositionComponent {
 
   ui.Image? _iceLockImg;
   ui.Image? _iceBlocksTex;
+  ui.Image? _blockerImg;
   ui.Image? _screwFallbackImg;
   ui.Image? _arrowShadowImg;
   ui.Image? _arrowOutlineImg;
@@ -356,6 +357,7 @@ class PieceComponent extends PositionComponent {
 
   // Cached GPU Paints & Shaders (zero per-frame allocations for stationary & dragged pieces!)
   (Color, Color, bool, int)? _cachedBodyStyleKey;
+  final Paint _blockerPaint = Paint()..filterQuality = FilterQuality.high;
   final Paint _cachedWallPaint = Paint();
   final Paint _cachedTopPaint = Paint();
   final Paint _cachedRimPaint = Paint()
@@ -365,6 +367,14 @@ class PieceComponent extends PositionComponent {
   final Paint _outerContourPaint = Paint()
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.15;
+  final Paint _dudScratchLightPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..color = const Color(0x46E8EEFA);
+  final Paint _dudScratchDarkPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..color = const Color(0x362C314B);
   final Paint _auraPaint = Paint()..blendMode = BlendMode.plus;
   final Paint _opacityLayerPaint = Paint();
   final Paint _fallbackShadowPaint = Paint();
@@ -533,6 +543,7 @@ class PieceComponent extends PositionComponent {
 
     _iceLockImg = tryGet('IceLock.png');
     _iceBlocksTex = tryGet('IceBlocks.png');
+    _blockerImg = tryGet('Icon_Mechanic_Blocker.png');
     _screwFallbackImg = tryGet('Screw_Greyscale_01.png');
     _arrowShadowImg = tryGet('Movement_Single-Horizontal_Shadow.png');
     _arrowOutlineImg = tryGet('Movement_Single-Horizontal_Stroke.png');
@@ -1570,12 +1581,13 @@ class PieceComponent extends PositionComponent {
     final numKey = model.isDud ? -1 : (model.number ?? -2);
     final iceKey = _isIceCovered ? (_displayIceTarget ?? model.iceTarget ?? 4) : 0;
     final reflKey = (visualSettings.reflectionAlpha * 1000).round();
-    final assetMask = (ScrewTextureCleaner.cleanedScrews.length << 4) |
+    final assetMask = (ScrewTextureCleaner.cleanedScrews.length << 5) |
         (_iceLockImg != null ? 1 : 0) |
         (_iceBlocksTex != null ? 2 : 0) |
         (_arrowTopImg != null ? 4 : 0) |
-        (_arrowHorizCombinedImg != null ? 8 : 0);
-    return 'glassHalfLiquidV4|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
+        (_arrowHorizCombinedImg != null ? 8 : 0) |
+        (_blockerImg != null ? 16 : 0);
+    return 'glassHalfLiquidV5|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
   }
 
   _BakedStaticPieceSprite? _getOrBakeStaticPieceSprite(
@@ -1986,7 +1998,9 @@ class PieceComponent extends PositionComponent {
 
       final outerContourColor = _isIceCovered
           ? const Color(0xFF2882ED)
-          : Color.lerp(baseStyle.topMid, baseStyle.bottomLip, 0.58)!;
+          : (model.isDud
+              ? const Color(0xFF3E425E)
+              : Color.lerp(baseStyle.topMid, baseStyle.bottomLip, 0.58)!);
       _outerContourPaint.color = outerContourColor.withValues(alpha: 0.88);
       canvas.save();
       canvas.translate(topJellyShift.dx, topJellyShift.dy);
@@ -2687,6 +2701,71 @@ class PieceComponent extends PositionComponent {
         );
     }
 
+    if (model.isDud && _blockerImg != null) {
+      final img = _blockerImg!;
+      final isRect =
+          model.localCells.length == model.widthCols * model.heightRows;
+      canvas.save();
+      canvas.translate(topJellyShift.dx, topJellyShift.dy);
+      canvas.clipPath(_topPath);
+
+      if (model.localCells.length == 1) {
+        canvas.drawImageRect(
+          img,
+          Rect.fromLTWH(2, 2, img.width - 4.0, img.height - 4.0),
+          _localBounds,
+          _blockerPaint,
+        );
+      } else if (isRect) {
+        final texScale = cellSize / img.width.toDouble();
+        canvas.save();
+        canvas.scale(texScale, texScale);
+        canvas.drawImageNine(
+          img,
+          Rect.fromLTWH(
+            44,
+            44,
+            (img.width - 88).toDouble(),
+            (img.height - 114).toDouble(),
+          ),
+          Rect.fromLTWH(
+            _localBounds.left / texScale,
+            _localBounds.top / texScale,
+            _localBounds.width / texScale,
+            _localBounds.height / texScale,
+          ),
+          _blockerPaint,
+        );
+        canvas.restore();
+      } else {
+        canvas.drawPath(_topPath, _cachedWallPaint);
+        canvas.save();
+        canvas.translate(0, -innerBevel);
+        final faceSrc = Rect.fromLTWH(
+          16,
+          14,
+          (img.width - 32).toDouble(),
+          (img.height - 70).toDouble(),
+        );
+        for (final cell in model.localCells) {
+          final ox = cell.$1 * cellSize;
+          final oy = cell.$2 * cellSize;
+          canvas.drawImageRect(
+            img,
+            faceSrc,
+            Rect.fromLTWH(ox, oy, cellSize, cellSize),
+            _blockerPaint,
+          );
+        }
+        _drawDudMetallicScratches(canvas);
+        canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
+        canvas.restore();
+      }
+
+      canvas.restore();
+      return;
+    }
+
     canvas.save();
     canvas.translate(topJellyShift.dx, topJellyShift.dy);
     canvas.clipPath(_topPath);
@@ -2698,9 +2777,51 @@ class PieceComponent extends PositionComponent {
     canvas.save();
     canvas.translate(0, -innerBevel);
     canvas.drawPath(_topPath, _cachedTopPaint);
+    if (model.isDud) {
+      _drawDudMetallicScratches(canvas);
+    }
     canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
     canvas.restore();
 
+    canvas.restore();
+  }
+
+  void _drawDudMetallicScratches(Canvas canvas) {
+    final sw = (cellSize * 0.018).clamp(1.0, 2.2);
+    _dudScratchLightPaint.strokeWidth = sw;
+    _dudScratchDarkPaint.strokeWidth = sw;
+    canvas.save();
+    canvas.clipPath(_topPath);
+    for (final cell in model.localCells) {
+      final ox = cell.$1 * cellSize;
+      final oy = cell.$2 * cellSize;
+      // Diagonal brushed-metal highlights and edge nicks matching Icon_Mechanic_Blocker.png
+      canvas.drawLine(
+        Offset(ox + cellSize * 0.14, oy + cellSize * 0.18),
+        Offset(ox + cellSize * 0.44, oy + cellSize * 0.46),
+        _dudScratchLightPaint,
+      );
+      canvas.drawLine(
+        Offset(ox + cellSize * 0.56, oy + cellSize * 0.16),
+        Offset(ox + cellSize * 0.88, oy + cellSize * 0.48),
+        _dudScratchLightPaint,
+      );
+      canvas.drawLine(
+        Offset(ox + cellSize * 0.22, oy + cellSize * 0.60),
+        Offset(ox + cellSize * 0.54, oy + cellSize * 0.88),
+        _dudScratchLightPaint,
+      );
+      canvas.drawLine(
+        Offset(ox + cellSize * 0.68, oy + cellSize * 0.66),
+        Offset(ox + cellSize * 0.90, oy + cellSize * 0.84),
+        _dudScratchDarkPaint,
+      );
+      canvas.drawLine(
+        Offset(ox + cellSize * 0.08, oy + cellSize * 0.48),
+        Offset(ox + cellSize * 0.19, oy + cellSize * 0.58),
+        _dudScratchDarkPaint,
+      );
+    }
     canvas.restore();
   }
 
@@ -3377,7 +3498,8 @@ class PieceComponent extends PositionComponent {
           : _screwFallbackImg;
 
       if (screwImg != null && cleanedList.isNotEmpty) {
-        // Cool silver-lavender steel bolt head (`Icon_Mechanic_Cage.png`) — never tinted green/pink!
+        // Cool silver-lavender steel bolt head — preserve aspect ratio (`220x219`, `216x223`, `217x223`).
+        final screwH = screwDiam * (screwImg.height / screwImg.width);
         canvas.drawImageRect(
           screwImg,
           Rect.fromLTWH(
@@ -3386,7 +3508,7 @@ class PieceComponent extends PositionComponent {
             screwImg.width.toDouble(),
             screwImg.height.toDouble(),
           ),
-          Rect.fromCenter(center: pt, width: screwDiam, height: screwDiam),
+          Rect.fromCenter(center: pt, width: screwDiam, height: screwH),
           _screwBoltPaint,
         );
       } else {
@@ -3546,8 +3668,8 @@ class PieceComponent extends PositionComponent {
     }
   }
 
-  /// Authentic `IceCountBadge` (`IceMechanicView.prefab` & `Icon_Mechanic_Ice.png`):
-  /// True ~1:1 aspect `IceLock.png` (`220x222`) + crisp solid `#122E7A` `PoetsenOne` digits,
+  /// Authentic `IceCountBadge` (`IceMechanicView.prefab` & reworked `IceLock.png`):
+  /// Reworked glossy `IceLock.png` (`159x189`) + crisp solid `#122E7A` `PoetsenOne` digits,
   /// animated by the 23-frame `0.3833s` `"Pop"` clip (`1.0 -> 1.62907 -> 1.0`) before shattering!
   void _drawFrozenLockBadge(Canvas canvas, int targetNum) {
     final (spanCx, spanCy) = model.spanCenterInCells();
@@ -3558,8 +3680,8 @@ class PieceComponent extends PositionComponent {
 
     final lockImg = _iceLockImg;
     final aspect =
-        lockImg != null ? (lockImg.width / lockImg.height) : (220.0 / 222.0);
-    final badgeH = cellSize * 0.70;
+        lockImg != null ? (lockImg.width / lockImg.height) : (159.0 / 189.0);
+    final badgeH = cellSize * 0.72;
     final badgeW = badgeH * aspect;
     final dst = Rect.fromCenter(
       center: badgeCenter,
@@ -3585,13 +3707,13 @@ class PieceComponent extends PositionComponent {
     final digits = textStr.length;
     final fontSize = cellSize *
         (digits <= 2
-            ? 0.242
+            ? 0.228
             : digits == 3
-                ? 0.195
-                : 0.158);
+                ? 0.184
+                : 0.148);
 
     final popScale = _currentIceBadgePopScale;
-    final textCenter = Offset(badgeCenter.dx, badgeCenter.dy + badgeH * 0.115);
+    final textCenter = Offset(badgeCenter.dx, badgeCenter.dy + badgeH * 0.10);
 
     canvas.save();
     canvas.translate(textCenter.dx, textCenter.dy);

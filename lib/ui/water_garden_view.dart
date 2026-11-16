@@ -576,17 +576,19 @@ class _WaterGardenViewState extends State<WaterGardenView>
                           ),
                         );
                       },
-                      child: AnimatedBuilder(
-                        key: const ValueKey<String>('Level Complete!'),
-                        animation: _ambientCtrl,
-                        builder: (context, _) {
-                          return CustomPaint(
-                            size: Size(ribbonW, ribbonH),
-                            painter: _OldThemeLevelCompleteHeaderPainter(
-                              ambientValue: _ambientCtrl.value,
-                            ),
-                          );
-                        },
+                      child: RepaintBoundary(
+                        child: AnimatedBuilder(
+                          key: const ValueKey<String>('Level Complete!'),
+                          animation: _ambientCtrl,
+                          builder: (context, _) {
+                            return CustomPaint(
+                              size: Size(ribbonW, ribbonH),
+                              painter: _OldThemeLevelCompleteHeaderPainter(
+                                ambientValue: _ambientCtrl.value,
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
@@ -617,33 +619,35 @@ class _WaterGardenViewState extends State<WaterGardenView>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              AnimatedBuilder(
-                                animation: Listenable.merge([
-                                  _seqCtrl,
-                                  _nextVaseCtrl,
-                                ]),
-                                builder: (context, _) {
-                                  final double currentProgress;
-                                  if (_showingNextVase) {
-                                    currentProgress = 0.0;
-                                  } else {
-                                    currentProgress = ui.lerpDouble(
-                                      widget.advanceResult.oldProgress,
-                                      widget.advanceResult.newProgress,
-                                      _waterRiseAnim.value,
-                                    )!;
-                                  }
-                                  final isCompleteNow = !_showingNextVase &&
-                                      is100 &&
-                                      currentProgress >= 0.999;
+                              RepaintBoundary(
+                                child: AnimatedBuilder(
+                                  animation: Listenable.merge([
+                                    _waterRiseAnim,
+                                    _nextVaseCtrl,
+                                  ]),
+                                  builder: (context, _) {
+                                    final double currentProgress;
+                                    if (_showingNextVase) {
+                                      currentProgress = 0.0;
+                                    } else {
+                                      currentProgress = ui.lerpDouble(
+                                        widget.advanceResult.oldProgress,
+                                        widget.advanceResult.newProgress,
+                                        _waterRiseAnim.value,
+                                      )!;
+                                    }
+                                    final isCompleteNow = !_showingNextVase &&
+                                        is100 &&
+                                        currentProgress >= 0.999;
 
-                                  return _buildOldThemeProgressCard(
-                                    cfg: activeCfg,
-                                    progress: currentProgress,
-                                    isComplete: isCompleteNow,
-                                    isNewVaseMystery: _showingNextVase,
-                                  );
-                                },
+                                    return _buildOldThemeProgressCard(
+                                      cfg: activeCfg,
+                                      progress: currentProgress,
+                                      isComplete: isCompleteNow,
+                                      isNewVaseMystery: _showingNextVase,
+                                    );
+                                  },
+                                ),
                               ),
                               const SizedBox(height: 12),
                               if (is100 && !_showingNextVase)
@@ -1236,15 +1240,11 @@ class _OldThemeStageBackdropPainter extends CustomPainter {
       final baseColor =
           i.isEven ? const Color(0xFFFFE082) : const Color(0xFF80F8FF);
       final pos = Offset(fx * size.width, fy * size.height);
-      _paint.shader = ui.Gradient.radial(
-        pos,
-        radius * 2.1,
-        [
-          baseColor.withValues(alpha: alpha),
-          baseColor.withValues(alpha: 0.0),
-        ],
-      );
-      canvas.drawCircle(pos, radius * 2.1, _paint);
+      _paint.shader = null;
+      _paint.color = baseColor.withValues(alpha: alpha * 0.36);
+      canvas.drawCircle(pos, radius * 2.0, _paint);
+      _paint.color = baseColor.withValues(alpha: alpha * 0.85);
+      canvas.drawCircle(pos, radius * 0.92, _paint);
     }
     _paint.shader = null;
     _paint.blendMode = BlendMode.srcOver;
@@ -1257,16 +1257,63 @@ class _OldThemeStageBackdropPainter extends CustomPainter {
       oldDelegate.stageCenterYFraction != stageCenterYFraction;
 }
 
+class _CachedWaveLineMetrics {
+  final double totalW;
+  final double lineH;
+  final List<double> charXs;
+
+  const _CachedWaveLineMetrics({
+    required this.totalW,
+    required this.lineH,
+    required this.charXs,
+  });
+}
+
+class _CachedWaveCharSprite {
+  final ui.Image? backImage;
+  final ui.Image? faceImage;
+  final Rect srcRect;
+  final double pad;
+  final double logicalW;
+  final double logicalH;
+  final TextPainter? glowShadowTp;
+  final TextPainter? underlayTp;
+  final TextPainter? outerStrokeTp;
+  final TextPainter? innerStrokeTp;
+  final TextPainter? faceTp;
+  final double dropY;
+
+  const _CachedWaveCharSprite({
+    required this.backImage,
+    required this.faceImage,
+    required this.srcRect,
+    required this.pad,
+    required this.logicalW,
+    required this.logicalH,
+    required this.glowShadowTp,
+    required this.underlayTp,
+    required this.outerStrokeTp,
+    required this.innerStrokeTp,
+    required this.faceTp,
+    required this.dropY,
+  });
+}
+
 /// Classic Old-Theme 2-Line `'Level' / 'Complete!'` Golden Wave Header Painter
 /// matching `WinOverlay._buildTwoLineWaveLevelComplete` (`PoetsenOne` + `UnityTextMaterial.levelCompleteWave`):
-/// - 2-pass per-line rendering (Pass 1: all 3D drop shadows & brown/orange strokes; Pass 2: golden gradient faces)
-///   so neighboring character outlines never overlap faces!
-/// - Continuous `C∞` sine wave (`sin(ambientValue * 4π - phase)`) for silky 60/120Hz motion.
+/// - Pre-bakes each unique character's stroke underlay & gold gradient face once so the
+///   60/120Hz sine wave runs with ZERO per-frame `TextPainter.layout()` or `MaskFilter.blur`.
 class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
   final double ambientValue;
 
   static final TextPainter _tp = TextPainter(textDirection: TextDirection.ltr);
   static final Paint _sparkPaint = Paint()..isAntiAlias = true;
+  static final Paint _glyphPaint = Paint()..filterQuality = FilterQuality.medium;
+  static final Path _sparkPath = Path();
+  static final Map<String, _CachedWaveLineMetrics> _lineMetricsCache =
+      <String, _CachedWaveLineMetrics>{};
+  static final Map<String, _CachedWaveCharSprite> _charGlyphCache =
+      <String, _CachedWaveCharSprite>{};
 
   _OldThemeLevelCompleteHeaderPainter({required this.ambientValue});
 
@@ -1316,7 +1363,8 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
               .clamp(0.15, 1.0);
       final c = Offset(w * fx, h * fy);
       final rad = r * (0.72 + 0.28 * twinkle);
-      final p = Path()
+      _sparkPath
+        ..reset()
         ..moveTo(c.dx, c.dy - rad)
         ..quadraticBezierTo(c.dx, c.dy, c.dx + rad * 0.85, c.dy)
         ..quadraticBezierTo(c.dx, c.dy, c.dx, c.dy + rad)
@@ -1331,20 +1379,53 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
           Colors.white,
           twinkle,
         )!.withValues(alpha: 0.88 * twinkle);
-      canvas.drawPath(p, _sparkPaint);
+      canvas.drawPath(_sparkPath, _sparkPaint);
     }
   }
 
-  void _drawWaveLine({
-    required Canvas canvas,
-    required double centerX,
-    required double baselineCenterY,
-    required String text,
-    required double fontSize,
-    required double phaseOffset,
-    required double waveAmp,
-    required double maxWidth,
-  }) {
+  static _CachedWaveLineMetrics _getLineMetrics(String text, double fontSize) {
+    final fsKey = (fontSize * 4.0).round();
+    final key = '$text|$fsKey';
+    final cached = _lineMetricsCache[key];
+    if (cached != null) return cached;
+
+    const mat = UnityTextMaterial.levelCompleteWave;
+    final measureStyle = TextStyle(
+      fontFamily: mat.fontFamily,
+      fontSize: fontSize,
+      fontWeight: mat.fontWeight,
+      height: 1.05,
+      letterSpacing: fontSize * 0.012,
+      color: Colors.white,
+    );
+    _tp.text = TextSpan(text: text, style: measureStyle);
+    _tp.layout();
+    final metrics = _CachedWaveLineMetrics(
+      totalW: _tp.width,
+      lineH: _tp.height,
+      charXs: List<double>.generate(
+        text.length,
+        (i) => _tp.getOffsetForCaret(TextPosition(offset: i), Rect.zero).dx,
+        growable: false,
+      ),
+    );
+    if (_lineMetricsCache.length >= 24) {
+      _lineMetricsCache.clear();
+    }
+    _lineMetricsCache[key] = metrics;
+    return metrics;
+  }
+
+  static _CachedWaveCharSprite _getCharSprite(
+    String ch,
+    double fontSize,
+    double lineH,
+  ) {
+    final fsKey = (fontSize * 4.0).round();
+    final key = '$ch|$fsKey';
+    final cached = _charGlyphCache[key];
+    if (cached != null) return cached;
+
     const mat = UnityTextMaterial.levelCompleteWave;
     final innerSw = (fontSize * 0.095).clamp(2.0, 7.5);
     final outerSw = (fontSize * 0.148).clamp(innerSw + 1.0, 11.2);
@@ -1358,27 +1439,6 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
           letterSpacing: fontSize * 0.012,
           foreground: foreground,
         );
-
-    final measureStyle = TextStyle(
-      fontFamily: mat.fontFamily,
-      fontSize: fontSize,
-      fontWeight: mat.fontWeight,
-      height: 1.05,
-      letterSpacing: fontSize * 0.012,
-      color: Colors.white,
-    );
-
-    // Measure full word once for natural font kerning positions
-    _tp.text = TextSpan(text: text, style: measureStyle);
-    _tp.layout();
-    final totalW = _tp.width;
-    final lineH = _tp.height;
-    final charXs = List<double>.generate(
-      text.length,
-      (i) => _tp.getOffsetForCaret(TextPosition(offset: i), Rect.zero).dx,
-    );
-
-    final scale = totalW > maxWidth ? (maxWidth / totalW) : 1.0;
 
     final glowShadowStyle = styleWith(
       Paint()
@@ -1431,6 +1491,98 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
         ),
     );
 
+    final glowTp = TextPainter(
+      text: TextSpan(text: ch, style: glowShadowStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final underlayTp = TextPainter(
+      text: TextSpan(text: ch, style: underlayStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final outerTp = TextPainter(
+      text: TextSpan(text: ch, style: outerStrokeStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final innerTp = TextPainter(
+      text: TextSpan(text: ch, style: innerStrokeStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final faceTp = TextPainter(
+      text: TextSpan(text: ch, style: faceStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final pad = (outerSw * 1.45 + 6.0).ceilToDouble();
+    final bottomExtra = (dropY * 1.3).ceilToDouble();
+    final logicalW = math.max(faceTp.width, 8.0) + pad * 2.0;
+    final logicalH = math.max(lineH, faceTp.height) + pad * 2.0 + bottomExtra;
+    const ss = 2.0;
+    final imgW = (logicalW * ss).ceil().clamp(4, 512);
+    final imgH = (logicalH * ss).ceil().clamp(4, 512);
+
+    ui.Image? backImg;
+    ui.Image? faceImg;
+    try {
+      final backRec = ui.PictureRecorder();
+      final backCanvas = Canvas(backRec);
+      backCanvas.scale(imgW / logicalW, imgH / logicalH);
+      glowTp.paint(backCanvas, Offset(pad, pad + dropY * 1.15));
+      underlayTp.paint(backCanvas, Offset(pad, pad + dropY));
+      outerTp.paint(backCanvas, Offset(pad, pad));
+      innerTp.paint(backCanvas, Offset(pad, pad));
+      final backPic = backRec.endRecording();
+      backImg = backPic.toImageSync(imgW, imgH);
+      backPic.dispose();
+
+      final faceRec = ui.PictureRecorder();
+      final faceCanvas = Canvas(faceRec);
+      faceCanvas.scale(imgW / logicalW, imgH / logicalH);
+      faceTp.paint(faceCanvas, Offset(pad, pad));
+      final facePic = faceRec.endRecording();
+      faceImg = facePic.toImageSync(imgW, imgH);
+      facePic.dispose();
+    } catch (_) {
+      backImg = null;
+      faceImg = null;
+    }
+
+    final sprite = _CachedWaveCharSprite(
+      backImage: backImg,
+      faceImage: faceImg,
+      srcRect: Rect.fromLTWH(0, 0, imgW.toDouble(), imgH.toDouble()),
+      pad: pad,
+      logicalW: logicalW,
+      logicalH: logicalH,
+      glowShadowTp: glowTp,
+      underlayTp: underlayTp,
+      outerStrokeTp: outerTp,
+      innerStrokeTp: innerTp,
+      faceTp: faceTp,
+      dropY: dropY,
+    );
+    if (_charGlyphCache.length >= 64) {
+      _charGlyphCache.clear();
+    }
+    _charGlyphCache[key] = sprite;
+    return sprite;
+  }
+
+  void _drawWaveLine({
+    required Canvas canvas,
+    required double centerX,
+    required double baselineCenterY,
+    required String text,
+    required double fontSize,
+    required double phaseOffset,
+    required double waveAmp,
+    required double maxWidth,
+  }) {
+    final metrics = _getLineMetrics(text, fontSize);
+    final totalW = metrics.totalW;
+    final lineH = metrics.lineH;
+    final charXs = metrics.charXs;
+    final scale = totalW > maxWidth ? (maxWidth / totalW) : 1.0;
+
     canvas.save();
     canvas.translate(centerX, baselineCenterY);
     if (scale < 0.999) {
@@ -1438,43 +1590,51 @@ class _OldThemeLevelCompleteHeaderPainter extends CustomPainter {
     }
 
     final startX = -totalW * 0.5;
+    final baseWaveRad = ambientValue * math.pi * 4.0;
+    final glyphs = List<_CachedWaveCharSprite>.generate(
+      text.length,
+      (i) => _getCharSprite(text[i], fontSize, lineH),
+      growable: false,
+    );
 
-    // Pass 1: Soft ambient drop shadow + 3D mahogany underlay + cherry/tangerine beveled outlines
+    // Pass 1: Pre-composited 3D drop shadows & beveled outlines
     for (int i = 0; i < text.length; i++) {
-      final ch = text[i];
+      final g = glyphs[i];
       final x = startX + charXs[i];
-      final waveAngle = ambientValue * math.pi * 4.0 - (i + phaseOffset) * 0.42;
-      final waveDy = math.sin(waveAngle) * waveAmp;
-      final topY = -lineH * 0.5 + waveDy;
-
-      _tp.text = TextSpan(text: ch, style: glowShadowStyle);
-      _tp.layout();
-      _tp.paint(canvas, Offset(x, topY + dropY * 1.15));
-
-      _tp.text = TextSpan(text: ch, style: underlayStyle);
-      _tp.layout();
-      _tp.paint(canvas, Offset(x, topY + dropY));
-
-      _tp.text = TextSpan(text: ch, style: outerStrokeStyle);
-      _tp.layout();
-      _tp.paint(canvas, Offset(x, topY));
-
-      _tp.text = TextSpan(text: ch, style: innerStrokeStyle);
-      _tp.layout();
-      _tp.paint(canvas, Offset(x, topY));
+      final waveAngle = baseWaveRad - (i + phaseOffset) * 0.42;
+      final topY = -lineH * 0.5 + math.sin(waveAngle) * waveAmp;
+      final backImg = g.backImage;
+      if (backImg != null) {
+        canvas.drawImageRect(
+          backImg,
+          g.srcRect,
+          Rect.fromLTWH(x - g.pad, topY - g.pad, g.logicalW, g.logicalH),
+          _glyphPaint,
+        );
+      } else {
+        g.underlayTp?.paint(canvas, Offset(x, topY + g.dropY));
+        g.outerStrokeTp?.paint(canvas, Offset(x, topY));
+        g.innerStrokeTp?.paint(canvas, Offset(x, topY));
+      }
     }
 
     // Pass 2: Smooth Ivory-to-Honey-Gold Gradient Faces
     for (int i = 0; i < text.length; i++) {
-      final ch = text[i];
+      final g = glyphs[i];
       final x = startX + charXs[i];
-      final waveAngle = ambientValue * math.pi * 4.0 - (i + phaseOffset) * 0.42;
-      final waveDy = math.sin(waveAngle) * waveAmp;
-      final topY = -lineH * 0.5 + waveDy;
-
-      _tp.text = TextSpan(text: ch, style: faceStyle);
-      _tp.layout();
-      _tp.paint(canvas, Offset(x, topY));
+      final waveAngle = baseWaveRad - (i + phaseOffset) * 0.42;
+      final topY = -lineH * 0.5 + math.sin(waveAngle) * waveAmp;
+      final faceImg = g.faceImage;
+      if (faceImg != null) {
+        canvas.drawImageRect(
+          faceImg,
+          g.srcRect,
+          Rect.fromLTWH(x - g.pad, topY - g.pad, g.logicalW, g.logicalH),
+          _glyphPaint,
+        );
+      } else {
+        g.faceTp?.paint(canvas, Offset(x, topY));
+      }
     }
 
     canvas.restore();
@@ -2184,23 +2344,17 @@ class _WaterGardenMasterPainter extends CustomPainter {
   static final Path _vaseInnerPath = Path();
   static final Path _scratchPath = Path();
   static final Path _petalPath = Path();
+  static final Map<String, ({Path softboxBand, Path leftGlint, Path rightBounce})>
+      _frontGlassPathsCache =
+      <String, ({Path softboxBand, Path leftGlint, Path rightBounce})>{};
   static final Paint _paint = Paint()
     ..isAntiAlias = true
-    ..filterQuality = FilterQuality.high;
+    ..filterQuality = FilterQuality.medium;
   static final Paint _fxPaint = Paint()
     ..isAntiAlias = true
-    ..filterQuality = FilterQuality.high;
+    ..filterQuality = FilterQuality.medium;
   static final TextPainter _textPainter = TextPainter(
     textDirection: TextDirection.ltr,
-  );
-
-  static const ui.MaskFilter _blurSoft = ui.MaskFilter.blur(
-    ui.BlurStyle.normal,
-    6.5,
-  );
-  static const ui.MaskFilter _blurTight = ui.MaskFilter.blur(
-    ui.BlurStyle.normal,
-    2.6,
   );
 
   _WaterGardenMasterPainter({
@@ -2456,7 +2610,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     } else {
       const rayCount = 14;
       final rot = ambientPhase * 0.22;
-      _fxPaint.maskFilter = _blurSoft;
+      _fxPaint.maskFilter = null;
       for (int i = 0; i < rayCount; i++) {
         final a = (i * math.pi * 2.0) / rayCount + rot;
         final isMajor = i.isEven;
@@ -2491,14 +2645,17 @@ class _WaterGardenMasterPainter extends CustomPainter {
     if (p > 0.05 && p < 0.88) {
       final ringT = Curves.easeOutCubic.transform((p / 0.88).clamp(0.0, 1.0));
       final ringR = ui.lerpDouble(42.0, 188.0, ringT)!;
+      final baseRingAlpha = (0.48 * (1.0 - ringT)).clamp(0.0, 1.0);
       _fxPaint
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 5.5 * (1.0 - ringT)
         ..shader = null
-        ..maskFilter = _blurTight
-        ..color = const Color(0xFFFFF4B8).withValues(
-          alpha: (0.48 * (1.0 - ringT)).clamp(0.0, 1.0),
-        );
+        ..maskFilter = null
+        ..strokeWidth = 9.0 * (1.0 - ringT)
+        ..color = const Color(0xFFFFF4B8).withValues(alpha: baseRingAlpha * 0.38);
+      canvas.drawCircle(center, ringR, _fxPaint);
+      _fxPaint
+        ..strokeWidth = 4.5 * (1.0 - ringT)
+        ..color = const Color(0xFFFFF4B8).withValues(alpha: baseRingAlpha);
       canvas.drawCircle(center, ringR, _fxPaint);
     }
 
@@ -2528,21 +2685,30 @@ class _WaterGardenMasterPainter extends CustomPainter {
     final goldTopY = deckTopY + upperWallH;
     final footTopY = goldTopY + goldBandH;
 
-    // 1. Soft Blurred Stage Floor Drop Shadow
+    // 1. Soft Stage Floor Drop Shadow (feathered concentric ovals, zero MaskFilter.blur!)
+    final floorShadowCenter = Offset(cx, footTopY + footWallH + 6);
     _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..maskFilter = _blurSoft
-      ..color = const Color(0x90030114);
+      ..maskFilter = null
+      ..color = const Color(0x34030114);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(cx, footTopY + footWallH + 6),
-        width: footW + 30,
-        height: footH + 14,
+        center: floorShadowCenter,
+        width: footW + 36,
+        height: footH + 18,
       ),
       _fxPaint,
     );
-    _fxPaint.maskFilter = null;
+    _fxPaint.color = const Color(0x6C030114);
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: floorShadowCenter,
+        width: footW + 18,
+        height: footH + 8,
+      ),
+      _fxPaint,
+    );
 
     // 2. Lower Marble Base Foot Tier (3D shaded cylinder)
     final footBottomRect = Rect.fromCenter(
@@ -2681,21 +2847,30 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.drawOval(topRect.deflate(1.2), _paint);
     _paint.shader = null;
 
-    // 5. Soft Blurred Vase Contact AO + Dual-Lobe Refracted Cyan Caustic Glow
+    // 5. Soft Vase Contact AO + Dual-Lobe Refracted Cyan Caustic Glow
     final footBaseW = baseHalfW * 2.15;
+    final contactCenter = Offset(cx, deckTopY + 1.5);
     _fxPaint
       ..style = PaintingStyle.fill
-      ..maskFilter = _blurTight
-      ..color = const Color(0x5806283D);
+      ..maskFilter = null
+      ..color = const Color(0x2806283D);
     canvas.drawOval(
       Rect.fromCenter(
-        center: Offset(cx, deckTopY + 1.5),
-        width: footBaseW + 18,
-        height: 22,
+        center: contactCenter,
+        width: footBaseW + 24,
+        height: 25,
       ),
       _fxPaint,
     );
-    _fxPaint.maskFilter = null;
+    _fxPaint.color = const Color(0x4E06283D);
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: contactCenter,
+        width: footBaseW + 12,
+        height: 17,
+      ),
+      _fxPaint,
+    );
 
     if (causticIntensity > 0.02) {
       final shimmer = 0.88 + 0.12 * math.sin(ambientPhase * 2.4);
@@ -2975,7 +3150,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     );
 
     const refractShift = 3.2;
-    final stemBaseY = math.min(metrics.innerBaseY - 12, waterTopY + 95);
+    final stemBaseY = metrics.innerBaseY - 2.5;
     final neckMidY = metrics.topRimY + 6;
     final stemExitX = usingSprites
         ? cx
@@ -3031,13 +3206,14 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
         Offset(stemExitX, waterTopY),
-        Offset(cx + 2, stemBaseY),
+        Offset(cx - 2 + refractShift, stemBaseY),
         const [
-          Color(0xD827965E),
-          Color(0x66166D56),
-          Color(0x000E524E),
+          Color(0xEA2EA45C),
+          Color(0xDC238B54),
+          Color(0xCA176D4A),
+          Color(0xBC12563F),
         ],
-        const [0.0, 0.65, 1.0],
+        const [0.0, 0.45, 0.80, 1.0],
       );
     _scratchPath
       ..reset()
@@ -3056,10 +3232,10 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ..strokeWidth = 4.8
         ..shader = ui.Gradient.linear(
           Offset(cx, waterTopY),
-          Offset(cx, stemBaseY - 12),
+          Offset(cx, stemBaseY),
           [
-            const Color(0xCC248F59).withValues(alpha: 0.78 * sideAlpha),
-            const Color(0x00125B4A),
+            const Color(0xDC26965B).withValues(alpha: 0.86 * sideAlpha),
+            const Color(0xC0156448).withValues(alpha: 0.76 * sideAlpha),
           ],
         );
 
@@ -3068,9 +3244,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ..moveTo(cx - 8 + refractShift * 0.5, neckMidY)
         ..quadraticBezierTo(
           cx - 11 + refractShift,
-          (neckMidY + stemBaseY) * 0.5,
+          (neckMidY + stemBaseY) * 0.52,
           cx - 15 + refractShift,
-          stemBaseY - 10,
+          stemBaseY - 3.5,
         );
       canvas.drawPath(_scratchPath, _paint);
 
@@ -3079,9 +3255,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ..moveTo(cx + 9 + refractShift * 0.5, neckMidY)
         ..quadraticBezierTo(
           cx + 12 + refractShift,
-          (neckMidY + stemBaseY) * 0.5,
+          (neckMidY + stemBaseY) * 0.52,
           cx + 14 + refractShift,
-          stemBaseY - 12,
+          stemBaseY - 5.0,
         );
       canvas.drawPath(_scratchPath, _paint);
     }
@@ -3328,17 +3504,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
   ) {
     _paint
       ..style = PaintingStyle.fill
-      ..color = Colors.white
-      ..shader = ui.Gradient.radial(
-        Offset(center.dx + radius * 0.25, center.dy + radius * 0.28),
-        radius * 1.1,
-        [
-          const Color(0xFFB8FFFF).withValues(alpha: 0.42 * alphaScale),
-          const Color(0x4442E2FF).withValues(alpha: 0.22 * alphaScale),
-        ],
-      );
+      ..shader = null
+      ..color = const Color(0xFF72EEFF).withValues(alpha: 0.28 * alphaScale);
     canvas.drawCircle(center, radius, _paint);
-    _paint.shader = null;
 
     _paint
       ..style = PaintingStyle.stroke
@@ -4010,10 +4178,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
     _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..maskFilter = _blurTight
-      ..color = const Color(0x3C032D3B);
+      ..maskFilter = null
+      ..color = const Color(0x28032D3B);
     canvas.drawPath(_scratchPath, _fxPaint);
-    _fxPaint.maskFilter = null;
 
     // 2. Upper Sunlit Chartreuse-Lime Lamina
     _scratchPath
@@ -4153,17 +4320,16 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.rotate(tiltAngle);
     canvas.scale(scale, scale);
 
-    // Soft blurred atmospheric AO behind bud
+    // Soft atmospheric AO behind bud
     _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..maskFilter = _blurSoft
-      ..color = const Color(0x36032430);
+      ..maskFilter = null
+      ..color = const Color(0x28032430);
     canvas.drawOval(
-      Rect.fromCenter(center: const Offset(2.0, -14), width: 32, height: 40),
+      Rect.fromCenter(center: const Offset(2.0, -14), width: 34, height: 42),
       _fxPaint,
     );
-    _fxPaint.maskFilter = null;
 
     // 1. Recessed Inner Back Center Petal Peak
     _scratchPath
@@ -4186,8 +4352,8 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
     // Soft AO shadow cast onto inner peak by overlapping outer petals
     _fxPaint
-      ..maskFilter = _blurTight
-      ..color = const Color(0x524A0524);
+      ..maskFilter = null
+      ..color = const Color(0x3C4A0524);
     canvas.drawOval(
       Rect.fromCenter(center: const Offset(1.5, -16), width: 12, height: 22),
       _fxPaint,
@@ -4213,12 +4379,12 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.drawPath(_scratchPath, _paint);
     _paint.shader = null;
 
-    // Soft blurred overlap AO seam where foreground left petal wraps across right petal
+    // Overlap AO seam where foreground left petal wraps across right petal
     _fxPaint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.2
-      ..maskFilter = _blurTight
-      ..color = const Color(0x624A0626);
+      ..strokeWidth = 2.6
+      ..maskFilter = null
+      ..color = const Color(0x464A0626);
     canvas.drawPath(
       _scratchPath
         ..reset()
@@ -4226,9 +4392,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ..cubicTo(6.2, -8, 5.2, -25, 0.0, -35.5),
       _fxPaint,
     );
-    _fxPaint
-      ..style = PaintingStyle.fill
-      ..maskFilter = null;
+    _fxPaint.style = PaintingStyle.fill;
 
     // 3. Foreground Hero Sunlit Belly Petal (3D spherical highlight + translucent rim glow)
     _scratchPath
@@ -4378,14 +4542,13 @@ class _WaterGardenMasterPainter extends CustomPainter {
       )
       ..close();
 
-    // 1. Soft Blurred Inter-Petal Ambient Occlusion Shadow
+    // 1. Inter-Petal Ambient Occlusion Shadow
     _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..maskFilter = _blurTight
-      ..color = throatCol.withValues(alpha: isFrontFacing ? 0.40 : 0.28);
+      ..maskFilter = null
+      ..color = throatCol.withValues(alpha: isFrontFacing ? 0.28 : 0.20);
     canvas.drawPath(_petalPath.shift(const Offset(0.8, 2.4)), _fxPaint);
-    _fxPaint.maskFilter = null;
 
     // 2. Velvety Spherical Gradient + Cross-Petal Light Shading
     _paint
@@ -4464,17 +4627,16 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.rotate(faceTilt);
     canvas.scale(appearScale * spread, appearScale * spread);
 
-    // Subtle soft atmospheric shadow behind blossom
+    // Subtle atmospheric shadow behind blossom
     _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..maskFilter = _blurSoft
-      ..color = const Color(0x32042E3B);
+      ..maskFilter = null
+      ..color = const Color(0x24042E3B);
     canvas.drawOval(
-      Rect.fromCenter(center: const Offset(0, 6), width: 42, height: 30),
+      Rect.fromCenter(center: const Offset(0, 6), width: 44, height: 32),
       _fxPaint,
     );
-    _fxPaint.maskFilter = null;
 
     // Layer 1: Tall 3D Back Rim Petals (`azimuth ~ 0`, left/right flanks behind receptacle)
     _draw3DSculptedPetal(
@@ -4537,13 +4699,12 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
     // Layer 3: Deep Bowl Throat Shadow + 3D Hemispherical Pollen Cushion & Shaded Stamens
     _fxPaint
-      ..maskFilter = _blurTight
-      ..color = throatCol.withValues(alpha: 0.62);
+      ..maskFilter = null
+      ..color = throatCol.withValues(alpha: 0.44);
     canvas.drawOval(
       Rect.fromCenter(center: const Offset(0, 2.5), width: 28, height: 22),
       _fxPaint,
     );
-    _fxPaint.maskFilter = null;
 
     final coreRect = Rect.fromCenter(
       center: const Offset(0, 1.8),
@@ -4695,10 +4856,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
     // 3D Domed Brown-Bronze Capitulum Disk + Fibonnaci Seed Pattern
     _fxPaint
       ..style = PaintingStyle.fill
-      ..maskFilter = _blurTight
-      ..color = const Color(0x662B1206);
-    canvas.drawCircle(const Offset(0, 1.5), 16.5, _fxPaint);
-    _fxPaint.maskFilter = null;
+      ..maskFilter = null
+      ..color = const Color(0x462B1206);
+    canvas.drawCircle(const Offset(0, 1.5), 17.5, _fxPaint);
 
     _paint
       ..style = PaintingStyle.fill
@@ -4811,10 +4971,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
     // Inner upright opalescent crown halo + glowing golden lotus receptacle pod
     _fxPaint
       ..style = PaintingStyle.fill
-      ..maskFilter = _blurTight
-      ..color = const Color(0x88FFF69E);
-    canvas.drawCircle(Offset.zero, 12.5, _fxPaint);
-    _fxPaint.maskFilter = null;
+      ..maskFilter = null
+      ..color = const Color(0x52FFF69E);
+    canvas.drawCircle(Offset.zero, 13.5, _fxPaint);
 
     _paint
       ..style = PaintingStyle.fill
@@ -4922,13 +5081,11 @@ class _WaterGardenMasterPainter extends CustomPainter {
     _fxPaint
       ..style = PaintingStyle.fill
       ..shader = null
-      ..maskFilter = _blurTight
-      ..blendMode = BlendMode.plus
-      ..color = const Color(0x4064F6FF);
-    canvas.drawPath(_scratchPath, _fxPaint);
-    _fxPaint
       ..maskFilter = null
-      ..blendMode = BlendMode.srcOver;
+      ..blendMode = BlendMode.plus
+      ..color = const Color(0x3464F6FF);
+    canvas.drawPath(_scratchPath, _fxPaint);
+    _fxPaint.blendMode = BlendMode.srcOver;
 
     _paint
       ..style = PaintingStyle.fill
@@ -4995,17 +5152,26 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
       _fxPaint
         ..style = PaintingStyle.fill
-        ..maskFilter = _blurTight
-        ..color = const Color(0x88AAFFFF).withValues(alpha: 0.65 * splashAlpha);
+        ..maskFilter = null
+        ..color = const Color(0x52AAFFFF).withValues(alpha: 0.42 * splashAlpha);
       canvas.drawOval(
         Rect.fromCenter(
           center: waterImpactPt,
-          width: 34.0 * wScale,
-          height: 11.0 * wScale,
+          width: 38.0 * wScale,
+          height: 13.0 * wScale,
         ),
         _fxPaint,
       );
-      _fxPaint.maskFilter = null;
+      _fxPaint.color =
+          const Color(0x88AAFFFF).withValues(alpha: 0.65 * splashAlpha);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: waterImpactPt,
+          width: 28.0 * wScale,
+          height: 9.0 * wScale,
+        ),
+        _fxPaint,
+      );
 
       // Sculpted 5-spike 3D splash crown
       for (int k = 0; k < 5; k++) {
@@ -5184,89 +5350,95 @@ class _WaterGardenMasterPainter extends CustomPainter {
       }
     }
 
-    // 2. Signature Feathered Left Curved Studio Softbox Reflection (smooth spline along exact vase curve)
+    // 2. Signature Feathered Left Curved Studio Softbox Reflection (cached per vase geometry!)
     final hlTopY = m.neckY + 8.0;
     final hlBotY = m.innerBaseY - 10.0;
-    const hlSteps = 32;
-    final leftBandOuter = List<Offset>.generate(hlSteps + 1, (i) {
-      final y = ui.lerpDouble(hlTopY, hlBotY, i / hlSteps)!;
-      final hw = m.outerHalfWidthAt(y, type);
-      return Offset(cx - hw * 0.80, y);
+    final glassKey =
+        '${type.name}|${cx.toStringAsFixed(1)}|${hlTopY.toStringAsFixed(1)}|${hlBotY.toStringAsFixed(1)}';
+    final cachedGlassPaths = _frontGlassPathsCache.putIfAbsent(glassKey, () {
+      const hlSteps = 32;
+      final leftBandOuter = List<Offset>.generate(hlSteps + 1, (i) {
+        final y = ui.lerpDouble(hlTopY, hlBotY, i / hlSteps)!;
+        final hw = m.outerHalfWidthAt(y, type);
+        return Offset(cx - hw * 0.80, y);
+      });
+      final leftBandInner = List<Offset>.generate(hlSteps + 1, (i) {
+        final y = ui.lerpDouble(hlTopY, hlBotY, i / hlSteps)!;
+        final hw = m.outerHalfWidthAt(y, type);
+        return Offset(cx - hw * 0.61, y);
+      });
+      final softboxBand = Path()
+        ..moveTo(leftBandOuter.first.dx, leftBandOuter.first.dy);
+      for (int i = 1; i < hlSteps; i++) {
+        final mid = Offset(
+          (leftBandOuter[i].dx + leftBandOuter[i + 1].dx) * 0.5,
+          (leftBandOuter[i].dy + leftBandOuter[i + 1].dy) * 0.5,
+        );
+        softboxBand.quadraticBezierTo(
+          leftBandOuter[i].dx,
+          leftBandOuter[i].dy,
+          mid.dx,
+          mid.dy,
+        );
+      }
+      softboxBand.lineTo(leftBandOuter.last.dx, leftBandOuter.last.dy);
+      softboxBand.lineTo(leftBandInner.last.dx, leftBandInner.last.dy);
+      for (int i = hlSteps - 1; i > 0; i--) {
+        final mid = Offset(
+          (leftBandInner[i].dx + leftBandInner[i - 1].dx) * 0.5,
+          (leftBandInner[i].dy + leftBandInner[i - 1].dy) * 0.5,
+        );
+        softboxBand.quadraticBezierTo(
+          leftBandInner[i].dx,
+          leftBandInner[i].dy,
+          mid.dx,
+          mid.dy,
+        );
+      }
+      softboxBand
+        ..lineTo(leftBandInner.first.dx, leftBandInner.first.dy)
+        ..close();
+
+      Path buildSmoothCurve(double topY, double botY, double xFactor) {
+        const n = 24;
+        final pts = List<Offset>.generate(n + 1, (i) {
+          final y = ui.lerpDouble(topY, botY, i / n)!;
+          return Offset(cx + m.outerHalfWidthAt(y, type) * xFactor, y);
+        });
+        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+        for (int i = 1; i < n; i++) {
+          final mid = Offset(
+            (pts[i].dx + pts[i + 1].dx) * 0.5,
+            (pts[i].dy + pts[i + 1].dy) * 0.5,
+          );
+          path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
+        }
+        path.lineTo(pts.last.dx, pts.last.dy);
+        return path;
+      }
+
+      return (
+        softboxBand: softboxBand,
+        leftGlint: buildSmoothCurve(hlTopY + 4, hlBotY - 12, -0.72),
+        rightBounce: buildSmoothCurve(hlTopY + 12, hlBotY - 6, 0.82),
+      );
     });
-    final leftBandInner = List<Offset>.generate(hlSteps + 1, (i) {
-      final y = ui.lerpDouble(hlTopY, hlBotY, i / hlSteps)!;
-      final hw = m.outerHalfWidthAt(y, type);
-      return Offset(cx - hw * 0.61, y);
-    });
-    _scratchPath
-      ..reset()
-      ..moveTo(leftBandOuter.first.dx, leftBandOuter.first.dy);
-    for (int i = 1; i < hlSteps; i++) {
-      final mid = Offset(
-        (leftBandOuter[i].dx + leftBandOuter[i + 1].dx) * 0.5,
-        (leftBandOuter[i].dy + leftBandOuter[i + 1].dy) * 0.5,
-      );
-      _scratchPath.quadraticBezierTo(
-        leftBandOuter[i].dx,
-        leftBandOuter[i].dy,
-        mid.dx,
-        mid.dy,
-      );
-    }
-    _scratchPath.lineTo(leftBandOuter.last.dx, leftBandOuter.last.dy);
-    _scratchPath.lineTo(leftBandInner.last.dx, leftBandInner.last.dy);
-    for (int i = hlSteps - 1; i > 0; i--) {
-      final mid = Offset(
-        (leftBandInner[i].dx + leftBandInner[i - 1].dx) * 0.5,
-        (leftBandInner[i].dy + leftBandInner[i - 1].dy) * 0.5,
-      );
-      _scratchPath.quadraticBezierTo(
-        leftBandInner[i].dx,
-        leftBandInner[i].dy,
-        mid.dx,
-        mid.dy,
-      );
-    }
-    _scratchPath
-      ..lineTo(leftBandInner.first.dx, leftBandInner.first.dy)
-      ..close();
 
     _fxPaint
       ..style = PaintingStyle.fill
-      ..maskFilter = _blurTight
+      ..maskFilter = null
       ..shader = ui.Gradient.linear(
         Offset(cx - m.bellyHalfW * 0.8, hlTopY),
         Offset(cx - m.bellyHalfW * 0.5, hlBotY),
         const [
-          Color(0xA8FFFFFF),
-          Color(0x52FFFFFF),
-          Color(0x0EFFFFFF),
+          Color(0x94FFFFFF),
+          Color(0x46FFFFFF),
+          Color(0x0CFFFFFF),
         ],
         const [0.0, 0.52, 1.0],
       );
-    canvas.drawPath(_scratchPath, _fxPaint);
-    _fxPaint
-      ..shader = null
-      ..maskFilter = null;
-
-    void traceSmoothCurve(double topY, double botY, double xFactor) {
-      const n = 24;
-      final pts = List<Offset>.generate(n + 1, (i) {
-        final y = ui.lerpDouble(topY, botY, i / n)!;
-        return Offset(cx + m.outerHalfWidthAt(y, type) * xFactor, y);
-      });
-      _scratchPath
-        ..reset()
-        ..moveTo(pts.first.dx, pts.first.dy);
-      for (int i = 1; i < n; i++) {
-        final mid = Offset(
-          (pts[i].dx + pts[i + 1].dx) * 0.5,
-          (pts[i].dy + pts[i + 1].dy) * 0.5,
-        );
-        _scratchPath.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
-      }
-      _scratchPath.lineTo(pts.last.dx, pts.last.dy);
-    }
+    canvas.drawPath(cachedGlassPaths.softboxBand, _fxPaint);
+    _fxPaint.shader = null;
 
     // Sharp crisp secondary specular glint along left curve
     _paint
@@ -5283,16 +5455,14 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ],
         const [0.0, 0.5, 1.0],
       );
-    traceSmoothCurve(hlTopY + 4, hlBotY - 12, -0.72);
-    canvas.drawPath(_scratchPath, _paint);
+    canvas.drawPath(cachedGlassPaths.leftGlint, _paint);
 
     // Secondary warm cyan/ivory bounce rim along right curve
-    traceSmoothCurve(hlTopY + 12, hlBotY - 6, 0.82);
     _paint
       ..strokeWidth = 3.0
       ..shader = null
       ..color = palette.accentTint.withValues(alpha: 0.36);
-    canvas.drawPath(_scratchPath, _paint);
+    canvas.drawPath(cachedGlassPaths.rightBounce, _paint);
 
     // Heavy Crystal Bottom Puck Front Specular Crescent
     _scratchPath
@@ -5585,10 +5755,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
     _fxPaint
       ..style = PaintingStyle.fill
-      ..maskFilter = _blurTight
-      ..color = const Color(0x50042E40);
+      ..maskFilter = null
+      ..color = const Color(0x3E042E40);
     canvas.drawRRect(tagRRect.shift(const Offset(0, 2.5)), _fxPaint);
-    _fxPaint.maskFilter = null;
 
     _paint
       ..style = PaintingStyle.fill
@@ -5805,9 +5974,12 @@ class _WaterGardenMasterPainter extends CustomPainter {
       } else {
         _fxPaint
           ..style = PaintingStyle.fill
-          ..maskFilter = _blurTight
-          ..color = const Color(0xFFFFF59D).withValues(alpha: 0.68 * intensity * pulse);
-        canvas.drawCircle(Offset(mx, my), 2.4, _fxPaint);
+          ..maskFilter = null
+          ..color = const Color(0xFFFFF59D).withValues(alpha: 0.28 * intensity * pulse);
+        canvas.drawCircle(Offset(mx, my), 4.0, _fxPaint);
+        _fxPaint.color =
+            const Color(0xFFFFF59D).withValues(alpha: 0.72 * intensity * pulse);
+        canvas.drawCircle(Offset(mx, my), 2.1, _fxPaint);
       }
     }
     _fxPaint
@@ -6003,16 +6175,16 @@ class _WaterGardenMasterPainter extends CustomPainter {
   ) {
     if (radius <= 0.5) return;
 
-    // Soft radial star halo glow
+    // Soft radial star halo glow (no MaskFilter.blur per frame)
     _fxPaint
       ..style = PaintingStyle.fill
-      ..maskFilter = _blurTight
-      ..blendMode = BlendMode.plus
-      ..color = color.withValues(alpha: color.a * 0.55);
-    canvas.drawCircle(center, radius * 0.85, _fxPaint);
-    _fxPaint
       ..maskFilter = null
-      ..blendMode = BlendMode.srcOver;
+      ..blendMode = BlendMode.plus
+      ..color = color.withValues(alpha: color.a * 0.26);
+    canvas.drawCircle(center, radius * 1.15, _fxPaint);
+    _fxPaint.color = color.withValues(alpha: color.a * 0.45);
+    canvas.drawCircle(center, radius * 0.65, _fxPaint);
+    _fxPaint.blendMode = BlendMode.srcOver;
 
     final inner = radius * 0.24;
     _scratchPath

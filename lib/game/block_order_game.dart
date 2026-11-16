@@ -1016,6 +1016,29 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   @visibleForTesting
   double get debugComboRemainingSeconds => _comboRemainingSeconds;
 
+  @visibleForTesting
+  double get debugMergeImpactShakeAmpPx => _mergeImpactShakeAmpPx;
+
+  @visibleForTesting
+  double get debugMergeImpactZoomPunch => _mergeImpactZoomPunch;
+
+  @visibleForTesting
+  double get debugMergeImpactShakeDuration => _mergeImpactShakeDuration;
+
+  static const int maxComboShakeLevel = 5;
+
+  /// Escalates combo impact shake from a gentle `1x` tremor up to a fixed
+  /// ceiling at `5x` so high combos stay punchy without escalating endlessly.
+  static ({double duration, double ampPx, double zoomPunch})
+      comboShakeProfileForCount(int comboCount, double cellSize) {
+    final tier = comboCount.clamp(1, maxComboShakeLevel);
+    return (
+      duration: 0.09 + 0.02 * tier,
+      ampPx: cellSize * (0.003 + 0.0045 * tier),
+      zoomPunch: 0.001 + 0.002 * tier,
+    );
+  }
+
   void _resetComboState() {
     _comboRemainingSeconds = 0.0;
     if (comboCountNotifier.value != 0) {
@@ -1046,6 +1069,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       'IceBlocks.png',
       'Ice_Shards.png',
       'Icon_Mechanic_Blocker.png',
+      'Icon_Mechanic_Ice.png',
       'Screw_Greyscale_01.png',
       'Screw_Greyscale_02.png',
       'Screw_Greyscale_03.png',
@@ -2765,12 +2789,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _activeComboCallout = callout;
     _addToBoardStage(callout);
 
-    if (nextCombo >= 3 && _mergeImpactShakeElapsed < 0) {
-      final capped = math.min(nextCombo, 7);
+    final shakeProfile = comboShakeProfileForCount(nextCombo, _cellSize);
+    if (_mergeImpactShakeElapsed < 0 ||
+        _mergeImpactShakeAmpPx <= shakeProfile.ampPx) {
       _mergeImpactShakeElapsed = 0.0;
-      _mergeImpactShakeDuration = 0.14 + 0.02 * capped;
-      _mergeImpactShakeAmpPx = _cellSize * (0.015 + 0.005 * capped);
-      _mergeImpactZoomPunch = 0.006 + 0.002 * capped;
+      _mergeImpactShakeDuration = shakeProfile.duration;
+      _mergeImpactShakeAmpPx = shakeProfile.ampPx;
+      _mergeImpactZoomPunch = shakeProfile.zoomPunch;
     }
 
     audio.playComboPraise(nextCombo);

@@ -1,37 +1,152 @@
 import 'dart:async';
+import 'dart:collection';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _SfxSpec {
+  final int voices;
+  final int minGapMs;
+  final double gain;
+
+  const _SfxSpec({
+    required this.voices,
+    required this.minGapMs,
+    required this.gain,
+  });
+}
+
+class _SfxVoiceSlot {
+  final AudioPlayer player;
+  bool dirty = false;
+  double lastVolume;
+  Future<void> _queue = Future<void>.value();
+
+  _SfxVoiceSlot(this.player, {this.lastVolume = 1.0});
+
+  Future<void> trigger(double volume) {
+    final next = _queue.catchError((_) {}).then((_) async {
+      try {
+        if (dirty) {
+          await player.stop();
+        }
+        if ((lastVolume - volume).abs() > 0.015) {
+          lastVolume = volume;
+          await player.setVolume(volume);
+        }
+        dirty = true;
+        await player.resume();
+      } catch (_) {}
+    });
+    _queue = next;
+    return next;
+  }
+
+  Future<void> dispose() async {
+    try {
+      await player.dispose();
+    } catch (_) {}
+  }
+}
+
+class _LowLatencySfxBank {
+  final String file;
+  final _SfxSpec spec;
+  final List<_SfxVoiceSlot> _slots = <_SfxVoiceSlot>[];
+  int _cursor = 0;
+
+  _LowLatencySfxBank({required this.file, required this.spec});
+
+  bool get isReady => _slots.isNotEmpty;
+
+  void addSlot(_SfxVoiceSlot slot) {
+    _slots.add(slot);
+  }
+
+  void trigger(double volume) {
+    if (_slots.isEmpty) return;
+    final slot = _slots[_cursor];
+    _cursor = (_cursor + 1) % _slots.length;
+    unawaited(slot.trigger(volume));
+  }
+
+  Future<void> dispose() async {
+    for (final slot in _slots) {
+      await slot.dispose();
+    }
+    _slots.clear();
+  }
+}
 
 class AudioHapticsService extends ChangeNotifier {
   static const _kSound = 'bo_sound_enabled';
   static const _kMusic = 'bo_music_enabled';
   static const _kHaptics = 'bo_haptics_enabled';
 
-  /// Balanced BGM volume so `0 dBFS`-mastered `BO_BGM_Gameplay_02_Loop` sits cleanly
-  /// underneath `-10..-18 dBFS` tactile gameplay SFX (`AudioEntry.volume = 1.0`).
-  static const double _bgmVolume = 0.22;
+  /// Balanced BGM volume so `0 dBFS`-mastered `bgm_gameplay.mp3` sits cleanly
+  /// underneath calibrated gameplay SFX without competing in the mixer.
+  static const double _bgmVolume = 0.20;
+  static const int maxComboSfxIndex = 13;
+  static const int _burstWindowMs = 180;
 
-  static const Map<String, (int minPlayers, int maxPlayers)> _pooledSfxSpecs = {
-    'sfx_block_grab.wav': (2, 4),
-    'sfx_block_put.wav': (2, 4),
-    'sfx_block_attract.wav': (2, 4),
-    'sfx_block_merge.wav': (2, 5),
-    'sfx_ice_break_small.wav': (1, 3),
-    'sfx_ice_break_whole.wav': (1, 3),
-    'sfx_button_click.wav': (1, 3),
-    'sfx_pu_select.wav': (1, 2),
-    'sfx_levelup_arrow.wav': (1, 2),
-    'sfx_levelup_fly.wav': (1, 2),
-    'sfx_levelup_merge.wav': (1, 2),
-    'sfx_target_collect.wav': (2, 6),
-    'sfx_time_freeze.wav': (1, 2),
-    'sfx_water_stream.wav': (1, 2),
-    'sfx_win_complete.wav': (1, 2),
-    'sfx_win_amazing.wav': (1, 2),
-    'sfx_lose_timeout.wav': (1, 2),
-    'sfx_lose_failed.wav': (1, 2),
+  static AudioContext _buildGameAudioContext({
+    required AndroidContentType contentType,
+  }) {
+    final base = AudioContextConfig(
+      focus: AudioContextConfigFocus.mixWithOthers,
+    ).build();
+    return AudioContext(
+      android: base.android.copy(
+        contentType: contentType,
+        usageType: AndroidUsageType.game,
+        audioFocus: AndroidAudioFocus.none,
+      ),
+      iOS: base.iOS,
+    );
+  }
+
+  static final AudioContext _sfxAudioContext = _buildGameAudioContext(
+    contentType: AndroidContentType.sonification,
+  );
+  static final AudioContext _bgmAudioContext = _buildGameAudioContext(
+    contentType: AndroidContentType.music,
+  );
+
+  /// Peak-calibrated voice specs keeping solo SFX crisp (~ -6..-11 dBFS)
+  /// and preventing digital clipping ("rè rè") during multi-SFX overlap.
+  static const Map<String, _SfxSpec> _sfxSpecs = {
+    'sfx_block_grab.wav': _SfxSpec(voices: 2, minGapMs: 40, gain: 0.90),
+    'sfx_block_put.wav': _SfxSpec(voices: 2, minGapMs: 45, gain: 0.68),
+    'sfx_block_attract.wav': _SfxSpec(voices: 2, minGapMs: 75, gain: 0.95),
+    'sfx_block_merge.wav': _SfxSpec(voices: 2, minGapMs: 45, gain: 0.85),
+    'sfx_ice_break_small.wav': _SfxSpec(voices: 2, minGapMs: 95, gain: 0.68),
+    'sfx_ice_break_whole.wav': _SfxSpec(voices: 2, minGapMs: 80, gain: 0.60),
+    'sfx_button_click.wav': _SfxSpec(voices: 2, minGapMs: 45, gain: 0.58),
+    'sfx_pu_select.wav': _SfxSpec(voices: 1, minGapMs: 70, gain: 0.62),
+    'sfx_levelup_arrow.wav': _SfxSpec(voices: 1, minGapMs: 60, gain: 1.00),
+    'sfx_levelup_fly.wav': _SfxSpec(voices: 1, minGapMs: 60, gain: 1.00),
+    'sfx_levelup_merge.wav': _SfxSpec(voices: 2, minGapMs: 55, gain: 1.00),
+    'sfx_target_collect.wav': _SfxSpec(voices: 3, minGapMs: 55, gain: 0.58),
+    'sfx_time_freeze.wav': _SfxSpec(voices: 1, minGapMs: 120, gain: 0.56),
+    'sfx_water_stream.wav': _SfxSpec(voices: 1, minGapMs: 120, gain: 0.56),
+    'sfx_win_complete.wav': _SfxSpec(voices: 1, minGapMs: 150, gain: 0.58),
+    'sfx_win_amazing.wav': _SfxSpec(voices: 1, minGapMs: 150, gain: 0.58),
+    'sfx_lose_timeout.wav': _SfxSpec(voices: 1, minGapMs: 150, gain: 0.58),
+    'sfx_lose_failed.wav': _SfxSpec(voices: 1, minGapMs: 150, gain: 0.56),
+    'new_1.mp3': _SfxSpec(voices: 2, minGapMs: 55, gain: 0.78),
+    'new_2.mp3': _SfxSpec(voices: 2, minGapMs: 55, gain: 0.78),
+    'new_3.mp3': _SfxSpec(voices: 2, minGapMs: 55, gain: 0.78),
+    'new_4.mp3': _SfxSpec(voices: 2, minGapMs: 55, gain: 0.78),
+    'new_5.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_6.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_7.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_8.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_9.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_10.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_11.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_12.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
+    'new_13.mp3': _SfxSpec(voices: 1, minGapMs: 55, gain: 0.76),
   };
 
   bool _soundEnabled = true;
@@ -39,7 +154,12 @@ class AudioHapticsService extends ChangeNotifier {
   bool _hapticsEnabled = true;
   bool _bgmPlaying = false;
   SharedPreferences? _prefs;
-  final Map<String, AudioPool> _pools = {};
+  final Map<String, _LowLatencySfxBank> _banks = {};
+  final Map<String, int> _lastPlayedAtMs = {};
+  final ListQueue<int> _recentTriggerMs = ListQueue<int>();
+  final Stopwatch _clock = Stopwatch()..start();
+  int _lastHapticMs = -100;
+  int _lastHapticPriority = 0;
 
   @visibleForTesting
   final List<String> debugPlayedSfxLog = [];
@@ -55,6 +175,31 @@ class AudioHapticsService extends ChangeNotifier {
   void clearDebugLogs() {
     debugPlayedSfxLog.clear();
     debugHapticsLog.clear();
+    _lastPlayedAtMs.clear();
+    _recentTriggerMs.clear();
+    _lastHapticMs = -100;
+    _lastHapticPriority = 0;
+  }
+
+  /// Computes peak-safe SFX gain adjusted for simultaneous active voices.
+  @visibleForTesting
+  static double computeMixGain(
+    String file, {
+    double volume = 1.0,
+    int concurrentCount = 1,
+  }) {
+    final specGain = _sfxSpecs[file]?.gain ?? 0.72;
+    final double polyScale;
+    if (concurrentCount <= 1) {
+      polyScale = 1.00;
+    } else if (concurrentCount == 2) {
+      polyScale = 0.88;
+    } else if (concurrentCount == 3) {
+      polyScale = 0.78;
+    } else {
+      polyScale = 0.68;
+    }
+    return (volume * specGain * polyScale).clamp(0.05, 0.92);
   }
 
   Future<void> init() async {
@@ -66,50 +211,71 @@ class AudioHapticsService extends ChangeNotifier {
     try {
       await FlameAudio.audioCache.loadAll([
         'bgm_gameplay.mp3',
-        'sfx_block_attract.wav',
-        'sfx_block_grab.wav',
-        'sfx_block_merge.wav',
-        'sfx_block_put.wav',
-        'sfx_levelup_arrow.wav',
-        'sfx_levelup_fly.wav',
-        'sfx_levelup_merge.wav',
-        'sfx_ice_break_small.wav',
-        'sfx_ice_break_whole.wav',
-        'sfx_lose_timeout.wav',
-        'sfx_lose_failed.wav',
-        'sfx_water_stream.wav',
-        'sfx_win_complete.wav',
-        'sfx_win_amazing.wav',
-        'sfx_pu_select.wav',
-        'sfx_time_freeze.wav',
-        'sfx_button_click.wav',
-        'sfx_target_collect.wav',
+        ..._sfxSpecs.keys,
       ]);
 
+      // Pass 1: warm the primary SoundPool slot for every SFX so native PCM decoding
+      // completes once in background before any secondary voice slots share the soundId.
       await Future.wait(
-        _pooledSfxSpecs.entries.map((entry) async {
-          try {
-            final pool = await FlameAudio.createPool(
-              entry.key,
-              minPlayers: entry.value.$1,
-              maxPlayers: entry.value.$2,
-            );
-            _pools[entry.key] = pool;
-            // ignore: invalid_use_of_visible_for_testing_member
-            for (final p in pool.availablePlayers) {
-              p.positionUpdater = _DisabledPositionUpdater();
-            }
-          } catch (_) {}
+        _sfxSpecs.entries.map((entry) async {
+          final bank = _LowLatencySfxBank(file: entry.key, spec: entry.value);
+          _banks[entry.key] = bank;
+          final primary = await _createLowLatencySlot(
+            entry.key,
+            initialVolume: entry.value.gain,
+          );
+          if (primary != null) {
+            bank.addSlot(primary);
+          }
         }),
       );
 
-      FlameAudio.bgm.initialize();
+      // Pass 2: add secondary polyphonic slots (instant native soundId reuse on Android SoundPool).
+      await Future.wait(
+        _sfxSpecs.entries.where((e) => e.value.voices > 1).map((entry) async {
+          final bank = _banks[entry.key];
+          if (bank == null || !bank.isReady) return;
+          for (int i = 1; i < entry.value.voices; i++) {
+            final extra = await _createLowLatencySlot(
+              entry.key,
+              initialVolume: entry.value.gain,
+            );
+            if (extra != null) {
+              bank.addSlot(extra);
+            }
+          }
+        }),
+      );
+
+      await FlameAudio.bgm.initialize(audioContext: _bgmAudioContext);
       FlameAudio.bgm.audioPlayer.positionUpdater = _DisabledPositionUpdater();
       if (_musicEnabled) {
         unawaited(startBgm());
       }
     } catch (e) {
       debugPrint('Audio preload warning: $e');
+    }
+  }
+
+  Future<_SfxVoiceSlot?> _createLowLatencySlot(
+    String file, {
+    required double initialVolume,
+  }) async {
+    final player = AudioPlayer();
+    try {
+      player.positionUpdater = _DisabledPositionUpdater();
+      player.audioCache = FlameAudio.audioCache;
+      await player.setPlayerMode(PlayerMode.lowLatency);
+      await player.setAudioContext(_sfxAudioContext);
+      await player.setReleaseMode(ReleaseMode.stop);
+      await player.setSource(AssetSource(file));
+      await player.setVolume(initialVolume);
+      return _SfxVoiceSlot(player, lastVolume: initialVolume);
+    } catch (_) {
+      try {
+        await player.dispose();
+      } catch (_) {}
+      return null;
     }
   }
 
@@ -171,6 +337,15 @@ class AudioHapticsService extends ChangeNotifier {
   void _triggerHaptic(String tag, Future<void> Function() action) {
     if (!_hapticsEnabled) return;
     _recordDebugLog(debugHapticsLog, tag);
+    final nowMs = _clock.elapsedMilliseconds;
+    final priority = tag == 'heavyImpact'
+        ? 3
+        : (tag == 'mediumImpact' ? 2 : 1);
+    if ((nowMs - _lastHapticMs) < 28 && priority <= _lastHapticPriority) {
+      return;
+    }
+    _lastHapticMs = nowMs;
+    _lastHapticPriority = priority;
     try {
       unawaited(action());
     } catch (_) {}
@@ -178,18 +353,42 @@ class AudioHapticsService extends ChangeNotifier {
 
   void _playSfx(String file, {double volume = 1.0}) {
     if (!_soundEnabled) return;
+    final nowMs = _clock.elapsedMilliseconds;
+    final spec = _sfxSpecs[file];
+    final minGapMs = spec?.minGapMs ?? 45;
+    final prevMs = _lastPlayedAtMs[file];
+    if (prevMs != null && (nowMs - prevMs) < minGapMs) {
+      return;
+    }
+    _lastPlayedAtMs[file] = nowMs;
+
+    while (_recentTriggerMs.isNotEmpty &&
+        (nowMs - _recentTriggerMs.first) > _burstWindowMs) {
+      _recentTriggerMs.removeFirst();
+    }
+    _recentTriggerMs.addLast(nowMs);
+    final mixedVol = computeMixGain(
+      file,
+      volume: volume,
+      concurrentCount: _recentTriggerMs.length,
+    );
+
     _recordDebugLog(debugPlayedSfxLog, file);
-    unawaited(_startSfxAsync(file, volume));
+    final bank = _banks[file];
+    if (bank != null && bank.isReady) {
+      bank.trigger(mixedVol);
+    } else {
+      unawaited(_playFallbackAsync(file, mixedVol));
+    }
   }
 
-  Future<void> _startSfxAsync(String file, double volume) async {
+  Future<void> _playFallbackAsync(String file, double volume) async {
     try {
-      final pool = _pools[file];
-      if (pool != null) {
-        await pool.start(volume: volume);
-      } else {
-        await FlameAudio.play(file, volume: volume);
-      }
+      await FlameAudio.play(
+        file,
+        volume: volume,
+        audioContext: _sfxAudioContext,
+      );
     } catch (_) {}
   }
 
@@ -257,24 +456,15 @@ class AudioHapticsService extends ChangeNotifier {
     _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
   }
 
-  /// Progressive audio & haptic feedback for consecutive merge combos (`x2, x3, x4...`).
+  /// Ascending combo chime (`new_1.mp3 .. new_13.mp3`) for consecutive merge combos (`1x..13x+`).
   void playComboPraise(int comboCount) {
-    if (comboCount <= 1) return;
-    if (comboCount == 2) {
-      _playSfx('sfx_target_collect.wav', volume: 0.65);
+    final idx = comboCount.clamp(1, maxComboSfxIndex);
+    final comboVol = (0.86 + 0.012 * (idx - 1)).clamp(0.86, 1.0);
+    _playSfx('new_$idx.mp3', volume: comboVol);
+    if (comboCount >= 4) {
+      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    } else if (comboCount >= 2) {
       _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
-    } else if (comboCount == 3) {
-      _playSfx('sfx_target_collect.wav', volume: 0.85);
-      _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
-    } else if (comboCount == 4) {
-      _playSfx('sfx_levelup_merge.wav', volume: 0.58);
-      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
-    } else if (comboCount == 5) {
-      _playSfx('sfx_levelup_merge.wav', volume: 0.78);
-      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
-    } else {
-      _playSfx('sfx_win_amazing.wav', volume: 0.72);
-      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
     }
   }
 
@@ -351,6 +541,16 @@ class AudioHapticsService extends ChangeNotifier {
 
   void hapticBlocked() {
     _triggerHaptic('lightImpact', HapticFeedback.lightImpact);
+  }
+
+  @override
+  void dispose() {
+    unawaited(stopBgm());
+    for (final bank in _banks.values) {
+      unawaited(bank.dispose());
+    }
+    _banks.clear();
+    super.dispose();
   }
 }
 

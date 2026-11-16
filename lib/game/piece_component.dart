@@ -148,6 +148,8 @@ class PieceComponent extends PositionComponent {
       <String, _SharedPieceGeometry>{};
   static final Map<String, _BakedStaticPieceSprite> _sharedStaticPieceCache =
       <String, _BakedStaticPieceSprite>{};
+  static final Map<String, _BakedStaticPieceSprite> _sharedGlassFgCache =
+      <String, _BakedStaticPieceSprite>{};
 
   static int _frameBakeBudget = 3;
 
@@ -260,6 +262,7 @@ class PieceComponent extends PositionComponent {
   double _sandErosionIntensity = 0.0;
   double _sandReformFlash = 0.0;
   double _sandShimmerClock = 0.0;
+  double _bubbleClock = 0.0;
   double _liquidWavePhase = 0.0;
   double _smoothedWaveEnergy = 0.0;
   int _lastSandGridCol = -999;
@@ -346,6 +349,7 @@ class PieceComponent extends PositionComponent {
 
   ui.Image? _iceLockImg;
   ui.Image? _iceBlocksTex;
+  ui.Image? _iceBlockImg;
   ui.Image? _blockerImg;
   ui.Image? _screwFallbackImg;
   ui.Image? _arrowShadowImg;
@@ -357,7 +361,31 @@ class PieceComponent extends PositionComponent {
 
   // Cached GPU Paints & Shaders (zero per-frame allocations for stationary & dragged pieces!)
   (Color, Color, bool, int)? _cachedBodyStyleKey;
-  final Paint _blockerPaint = Paint()..filterQuality = FilterQuality.high;
+  (Color, Color, Color, int, int, int)? _cachedLiquidWaveStyleKey;
+  (Color, Color, double)? _cachedGlassFgStyleKey;
+  final Path _reusableBackWavePath = Path();
+  final Path _reusableFrontWaterPath = Path();
+  final Path _reusableFrontRimCurve = Path();
+  final Path _reusableCrestGlowPath = Path();
+  final Paint _liquidMeniscusPaint = Paint();
+  final Paint _liquidBodyPaint = Paint();
+  final Paint _liquidSideBouncePaint = Paint();
+  final Paint _liquidRimPaint = Paint()
+    ..style = ui.PaintingStyle.stroke
+    ..strokeCap = ui.StrokeCap.round;
+  final Paint _liquidCrestPaint = Paint();
+  final Paint _liquidBubbleStrokePaint = Paint()
+    ..style = ui.PaintingStyle.stroke
+    ..strokeWidth = 0.95;
+  final Paint _liquidBubbleDotPaint = Paint();
+  final Paint _glassShoulderPaint = Paint()..style = ui.PaintingStyle.stroke;
+  final Paint _glassWallStreakPaint = Paint()..style = ui.PaintingStyle.stroke;
+  final Paint _glassBaseHighlightPaint = Paint()
+    ..style = ui.PaintingStyle.stroke;
+  final Paint _glassOuterRimPaint = Paint()
+    ..style = ui.PaintingStyle.stroke
+    ..strokeJoin = ui.StrokeJoin.round;
+  final Paint _blockerPaint = Paint()..filterQuality = FilterQuality.medium;
   final Paint _cachedWallPaint = Paint();
   final Paint _cachedTopPaint = Paint();
   final Paint _cachedRimPaint = Paint()
@@ -543,6 +571,7 @@ class PieceComponent extends PositionComponent {
 
     _iceLockImg = tryGet('IceLock.png');
     _iceBlocksTex = tryGet('IceBlocks.png');
+    _iceBlockImg = tryGet('Icon_Mechanic_Ice.png');
     _blockerImg = tryGet('Icon_Mechanic_Blocker.png');
     _screwFallbackImg = tryGet('Screw_Greyscale_01.png');
     _arrowShadowImg = tryGet('Movement_Single-Horizontal_Shadow.png');
@@ -1289,6 +1318,9 @@ class PieceComponent extends PositionComponent {
       _liquidWavePhase = (_liquidWavePhase +
               idleDt * (2.55 + 6.4 * _smoothedWaveEnergy)) %
           (math.pi * 200.0);
+      _bubbleClock =
+          (_bubbleClock + idleDt * (0.16 + 0.08 * _smoothedWaveEnergy)) %
+              1000.0;
       _slideStreakVel = Offset.zero;
       final gx = boardOrigin.x + model.col * cellSize;
       final gy = boardOrigin.y + model.row * cellSize;
@@ -1586,8 +1618,9 @@ class PieceComponent extends PositionComponent {
         (_iceBlocksTex != null ? 2 : 0) |
         (_arrowTopImg != null ? 4 : 0) |
         (_arrowHorizCombinedImg != null ? 8 : 0) |
-        (_blockerImg != null ? 16 : 0);
-    return 'glassHalfLiquidV5|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
+        (_blockerImg != null ? 16 : 0) |
+        (_iceBlockImg != null ? 64 : 0);
+    return 'glassHalfLiquidV6|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
   }
 
   _BakedStaticPieceSprite? _getOrBakeStaticPieceSprite(
@@ -1988,7 +2021,8 @@ class PieceComponent extends PositionComponent {
         effectiveLipDepth: effectiveLipDepth,
       );
 
-      if (_isIceCovered) {
+      final hasExactIceSprite = _isIceCovered && _iceBlockImg != null;
+      if (_isIceCovered && !hasExactIceSprite) {
         _drawIceFrostAndSheen(
           canvas,
           topJellyShift,
@@ -1996,16 +2030,18 @@ class PieceComponent extends PositionComponent {
         );
       }
 
-      final outerContourColor = _isIceCovered
-          ? const Color(0xFF2882ED)
-          : (model.isDud
-              ? const Color(0xFF3E425E)
-              : Color.lerp(baseStyle.topMid, baseStyle.bottomLip, 0.58)!);
-      _outerContourPaint.color = outerContourColor.withValues(alpha: 0.88);
-      canvas.save();
-      canvas.translate(topJellyShift.dx, topJellyShift.dy);
-      canvas.drawPath(_topPath, _outerContourPaint);
-      canvas.restore();
+      if (!hasExactIceSprite) {
+        final outerContourColor = _isIceCovered
+            ? const Color(0xFF2882ED)
+            : (model.isDud
+                ? const Color(0xFF3E425E)
+                : Color.lerp(baseStyle.topMid, baseStyle.bottomLip, 0.58)!);
+        _outerContourPaint.color = outerContourColor.withValues(alpha: 0.88);
+        canvas.save();
+        canvas.translate(topJellyShift.dx, topJellyShift.dy);
+        canvas.drawPath(_topPath, _outerContourPaint);
+        canvas.restore();
+      }
 
       if (!_areComponentsRemovedForAbsorb) {
         _drawPieceTopFaceRiders(canvas, baseStyle, topJellyShift);
@@ -2331,7 +2367,8 @@ class PieceComponent extends PositionComponent {
             sWaveFront)
         .clamp(minCtrlY + cellSize * 0.02, maxClampY);
 
-    final backWavePath = Path()
+    final backWavePath = _reusableBackWavePath
+      ..reset()
       ..moveTo(x0 - 2.0, bLeftY)
       ..cubicTo(
         x0 + w * 0.32,
@@ -2345,7 +2382,8 @@ class PieceComponent extends PositionComponent {
       ..lineTo(x0 - 2.0, y1 + 2.0)
       ..close();
 
-    final frontWaterPath = Path()
+    final frontWaterPath = _reusableFrontWaterPath
+      ..reset()
       ..moveTo(x0 - 2.0, fLeftY)
       ..cubicTo(
         x0 + w * 0.33,
@@ -2362,6 +2400,57 @@ class PieceComponent extends PositionComponent {
     // Cache union of meniscus + liquid body for `_MergeCylinder` & `_MergeOverlap` clipping
     _lastLiquidWaveClipPath = backWavePath;
 
+    final nextLiquidKey = (
+      style.topBright,
+      style.topMid,
+      style.bottomLip,
+      (baseWaveY * 4.0).round(),
+      (meniscusDepth * 4.0).round(),
+      (alphaMultiplier * 100.0).round(),
+    );
+    if (_cachedLiquidWaveStyleKey != nextLiquidKey) {
+      _cachedLiquidWaveStyleKey = nextLiquidKey;
+      final meniscusBright = Color.lerp(style.topBright, Colors.white, 0.50)!;
+      final meniscusMid = Color.lerp(style.topBright, Colors.white, 0.28)!;
+      _liquidMeniscusPaint.shader = ui.Gradient.linear(
+        Offset(x0, baseWaveY - meniscusDepth),
+        Offset(x1, baseWaveY + cellSize * 0.04),
+        [
+          meniscusBright.withValues(alpha: 0.95 * alphaMultiplier),
+          meniscusMid.withValues(alpha: 0.94 * alphaMultiplier),
+        ],
+      );
+
+      final upperBodyCol = Color.lerp(style.topMid, style.bottomLip, 0.30)!;
+      final deepCoreCol = Color.lerp(style.topMid, style.bottomLip, 0.45)!;
+      final floorGlowCol = Color.lerp(style.topBright, Colors.white, 0.24)!;
+      _liquidBodyPaint.shader = ui.Gradient.linear(
+        Offset(x0 + w * 0.5, baseWaveY),
+        Offset(x0 + w * 0.5, y1),
+        [
+          upperBodyCol.withValues(alpha: 0.93 * alphaMultiplier),
+          deepCoreCol.withValues(alpha: 0.95 * alphaMultiplier),
+          style.topMid.withValues(alpha: 0.95 * alphaMultiplier),
+          style.topBright.withValues(alpha: 0.96 * alphaMultiplier),
+          floorGlowCol.withValues(alpha: 0.97 * alphaMultiplier),
+        ],
+        const [0.0, 0.46, 0.76, 0.91, 1.0],
+      );
+
+      _liquidSideBouncePaint.shader = ui.Gradient.linear(
+        Offset(x0, baseWaveY),
+        Offset(x1, baseWaveY),
+        [
+          style.topBright.withValues(alpha: 0.42 * alphaMultiplier),
+          style.topBright.withValues(alpha: 0.0),
+          style.topBright.withValues(alpha: 0.0),
+          style.topBright.withValues(alpha: 0.38 * alphaMultiplier),
+        ],
+        const [0.0, 0.14, 0.86, 1.0],
+      );
+      _liquidRimPaint.strokeWidth = (cellSize * 0.025).clamp(1.3, 2.4);
+    }
+
     canvas.save();
     if (topJellyShift != Offset.zero) {
       canvas.translate(topJellyShift.dx, topJellyShift.dy);
@@ -2369,59 +2458,17 @@ class PieceComponent extends PositionComponent {
     canvas.clipPath(_liquidCavityPath);
 
     // 1. Bright Glowing 3D Top Meniscus Surface (`backWavePath`)
-    final meniscusBright = Color.lerp(style.topBright, Colors.white, 0.50)!;
-    final meniscusMid = Color.lerp(style.topBright, Colors.white, 0.28)!;
-    canvas.drawPath(
-      backWavePath,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(x0, baseWaveY - meniscusDepth),
-          Offset(x1, baseWaveY + cellSize * 0.04),
-          [
-            meniscusBright.withValues(alpha: 0.95 * alphaMultiplier),
-            meniscusMid.withValues(alpha: 0.94 * alphaMultiplier),
-          ],
-        ),
-    );
+    canvas.drawPath(backWavePath, _liquidMeniscusPaint);
 
     // 2. Rich Jewel-Tone Liquid Body + Glowing Bottom Glass Floor Refraction (`media_1794051081001.png`)
-    final upperBodyCol = Color.lerp(style.topMid, style.bottomLip, 0.30)!;
-    final deepCoreCol = Color.lerp(style.topMid, style.bottomLip, 0.45)!;
-    final floorGlowCol = Color.lerp(style.topBright, Colors.white, 0.24)!;
-
-    _sandErosionPaint.shader = ui.Gradient.linear(
-      Offset(x0 + w * 0.5, baseWaveY),
-      Offset(x0 + w * 0.5, y1),
-      [
-        upperBodyCol.withValues(alpha: 0.93 * alphaMultiplier),
-        deepCoreCol.withValues(alpha: 0.95 * alphaMultiplier),
-        style.topMid.withValues(alpha: 0.95 * alphaMultiplier),
-        style.topBright.withValues(alpha: 0.96 * alphaMultiplier),
-        floorGlowCol.withValues(alpha: 0.97 * alphaMultiplier),
-      ],
-      const [0.0, 0.46, 0.76, 0.91, 1.0],
-    );
-    canvas.drawPath(frontWaterPath, _sandErosionPaint);
+    canvas.drawPath(frontWaterPath, _liquidBodyPaint);
 
     // Subtle internal side-wall bounce glow inside the liquid along left & right glass edges
-    canvas.drawPath(
-      frontWaterPath,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          Offset(x0, baseWaveY),
-          Offset(x1, baseWaveY),
-          [
-            style.topBright.withValues(alpha: 0.42 * alphaMultiplier),
-            style.topBright.withValues(alpha: 0.0),
-            style.topBright.withValues(alpha: 0.0),
-            style.topBright.withValues(alpha: 0.38 * alphaMultiplier),
-          ],
-          const [0.0, 0.14, 0.86, 1.0],
-        ),
-    );
+    canvas.drawPath(frontWaterPath, _liquidSideBouncePaint);
 
     // 3. Crisp Specular Front Meniscus Rim Curve (`#FFFFFF` / pastel gleam)
-    final frontRimCurve = Path()
+    final frontRimCurve = _reusableFrontRimCurve
+      ..reset()
       ..moveTo(x0, fLeftY)
       ..cubicTo(
         x0 + w * 0.34,
@@ -2431,20 +2478,16 @@ class PieceComponent extends PositionComponent {
         x1,
         fRightY,
       );
-    canvas.drawPath(
-      frontRimCurve,
-      Paint()
-        ..style = ui.PaintingStyle.stroke
-        ..strokeCap = ui.StrokeCap.round
-        ..strokeWidth = (cellSize * 0.025).clamp(1.3, 2.4)
-        ..color = Color.lerp(style.topBright, Colors.white, 0.78)!
-            .withValues(alpha: (0.86 + 0.10 * energy).clamp(0.0, 1.0) * alphaMultiplier),
-    );
+    _liquidRimPaint.color = Color.lerp(style.topBright, Colors.white, 0.78)!
+        .withValues(
+            alpha: (0.86 + 0.10 * energy).clamp(0.0, 1.0) * alphaMultiplier);
+    canvas.drawPath(frontRimCurve, _liquidRimPaint);
 
     // Active wave frothy crest highlight when clicked / dragged (`energy > 0.18`, like block `64`)
     if (energy > 0.18) {
       final crestBandH = cellSize * (0.055 * energy);
-      final crestGlowPath = Path()
+      final crestGlowPath = _reusableCrestGlowPath
+        ..reset()
         ..moveTo(x0, fLeftY)
         ..cubicTo(x0 + w * 0.34, fCtrl1Y, x0 + w * 0.66, fCtrl2Y, x1, fRightY)
         ..lineTo(x1, fRightY + crestBandH)
@@ -2457,31 +2500,27 @@ class PieceComponent extends PositionComponent {
           fLeftY + crestBandH,
         )
         ..close();
-      canvas.drawPath(
-        crestGlowPath,
-        Paint()
-          ..color = Colors.white
-              .withValues(alpha: (0.34 * energy * alphaMultiplier).clamp(0.0, 0.45)),
+      _liquidCrestPaint.color = Colors.white.withValues(
+        alpha: (0.34 * energy * alphaMultiplier).clamp(0.0, 0.45),
       );
+      canvas.drawPath(crestGlowPath, _liquidCrestPaint);
     }
 
     // 4. Delicate Rising Effervescent Glass Bubbles in the lower half of the liquid (`media_1794051081001.png`)
     final bubbleCount = energy > 0.25 ? 7 : 5;
-    final bubbleSpeed = 0.22 + 0.55 * energy;
     final liquidSpanH = math.max(cellSize * 0.25, y1 - baseWaveY);
     for (int k = 0; k < bubbleCount; k++) {
-      final bPhase =
-          (_sandShimmerClock * bubbleSpeed + k * 0.29 + pieceSeed * 0.15) % 1.0;
+      final bPhase = (_bubbleClock + k * 0.29 + pieceSeed * 0.15) % 1.0;
       // Cluster bubbles naturally toward lower-left & lower-right glass corners like `media_1794051081001.png`
       final xSlot = (k.isEven)
           ? (0.12 + 0.18 * ((k * 0.37) % 1.0))
           : (0.70 + 0.18 * ((k * 0.43) % 1.0));
       final bx = x0 +
           w * xSlot +
-          math.sin(_sandShimmerClock * 2.4 + k * 1.7) * cellSize * 0.015;
+          math.sin(_bubbleClock * 5.0 + k * 1.7) * cellSize * 0.015;
       final by = y1 -
           cellSize * 0.075 -
-          bPhase * (liquidSpanH * (0.48 + 0.28 * energy));
+          bPhase * (liquidSpanH * (0.48 + 0.10 * energy));
       if (by <= baseWaveY + cellSize * 0.05) continue;
 
       final br =
@@ -2492,22 +2531,81 @@ class PieceComponent extends PositionComponent {
               .clamp(0.0, 0.80);
       if (bAlpha <= 0.02) continue;
 
+      _liquidBubbleStrokePaint.color = Colors.white.withValues(alpha: bAlpha);
       canvas.drawCircle(
         Offset(bx, by),
         br,
-        Paint()
-          ..style = ui.PaintingStyle.stroke
-          ..strokeWidth = 0.95
-          ..color = Colors.white.withValues(alpha: bAlpha),
+        _liquidBubbleStrokePaint,
       );
+      _liquidBubbleDotPaint.color =
+          Colors.white.withValues(alpha: (bAlpha * 1.35).clamp(0.0, 0.92));
       canvas.drawCircle(
         Offset(bx - br * 0.32, by - br * 0.32),
         br * 0.35,
-        Paint()..color = Colors.white.withValues(alpha: (bAlpha * 1.35).clamp(0.0, 0.92)),
+        _liquidBubbleDotPaint,
       );
     }
 
     canvas.restore();
+  }
+
+  _BakedStaticPieceSprite? _getOrBakeGlassFgSprite(BlockColorStyle style) {
+    final key =
+        '${_sharedGeom.key}|${style.topBright.toARGB32().toRadixString(16)}|${style.rimHighlight.toARGB32().toRadixString(16)}';
+    final existing = _sharedGlassFgCache.remove(key);
+    if (existing != null) {
+      _sharedGlassFgCache[key] = existing;
+      return existing;
+    }
+
+    if (_frameBakeBudget <= 0) return null;
+    _frameBakeBudget--;
+
+    double ss = 2.0;
+    try {
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      if (views.isNotEmpty) {
+        ss = views.first.devicePixelRatio.clamp(1.5, 2.0);
+      }
+    } catch (_) {
+      ss = 2.0;
+    }
+
+    const pad = 4.0;
+    final logicalW = _localBounds.width + pad * 2.0;
+    final logicalH = _localBounds.height + pad * 2.0;
+    final imgW = (logicalW * ss).ceil().clamp(4, 1536);
+    final imgH = (logicalH * ss).ceil().clamp(4, 1536);
+
+    try {
+      final recorder = ui.PictureRecorder();
+      final recCanvas = Canvas(recorder);
+      recCanvas.scale(imgW / logicalW, imgH / logicalH);
+      recCanvas.translate(-_localBounds.left + pad, -_localBounds.top + pad);
+      _drawCrystalGlassForegroundVector(recCanvas, style);
+
+      final pic = recorder.endRecording();
+      final img = pic.toImageSync(imgW, imgH);
+      pic.dispose();
+
+      final sprite = _BakedStaticPieceSprite(
+        image: img,
+        srcRect: Rect.fromLTWH(0, 0, imgW.toDouble(), imgH.toDouble()),
+        dstRect: Rect.fromLTWH(
+          _localBounds.left - pad,
+          _localBounds.top - pad,
+          logicalW,
+          logicalH,
+        ),
+      );
+      if (_sharedGlassFgCache.length >= 96) {
+        _sharedGlassFgCache.remove(_sharedGlassFgCache.keys.first);
+      }
+      _sharedGlassFgCache[key] = sprite;
+      return sprite;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Glossy 3D Crystal-Glass Container Rim, Top Shoulder Specular Gleam & Thin Vertical Inner Wall Streaks:
@@ -2517,27 +2615,50 @@ class PieceComponent extends PositionComponent {
     BlockColorStyle style, {
     Offset topJellyShift = Offset.zero,
   }) {
-    final x0 = _localBounds.left;
-    final y0 = _localBounds.top;
-    final x1 = _localBounds.right;
-    final y1 = _localBounds.bottom;
+    final baked = _getOrBakeGlassFgSprite(style);
+    if (baked != null) {
+      if (topJellyShift != Offset.zero) {
+        canvas.save();
+        canvas.translate(topJellyShift.dx, topJellyShift.dy);
+        canvas.drawImageRect(
+          baked.image,
+          baked.srcRect,
+          baked.dstRect,
+          _staticPiecePaint,
+        );
+        canvas.restore();
+      } else {
+        canvas.drawImageRect(
+          baked.image,
+          baked.srcRect,
+          baked.dstRect,
+          _staticPiecePaint,
+        );
+      }
+      return;
+    }
 
     canvas.save();
     if (topJellyShift != Offset.zero) {
       canvas.translate(topJellyShift.dx, topJellyShift.dy);
     }
+    _drawCrystalGlassForegroundVector(canvas, style);
+    canvas.restore();
+  }
 
-    // 1. Inner Glass Specular Reflections (clipped to `_topPath`)
-    canvas.save();
-    canvas.clipPath(_topPath);
+  void _drawCrystalGlassForegroundVector(
+    Canvas canvas,
+    BlockColorStyle style,
+  ) {
+    final x0 = _localBounds.left;
+    final y0 = _localBounds.top;
+    final x1 = _localBounds.right;
+    final y1 = _localBounds.bottom;
 
-    // 1a. Bright glossy white top glass shoulder rim (`y0 .. y0 + 0.16 * cellSize`)
-    canvas.save();
-    canvas.clipRect(Rect.fromLTRB(x0, y0, x1, y0 + cellSize * 0.17));
-    canvas.drawPath(
-      _liquidCavityPath,
-      Paint()
-        ..style = ui.PaintingStyle.stroke
+    final nextGlassKey = (style.topBright, style.rimHighlight, cellSize);
+    if (_cachedGlassFgStyleKey != nextGlassKey) {
+      _cachedGlassFgStyleKey = nextGlassKey;
+      _glassShoulderPaint
         ..strokeWidth = (cellSize * 0.036).clamp(1.6, 3.2)
         ..shader = ui.Gradient.linear(
           Offset(x0, y0),
@@ -2548,15 +2669,9 @@ class PieceComponent extends PositionComponent {
             Colors.white.withValues(alpha: 0.0),
           ],
           const [0.0, 0.52, 1.0],
-        ),
-    );
-    canvas.restore();
+        );
 
-    // 1b. Thin vertical inner glass wall specular streaks along left & right walls
-    canvas.drawPath(
-      _innerHighlightPath,
-      Paint()
-        ..style = ui.PaintingStyle.stroke
+      _glassWallStreakPaint
         ..strokeWidth = (cellSize * 0.022).clamp(1.0, 2.0)
         ..shader = ui.Gradient.linear(
           Offset(x0, y0),
@@ -2568,32 +2683,15 @@ class PieceComponent extends PositionComponent {
                 .withValues(alpha: 0.45),
           ],
           const [0.0, 0.38, 1.0],
-        ),
-    );
+        );
 
-    // 1c. Thick rounded glass base refraction highlight along the bottom floor (`y1 - 0.12 * cellSize .. y1`)
-    canvas.save();
-    canvas.clipRect(Rect.fromLTRB(x0, y1 - cellSize * 0.12, x1, y1));
-    canvas.drawPath(
-      _liquidCavityPath,
-      Paint()
-        ..style = ui.PaintingStyle.stroke
+      _glassBaseHighlightPaint
         ..strokeWidth = (cellSize * 0.038).clamp(1.6, 3.4)
         ..color = Color.lerp(style.topBright, Colors.white, 0.65)!
-            .withValues(alpha: 0.72),
-    );
-    canvas.restore();
+            .withValues(alpha: 0.72);
 
-    canvas.restore();
-
-    // 2. Crisp Outer Crystal-Glass Contour (`_topPath`) — icy blue-white around empty top, jewel-tinted around liquid!
-    final outerGlassStrokeW = (cellSize * 0.026).clamp(1.3, 2.3);
-    canvas.drawPath(
-      _topPath,
-      Paint()
-        ..style = ui.PaintingStyle.stroke
-        ..strokeWidth = outerGlassStrokeW
-        ..strokeJoin = ui.StrokeJoin.round
+      _glassOuterRimPaint
+        ..strokeWidth = (cellSize * 0.026).clamp(1.3, 2.3)
         ..shader = ui.Gradient.linear(
           Offset(x0, y0),
           Offset(x0, y1),
@@ -2606,10 +2704,32 @@ class PieceComponent extends PositionComponent {
                 .withValues(alpha: 0.90),
           ],
           const [0.0, 0.26, 0.68, 1.0],
-        ),
-    );
+        );
+    }
+
+    // 1. Inner Glass Specular Reflections (clipped to `_topPath`)
+    canvas.save();
+    canvas.clipPath(_topPath);
+
+    // 1a. Bright glossy white top glass shoulder rim (`y0 .. y0 + 0.16 * cellSize`)
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(x0, y0, x1, y0 + cellSize * 0.17));
+    canvas.drawPath(_liquidCavityPath, _glassShoulderPaint);
+    canvas.restore();
+
+    // 1b. Thin vertical inner glass wall specular streaks along left & right walls
+    canvas.drawPath(_innerHighlightPath, _glassWallStreakPaint);
+
+    // 1c. Thick rounded glass base refraction highlight along the bottom floor (`y1 - 0.12 * cellSize .. y1`)
+    canvas.save();
+    canvas.clipRect(Rect.fromLTRB(x0, y1 - cellSize * 0.12, x1, y1));
+    canvas.drawPath(_liquidCavityPath, _glassBaseHighlightPaint);
+    canvas.restore();
 
     canvas.restore();
+
+    // 2. Crisp Outer Crystal-Glass Contour (`_topPath`) — icy blue-white around empty top, jewel-tinted around liquid!
+    canvas.drawPath(_topPath, _glassOuterRimPaint);
   }
 
   void _drawWinFractureCracks(Canvas canvas, BlockColorStyle style) {
@@ -2702,67 +2822,24 @@ class PieceComponent extends PositionComponent {
     }
 
     if (model.isDud && _blockerImg != null) {
-      final img = _blockerImg!;
-      final isRect =
-          model.localCells.length == model.widthCols * model.heightRows;
-      canvas.save();
-      canvas.translate(topJellyShift.dx, topJellyShift.dy);
-      canvas.clipPath(_topPath);
+      _drawTexturedObstacleSurface(
+        canvas,
+        _blockerImg!,
+        topJellyShift: topJellyShift,
+        innerBevel: innerBevel,
+        drawMetallicScratches: true,
+      );
+      return;
+    }
 
-      if (model.localCells.length == 1) {
-        canvas.drawImageRect(
-          img,
-          Rect.fromLTWH(2, 2, img.width - 4.0, img.height - 4.0),
-          _localBounds,
-          _blockerPaint,
-        );
-      } else if (isRect) {
-        final texScale = cellSize / img.width.toDouble();
-        canvas.save();
-        canvas.scale(texScale, texScale);
-        canvas.drawImageNine(
-          img,
-          Rect.fromLTWH(
-            44,
-            44,
-            (img.width - 88).toDouble(),
-            (img.height - 114).toDouble(),
-          ),
-          Rect.fromLTWH(
-            _localBounds.left / texScale,
-            _localBounds.top / texScale,
-            _localBounds.width / texScale,
-            _localBounds.height / texScale,
-          ),
-          _blockerPaint,
-        );
-        canvas.restore();
-      } else {
-        canvas.drawPath(_topPath, _cachedWallPaint);
-        canvas.save();
-        canvas.translate(0, -innerBevel);
-        final faceSrc = Rect.fromLTWH(
-          16,
-          14,
-          (img.width - 32).toDouble(),
-          (img.height - 70).toDouble(),
-        );
-        for (final cell in model.localCells) {
-          final ox = cell.$1 * cellSize;
-          final oy = cell.$2 * cellSize;
-          canvas.drawImageRect(
-            img,
-            faceSrc,
-            Rect.fromLTWH(ox, oy, cellSize, cellSize),
-            _blockerPaint,
-          );
-        }
-        _drawDudMetallicScratches(canvas);
-        canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
-        canvas.restore();
-      }
-
-      canvas.restore();
+    if (_isIceCovered && _iceBlockImg != null) {
+      _drawTexturedObstacleSurface(
+        canvas,
+        _iceBlockImg!,
+        topJellyShift: topJellyShift,
+        innerBevel: innerBevel,
+        drawMetallicScratches: false,
+      );
       return;
     }
 
@@ -2782,6 +2859,78 @@ class PieceComponent extends PositionComponent {
     }
     canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
     canvas.restore();
+
+    canvas.restore();
+  }
+
+  /// Renders textured obstacle blocks (`Icon_Mechanic_Blocker.png` or `Icon_Mechanic_Ice.png`)
+  /// identically to their mechanic preview cards for 1x1, rectangular, and composite shapes.
+  void _drawTexturedObstacleSurface(
+    Canvas canvas,
+    ui.Image img, {
+    required Offset topJellyShift,
+    required double innerBevel,
+    required bool drawMetallicScratches,
+  }) {
+    final isRect = model.localCells.length == model.widthCols * model.heightRows;
+    canvas.save();
+    canvas.translate(topJellyShift.dx, topJellyShift.dy);
+    canvas.clipPath(_topPath);
+
+    if (model.localCells.length == 1) {
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(2, 2, img.width - 4.0, img.height - 4.0),
+        _localBounds,
+        _blockerPaint,
+      );
+    } else if (isRect) {
+      final texScale = cellSize / img.width.toDouble();
+      canvas.save();
+      canvas.scale(texScale, texScale);
+      canvas.drawImageNine(
+        img,
+        Rect.fromLTWH(
+          44,
+          44,
+          (img.width - 88).toDouble(),
+          (img.height - 114).toDouble(),
+        ),
+        Rect.fromLTWH(
+          _localBounds.left / texScale,
+          _localBounds.top / texScale,
+          _localBounds.width / texScale,
+          _localBounds.height / texScale,
+        ),
+        _blockerPaint,
+      );
+      canvas.restore();
+    } else {
+      canvas.drawPath(_topPath, _cachedWallPaint);
+      canvas.save();
+      canvas.translate(0, -innerBevel);
+      final faceSrc = Rect.fromLTWH(
+        16,
+        14,
+        (img.width - 32).toDouble(),
+        (img.height - 70).toDouble(),
+      );
+      for (final cell in model.localCells) {
+        final ox = cell.$1 * cellSize;
+        final oy = cell.$2 * cellSize;
+        canvas.drawImageRect(
+          img,
+          faceSrc,
+          Rect.fromLTWH(ox, oy, cellSize, cellSize),
+          _blockerPaint,
+        );
+      }
+      if (drawMetallicScratches) {
+        _drawDudMetallicScratches(canvas);
+      }
+      canvas.drawPath(_innerHighlightPath, _cachedRimPaint);
+      canvas.restore();
+    }
 
     canvas.restore();
   }
@@ -2967,6 +3116,9 @@ class PieceComponent extends PositionComponent {
     _liquidWavePhase = (_liquidWavePhase +
             clampedDt * (2.55 + 6.4 * _smoothedWaveEnergy)) %
         (math.pi * 200.0);
+    _bubbleClock =
+        (_bubbleClock + clampedDt * (0.16 + 0.08 * _smoothedWaveEnergy)) %
+            1000.0;
 
     if (_sandSwarmGrains.isNotEmpty) {
       _sandSwarmGrains.clear();

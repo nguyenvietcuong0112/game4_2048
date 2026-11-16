@@ -1053,6 +1053,8 @@ class _VictoryConfettiPainter extends CustomPainter {
     return list;
   }
 
+  static final Paint _paint = Paint()..style = PaintingStyle.fill;
+
   const _VictoryConfettiPainter({
     required this.progress,
     required this.scale1080,
@@ -1065,7 +1067,7 @@ class _VictoryConfettiPainter extends CustomPainter {
     final t = progress.value;
     if (t <= 0.001 || t >= 0.999 || size.width <= 1 || size.height <= 1) return;
 
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _paint;
     final dragNorm = 1.0 - math.exp(-3.8);
 
     for (final p in _cannonSeeds) {
@@ -1205,7 +1207,7 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
       final baseRot = ambient.value * stepAngle * 2.0;
       final halfWedge = stepAngle * 0.23;
 
-      final wedgesPath = Path();
+      final wedgesPath = _wedgesPath..reset();
       for (int i = 0; i < _rayCount; i++) {
         final a = baseRot + i * stepAngle;
         wedgesPath.moveTo(center.dx, center.dy);
@@ -1220,7 +1222,7 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
         wedgesPath.close();
       }
 
-      final rayPaint = Paint()
+      _rayPaint
         ..blendMode = BlendMode.plus
         ..shader = ui.Gradient.radial(
           center,
@@ -1233,12 +1235,12 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
           ],
           const [0.0, 0.42, 0.76, 1.0],
         );
-      canvas.drawPath(wedgesPath, rayPaint);
+      canvas.drawPath(wedgesPath, _rayPaint);
     }
 
     // 2. Soft Warm White-Gold Outer Halo
     final outerR = _u(395) * breathe;
-    final outerPaint = Paint()
+    _outerPaint
       ..blendMode = BlendMode.plus
       ..shader = ui.Gradient.radial(
         center,
@@ -1251,11 +1253,11 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
         ],
         const [0.0, 0.36, 0.72, 1.0],
       );
-    canvas.drawCircle(center, outerR, outerPaint);
+    canvas.drawCircle(center, outerR, _outerPaint);
 
     // 3. Bright White-Gold Core behind `Reward_Coin.png`
     final coreR = _u(225) * breathe;
-    final corePaint = Paint()
+    _corePaint
       ..blendMode = BlendMode.plus
       ..shader = ui.Gradient.radial(
         center,
@@ -1267,10 +1269,12 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
         ],
         const [0.0, 0.55, 1.0],
       );
-    canvas.drawCircle(center, coreR, corePaint);
+    canvas.drawCircle(center, coreR, _corePaint);
 
-    // 4. Outward-drifting soft white-gold bokeh sparkles
-    final bokehPaint = Paint()..blendMode = BlendMode.plus;
+    // 4. Outward-drifting soft white-gold bokeh sparkles (zero per-dot gradient shader allocs!)
+    _bokehPaint
+      ..blendMode = BlendMode.plus
+      ..shader = null;
     for (final (ang, baseDist, travel, sz1080, seedPhase) in _sparkleSeeds) {
       final lifeT = (ambient.value * 1.5 + seedPhase) % 1.0;
       final env = lifeT < 0.24
@@ -1286,20 +1290,18 @@ class _UnityWinCoinAuraPainter extends CustomPainter {
         center.dy + math.sin(ang) * dist,
       );
 
-      bokehPaint.shader = ui.Gradient.radial(
-        pos,
-        radius,
-        [
-          Color.fromRGBO(255, 255, 255, alpha),
-          Color.fromRGBO(255, 242, 198, alpha * 0.62),
-          Color.fromRGBO(255, 206, 112, alpha * 0.20),
-          const Color.fromRGBO(255, 206, 112, 0.0),
-        ],
-        const [0.0, 0.28, 0.62, 1.0],
-      );
-      canvas.drawCircle(pos, radius, bokehPaint);
+      _bokehPaint.color = Color.fromRGBO(255, 224, 148, alpha * 0.34);
+      canvas.drawCircle(pos, radius * 0.85, _bokehPaint);
+      _bokehPaint.color = Color.fromRGBO(255, 252, 232, alpha * 0.82);
+      canvas.drawCircle(pos, radius * 0.36, _bokehPaint);
     }
   }
+
+  static final Path _wedgesPath = Path();
+  static final Paint _rayPaint = Paint();
+  static final Paint _outerPaint = Paint();
+  static final Paint _corePaint = Paint();
+  static final Paint _bokehPaint = Paint();
 
   @override
   bool shouldRepaint(covariant _UnityWinCoinAuraPainter old) {

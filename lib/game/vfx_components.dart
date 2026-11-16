@@ -1417,7 +1417,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFF48E5FF),
           secondaryColor: Color(0xFFAAFAFF),
           strokeColor: Color(0xFF0A2E46),
-          scaleBoost: 0.94,
+          scaleBoost: 0.92,
         );
       case 2:
         return const ComboPraiseTier(
@@ -1427,7 +1427,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFF2AF598),
           secondaryColor: Color(0xFFB8FFDF),
           strokeColor: Color(0xFF093824),
-          scaleBoost: 1.02,
+          scaleBoost: 0.99,
         );
       case 3:
         return const ComboPraiseTier(
@@ -1437,7 +1437,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFFFFD200),
           secondaryColor: Color(0xFFFFF3A1),
           strokeColor: Color(0xFF4A2500),
-          scaleBoost: 1.10,
+          scaleBoost: 1.06,
         );
       case 4:
         return const ComboPraiseTier(
@@ -1447,7 +1447,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFFFF7A00),
           secondaryColor: Color(0xFFFFD08A),
           strokeColor: Color(0xFF4A1200),
-          scaleBoost: 1.14,
+          scaleBoost: 1.12,
         );
       case 5:
         return const ComboPraiseTier(
@@ -1457,7 +1457,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFFFF2A85),
           secondaryColor: Color(0xFFFFB2D6),
           strokeColor: Color(0xFF480624),
-          scaleBoost: 1.20,
+          scaleBoost: 1.18,
         );
       case 6:
         return const ComboPraiseTier(
@@ -1467,7 +1467,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFFB721FF),
           secondaryColor: Color(0xFFEAC2FF),
           strokeColor: Color(0xFF2B0548),
-          scaleBoost: 1.26,
+          scaleBoost: 1.18,
         );
       case 7:
         return const ComboPraiseTier(
@@ -1477,7 +1477,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFF00E5FF),
           secondaryColor: Color(0xFFC4FBFF),
           strokeColor: Color(0xFF003847),
-          scaleBoost: 1.32,
+          scaleBoost: 1.18,
         );
       case 8:
         return const ComboPraiseTier(
@@ -1487,7 +1487,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFFFF2B58),
           secondaryColor: Color(0xFFFFB5C8),
           strokeColor: Color(0xFF4D0014),
-          scaleBoost: 1.38,
+          scaleBoost: 1.18,
         );
       case 9:
         return const ComboPraiseTier(
@@ -1497,7 +1497,7 @@ class ComboPraiseTier {
           primaryColor: Color(0xFFFFD700),
           secondaryColor: Color(0xFFFFF8DC),
           strokeColor: Color(0xFF4A2800),
-          scaleBoost: 1.44,
+          scaleBoost: 1.18,
         );
       default:
         return ComboPraiseTier(
@@ -1507,7 +1507,7 @@ class ComboPraiseTier {
           primaryColor: const Color(0xFFFFEE55),
           secondaryColor: const Color(0xFFFFFFFF),
           strokeColor: const Color(0xFF4D0A00),
-          scaleBoost: (1.48 + (c - 10) * 0.03).clamp(1.48, 1.62),
+          scaleBoost: 1.18,
         );
     }
   }
@@ -1714,7 +1714,7 @@ class ComboPraiseCalloutVfx extends PositionComponent {
 
     if (tier.comboCount >= 2) {
       final rng = math.Random(tier.comboCount * 997);
-      final count = (8 + tier.comboCount * 2).clamp(10, 22);
+      final count = (8 + tier.comboCount.clamp(1, 5) * 2).clamp(10, 18);
       for (int i = 0; i < count; i++) {
         final angle =
             (i / count) * math.pi * 2 + (rng.nextDouble() - 0.5) * 0.35;

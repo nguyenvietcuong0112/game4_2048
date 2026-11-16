@@ -1731,11 +1731,17 @@ class _GameplayScreenState extends State<GameplayScreen>
                           }
                           return Align(
                             alignment: Alignment.centerLeft,
-                            child: SizedBox(
-                              width: maxFillW * clamped,
-                              height: fillH,
-                              child: const UnityNineSlice(
-                                sprite: 'progress_combo_fg.png',
+                            child: ClipRect(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: clamped,
+                                child: SizedBox(
+                                  width: maxFillW,
+                                  height: fillH,
+                                  child: const UnityNineSlice(
+                                    sprite: 'progress_combo_fg.png',
+                                  ),
+                                ),
                               ),
                             ),
                           );
@@ -1756,9 +1762,10 @@ class _GameplayScreenState extends State<GameplayScreen>
             );
 
             if (comboCount > 0) {
+              final popBegin = 1.04 + 0.015 * comboCount.clamp(1, 5);
               barBody = TweenAnimationBuilder<double>(
                 key: ValueKey('combo_bar_pop_$comboCount'),
-                tween: Tween<double>(begin: 1.10, end: 1.0),
+                tween: Tween<double>(begin: popBegin, end: 1.0),
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOutBack,
                 builder: (context, popScale, child) => Transform.scale(

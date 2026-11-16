@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/level_models.dart';
 import '../services/player_progress_service.dart';
+import 'flower_assets_test_screen.dart';
 import 'unity_ui_kit.dart';
 
 /// Compact floating/footer developer button (`🛠 CHEAT`) shown ONLY when
@@ -750,6 +751,38 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
             onTap: () async {
               await widget.onResetAllProgress();
             },
+          ),
+          SizedBox(height: ux(context, 12)),
+          _CheatActionBtn(
+            label: '🌸 Flower Assets Preview',
+            color: const Color(0xFFDB2777),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const FlowerAssetsTestScreen(),
+                ),
+              );
+            },
+          ),
+          SizedBox(height: ux(context, 12)),
+          Row(
+            children: [
+              Expanded(
+                child: _CheatActionBtn(
+                  label: 'Next Flower (${widget.progress.currentVaseConfig.flowerTitle})',
+                  color: const Color(0xFF0D9488),
+                  onTap: widget.progress.cheatCycleVaseFlower,
+                ),
+              ),
+              SizedBox(width: ux(context, 10)),
+              Expanded(
+                child: _CheatActionBtn(
+                  label: 'Vase 99% (Next Win Bloom)',
+                  color: const Color(0xFF7C3AED),
+                  onTap: widget.progress.cheatPrepareNextWinBloom,
+                ),
+              ),
+            ],
           ),
         ],
       ),

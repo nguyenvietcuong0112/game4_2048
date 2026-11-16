@@ -972,7 +972,7 @@ void main() {
       await g.up();
       await tester.pump(const Duration(milliseconds: 32));
 
-      // Verify WinOverlay 2-stage progression & Stage 3 coin flight collection
+      // Verify redesigned WinOverlay (`Victory.png`) progression & curved coin flight collection
       bool stage2Shown = false;
       int collectedCoins = 0;
       bool nextLevelTriggered = false;
@@ -991,18 +991,32 @@ void main() {
         ),
       );
 
-      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump(const Duration(milliseconds: 50));
       expect(stage2Shown, isFalse);
+      expect(find.byKey(const ValueKey('win_confetti_fx')), findsNothing);
 
-      // Advance past 62% of 1450ms (~950ms) -> Stage 2 (`AMAZING!`, `Level 4`, `25`, `Next Level`) appears
-      await tester.pump(const Duration(milliseconds: 1300));
+      // Advance past sequence -> smooth 2-line `'Level' / 'Complete!'` (`PoetsenOne`), denser one-shot confetti FX, `Reward_Coin.png` (`25`), stats row, and `Continue` appear
+      await tester.pump(const Duration(milliseconds: 950));
       expect(stage2Shown, isTrue);
-      expect(find.text('AMAZING!'), findsWidgets);
-      expect(find.text('Level 4'), findsWidgets);
+      expect(find.byKey(const ValueKey('win_confetti_fx')), findsOneWidget);
+      expect(find.text('L'), findsWidgets);
+      expect(find.text('C'), findsWidgets);
+      expect(find.text('!'), findsWidgets);
       expect(find.text('25'), findsWidgets);
-      expect(find.text('Next Level'), findsWidgets);
+      expect(find.text('Time'), findsOneWidget);
+      expect(find.text('Continue'), findsWidgets);
 
-      // Tap `Next Level` -> triggers Stage 3 curved coin flight totaling 25 coins -> `onNextLevel`
+      // At +2.8s (`28 * 100ms`), confetti FX is still cascading; by +4.6s (`18 * 100ms` more), it finishes & turns off cleanly!
+      for (int i = 0; i < 28; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byKey(const ValueKey('win_confetti_fx')), findsOneWidget);
+      for (int i = 0; i < 18; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byKey(const ValueKey('win_confetti_fx')), findsNothing);
+
+      // Tap `Continue` -> triggers curved coin flight totaling 25 coins -> `onNextLevel`
       await tester.tap(find.byType(UnityCtaButton));
       for (int i = 0; i < 25; i++) {
         await tester.pump(const Duration(milliseconds: 32));
@@ -1055,24 +1069,26 @@ void main() {
         ),
       );
 
-      // At t = 500ms: `OUT OF TIME` banner is visible; `Continue?` popup has not appeared yet (`t < 1.333s`)
+      // At t = 500ms: `OUT OF TIME` banner is visible; `Out of time!` popup has not appeared yet (`t < 1.333s`)
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('OUT OF TIME'), findsWidgets);
-      expect(find.text('Continue?'), findsNothing);
+      expect(find.text('Out of time!'), findsNothing);
 
-      // Advance past 1.50s -> `OUT OF TIME` wiped out; `Continue?` card & `Tap to see the board` visible!
+      // Advance past 1.50s -> `OUT OF TIME` wiped out; `Out of time!` card & `Hold to see board` visible!
       await tester.pump(const Duration(milliseconds: 1100));
       expect(find.text('OUT OF TIME'), findsNothing);
-      expect(find.text('Continue?'), findsWidgets);
-      expect(find.text('+30'), findsWidgets);
-      expect(find.text('s'), findsWidgets);
-      expect(find.text('Add 30 seconds to keep playing!'), findsOneWidget);
+      expect(find.text('Out of time!'), findsWidgets);
+      expect(find.text('+30s'), findsWidgets);
+      expect(find.text('Add 30 seconds\nto keep playing'), findsOneWidget);
       expect(find.text('450'), findsWidgets);
-      expect(find.text('Tap to see the board'), findsOneWidget);
+      expect(find.text('Continue'), findsWidgets);
+      expect(find.text('Hold to see board'), findsOneWidget);
 
-      // Verify exact 0.816 PopupContainer outer hit-box width (`(1106.25 + 120) * 0.816 * (540 / 1080) = 500.31`)
-      final cardRect = tester.getRect(find.byType(UnityPopupCard));
-      expect(cardRect.width, closeTo((1106.25 + 120.0) * 0.816 * 0.5, 0.25));
+      // Verify exact `884` Unity px popup card width (`884 * (540 / 1080) = 442.0`)
+      final cardRect = tester.getRect(
+        find.byKey(const ValueKey('out_of_time_popup_card')),
+      );
+      expect(cardRect.width, closeTo(884.0 * 0.5, 0.25));
 
       // Tapping disabled CoinsButton (`100 < 450`) must NOT fire `onPlayOnCoins` nor trigger board peek!
       await tester.tap(find.text('450').last);
@@ -1080,8 +1096,8 @@ void main() {
       expect(playOnCoinsFired, isFalse);
       expect(peekLog, isEmpty);
 
-      // Holding pointer down on `"Tap to see the board"` area triggers board peek; releasing unpeeks!
-      final peekPt = tester.getCenter(find.text('Tap to see the board'));
+      // Holding pointer down on `"Hold to see board"` area triggers board peek; releasing unpeeks!
+      final peekPt = tester.getCenter(find.text('Hold to see board'));
       final holdGesture = await tester.startGesture(peekPt);
       await tester.pump(const Duration(milliseconds: 160));
       expect(peekLog, [true]);
@@ -1115,7 +1131,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(retryFired, isTrue);
 
-      // 2. Verify affordable CoinsButton (`500 >= 450`) & AdsButton on 16:9 (`540 x 960`) screen
+      // 2. Verify affordable CoinsButton (`500 >= 450`) & AdsButton (`Continue`) on 16:9 (`540 x 960`) screen
       tester.view.physicalSize = const Size(540, 960);
       await tester.binding.setSurfaceSize(const Size(540, 960));
       await tester.pumpWidget(
@@ -1139,15 +1155,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(playOnCoinsFired, isTrue);
 
-      final adIconCenter = tester.getCenter(
-        find.byWidgetPredicate(
-          (w) =>
-              w is Image &&
-              w.image is AssetImage &&
-              (w.image as AssetImage).assetName == 'assets/images/Icon_Ad.png',
-        ),
-      );
-      await tester.tapAt(adIconCenter);
+      await tester.tap(find.text('Continue').last);
       await tester.pump(const Duration(milliseconds: 100));
       expect(playOnAdFired, isTrue);
 
@@ -1227,7 +1235,7 @@ void main() {
       expect(PlayerProgressService.timeFreezePackCost, 450);
       expect(PlayerProgressService.initialPowerUpInventory, 3);
 
-      SharedPreferences.setMockInitialValues({'bo_current_level': 1});
+      SharedPreferences.setMockInitialValues({'bo_current_level': 2});
       final progressL1 = PlayerProgressService();
       await tester.runAsync(() => progressL1.init());
       expect(progressL1.isLevelUpUnlockedForLevel(16), isFalse);
@@ -1458,7 +1466,7 @@ void main() {
   );
 
   testWidgets(
-    'Tutorial & MechanicFTUE 1:1 flow: persistent Levels 1-3 TutorialText, Level 1 TutorialHand ignores stationary tap & fades ONLY on actual move/merge, and MechanicUnlockDialog hides SubTitleContainer',
+    'Level 1 Step-by-Step Spotlight Tutorial & MechanicFTUE 1:1 flow: dark veil + white borders + "Drag to move" banner guide 2+2 -> 4+4 -> 8+8 until win',
     (tester) async {
       addTearDown(() {
         tester.view.resetPhysicalSize();
@@ -1476,17 +1484,30 @@ void main() {
         palette = await BlockOrderPalette.loadFromAssets();
         settings = await PieceVisualSettings.loadFromAssets();
         await UnitySpriteRegistry.preloadAll();
-        for (final s in [
-          'Hand_01.png',
-          'PowerUp_Icon_Arrow.png',
+        for (final s in const [
+          'IceLock.png',
+          'IceBlocks.png',
+          'Ice_Shards.png',
+          'Screw_Greyscale_01.png',
+          'Screw_Greyscale_02.png',
+          'Screw_Greyscale_03.png',
+          'Movement_Single-Horizontal_Shadow.png',
+          'Movement_Single-Horizontal_Stroke.png',
+          'Movement_Single-Horizontal_Top.png',
+          'Movement_Double_Horizontal.png',
+          'Movement_Double_Vertical.png',
           'Sparkle_01.png',
           'ParticleFlare.png',
           'Explosion_Halo.png',
           'Glow_Ring.png',
           'Glow_02.png',
+          'PowerUp_Icon_Arrow.png',
+          'Hand_01.png',
         ]) {
           await Flame.images.load(s);
         }
+        await ScrewTextureCleaner.ensureCleanedScrewsLoaded();
+        await SparkleAtlas.ensureLoaded();
       });
 
       SharedPreferences.setMockInitialValues({'bo_current_level': 1});
@@ -1509,15 +1530,30 @@ void main() {
         await tester.pump(const Duration(milliseconds: 32));
       }
 
-      final hintText = repo.tutorialHints[1]!;
-      expect(find.text(hintText), findsWidgets);
+      // Spotlight Tutorial Banner is visible with "Drag to move" & ALL HUD buttons are hidden!
+      expect(
+        find.byKey(const ValueKey('level1_spotlight_banner')),
+        findsOneWidget,
+      );
+      expect(find.text('Drag to move'), findsOneWidget);
+      expect(find.byKey(const ValueKey('hud_level_up_btn')), findsNothing);
+      expect(find.byKey(const ValueKey('hud_time_freeze_btn')), findsNothing);
+      expect(find.byKey(const ValueKey('hud_settings_btn')), findsNothing);
+      expect(find.byKey(const ValueKey('hud_cheat_btn')), findsNothing);
 
       final gwFinder = find.byType(GameWidget<BlockOrderGame>);
       final gwTopLeft = tester.getTopLeft(gwFinder);
       final game = tester.widget<GameWidget<BlockOrderGame>>(gwFinder).game!;
+      expect(game.debugIsSpotlightTutorialActive, isTrue);
       expect(game.debugHasTutorialHand, isTrue);
 
-      // Verify top HUD `Level 1` and `CoinsWidget` are non-interactive (no debug level picker or +250 coin cheat)
+      // Step 1 initial spotlight: ONLY the two `2` blocks are highlighted
+      expect(
+        game.debugSpotlightHighlightedPieces.map((p) => p.model.number).toList(),
+        [2, 2],
+      );
+
+      // Verify top HUD `Level 1` and `CoinsWidget` are non-interactive
       final initialCoins = progress.coins;
       await tester.tapAt(tester.getCenter(find.text('Level 1').first));
       await tester.pump(const Duration(milliseconds: 50));
@@ -1527,38 +1563,86 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       expect(progress.coins, initialCoins);
 
-      final movable = game.debugPieces.firstWhere(
-        (p) => p.model.col == 0 && p.model.row == 0 && p.model.canBeDragged,
+      // 1. Attempting to drag dimmed `4` at `(0, 0)` out of turn is blocked during Step 1!
+      final dimmedFour = game.debugPieces.firstWhere(
+        (p) => p.model.col == 0 && p.model.row == 0,
       );
-      final pieceScreenPt = gwTopLeft + game.debugCellCenterCanvas(0, 0);
+      expect(dimmedFour.isSpotlightHighlighted, isFalse);
+      final blockedDrag = await tester.startGesture(
+        gwTopLeft + game.debugCellCenterCanvas(0, 0),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await blockedDrag.moveTo(gwTopLeft + game.debugCellCenterCanvas(0, 2));
+      await tester.pump(const Duration(milliseconds: 32));
+      await blockedDrag.up();
+      await tester.pump(const Duration(milliseconds: 32));
+      expect((dimmedFour.model.col, dimmedFour.model.row), (0, 0));
 
-      // 1. Quick stationary tap (touch & release without moving grid cell) MUST NOT dismiss TutorialHand!
-      final tapGesture = await tester.startGesture(pieceScreenPt);
+      // 2. Quick stationary tap on highlighted `(2, 3)` MUST NOT dismiss TutorialHand!
+      final step1FromPt = gwTopLeft + game.debugCellCenterCanvas(2, 3);
+      final tapGesture = await tester.startGesture(step1FromPt);
       await tester.pump(const Duration(milliseconds: 24));
       await tapGesture.up();
-      for (int i = 0; i < 14; i++) {
+      for (int i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 32));
       }
       expect(game.debugHasTutorialHand, isTrue);
-      expect(find.text(hintText), findsWidgets);
 
-      // 2. Slide Level 1 2x2 piece `A` (`col=0, row=0`) down into open cells `(0..1, 2..3)`
-      final destScreenPt = gwTopLeft + game.debugCellCenterCanvas(0, 2);
-      final dragGesture = await tester.startGesture(pieceScreenPt);
+      // 3. Step 1 Merge: Drag `(2, 3)` UP into `(2, 0)` (`2 + 2 -> 4`)
+      var dragGesture = await tester.startGesture(
+        gwTopLeft + game.debugCellCenterCanvas(2, 3),
+      );
       await tester.pump(const Duration(milliseconds: 16));
-      await dragGesture.moveTo(destScreenPt);
+      await dragGesture.moveTo(gwTopLeft + game.debugCellCenterCanvas(2, 0));
       await tester.pump(const Duration(milliseconds: 32));
       await dragGesture.up();
-      expect((movable.model.col, movable.model.row), (0, 2));
-
-      // Advance past `0.30s` `FadeOutAsync`: TutorialHand is dismissed, AND TutorialText stays visible!
-      for (int i = 0; i < 16; i++) {
+      for (int i = 0; i < 14; i++) {
         await tester.pump(const Duration(milliseconds: 32));
       }
-      expect(game.debugHasTutorialHand, isFalse);
-      expect(find.text(hintText), findsWidgets);
+      // Spotlight shifts to the two `4` blocks (`(2, 0)` and `(0, 0)`) and keeps TutorialHand!
+      expect(game.debugIsSpotlightTutorialActive, isTrue);
+      expect(game.debugHasTutorialHand, isTrue);
+      expect(
+        game.debugSpotlightHighlightedPieces.map((p) => p.model.number).toList(),
+        [4, 4],
+      );
 
-      // 3. Verify `MechanicUnlockDialog` (`MechanicFTUE.prefab`) hides `"New mechanic unlocked!"` across all 4 obstacles
+      // 4. Step 2 Merge: Drag `(2, 0)` LEFT into `(0, 0)` (`4 + 4 -> 8`)
+      dragGesture = await tester.startGesture(
+        gwTopLeft + game.debugCellCenterCanvas(2, 0),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await dragGesture.moveTo(gwTopLeft + game.debugCellCenterCanvas(0, 0));
+      await tester.pump(const Duration(milliseconds: 32));
+      await dragGesture.up();
+      for (int i = 0; i < 14; i++) {
+        await tester.pump(const Duration(milliseconds: 32));
+      }
+      // Spotlight shifts to the two `8` blocks (`(0, 0)` and `(0, 4)`)!
+      expect(game.debugIsSpotlightTutorialActive, isTrue);
+      expect(game.debugHasTutorialHand, isTrue);
+      expect(
+        game.debugSpotlightHighlightedPieces.map((p) => p.model.number).toList(),
+        [8, 8],
+      );
+
+      // 5. Step 3 Merge: Drag `(0, 4)` UP into `(0, 0)` (`8 + 8 -> 16`) -> WINS Level 1 & ends Spotlight!
+      dragGesture = await tester.startGesture(
+        gwTopLeft + game.debugCellCenterCanvas(0, 4),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await dragGesture.moveTo(gwTopLeft + game.debugCellCenterCanvas(0, 0));
+      await tester.pump(const Duration(milliseconds: 32));
+      await dragGesture.up();
+      for (int i = 0; i < 14; i++) {
+        await tester.pump(const Duration(milliseconds: 32));
+      }
+      expect(game.isWinSequenceActiveNotifier.value, isTrue);
+      expect(game.debugIsSpotlightTutorialActive, isFalse);
+      expect(find.byKey(const ValueKey('level1_spotlight_banner')), findsNothing);
+      expect(game.debugHasTutorialHand, isFalse);
+
+      // 6. Verify `MechanicUnlockDialog` (`MechanicFTUE.prefab`) hides `"New mechanic unlocked!"` across all 4 obstacles
       for (final info in const [
         MechanicUnlockInfo.ice,
         MechanicUnlockInfo.dud,
@@ -1588,7 +1672,7 @@ void main() {
 
       await tester.binding.setSurfaceSize(null);
     },
-    timeout: const Timeout(Duration(seconds: 20)),
+    timeout: const Timeout(Duration(seconds: 25)),
   );
 
   testWidgets(
@@ -1987,9 +2071,9 @@ void main() {
       expect(finalTile.levelUpTargetGlow, greaterThan(0.85));
       expect(game.debugJarColorNumber, 32);
 
-      // Step 2 & Step 3a (`t ~ 1.15s`): Final tile crumbles into sand (`debugWinCrumbleProgress == 1.0`, `visualOpacity == 0.0`)
+      // Step 2 & Step 3a (`t ~ 0.90s`): Final tile crumbles into sand (`debugWinCrumbleProgress == 1.0`, `visualOpacity == 0.0`)
       // as sand streams up from board into jar; jar shakes, glows & fills (`0 < fillProgress < 1`)!
-      for (int i = 0; i < 35; i++) {
+      for (int i = 0; i < 27; i++) {
         await tester.pump(const Duration(milliseconds: 32));
       }
       expect(finalTile.debugWinCrumbleProgress, closeTo(1.0, 1e-3));
@@ -2000,9 +2084,9 @@ void main() {
       expect(audio.waterStreamFlowCount, 1);
       expect(levelWon, isFalse);
 
-      // Step 3b & Step 4 (`t ~ 2.43s`): Jar reaches 100% fill (`reveal texture/hidden object`), pops open with light wave,
-      // and fullscreen flash intensity rises (`winScreenFlashNotifier > 0`), while `levelWon` still waits for peak bloom (`2.62s`)!
-      for (int i = 0; i < 40; i++) {
+      // Step 3b & Step 4 (`t ~ 1.92s`): Jar reaches 100% fill (`reveal texture/hidden object`), pops open with light wave,
+      // and fullscreen flash intensity rises (`winScreenFlashNotifier > 0`), while `levelWon` still waits for peak bloom (`2.10s`)!
+      for (int i = 0; i < 32; i++) {
         await tester.pump(const Duration(milliseconds: 32));
       }
       expect(game.debugJarFillProgress, closeTo(1.0, 1e-3));
@@ -2010,8 +2094,8 @@ void main() {
       expect(game.winScreenFlashNotifier.value, greaterThan(0.20));
       expect(levelWon, isFalse);
 
-      // Step 4 completion (`t >= 2.62s`): Fullscreen light wave triggers `onLevelWon()` popup!
-      for (int i = 0; i < 12; i++) {
+      // Step 4 completion (`t >= 2.10s`): Fullscreen light wave triggers `onLevelWon()` popup!
+      for (int i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 32));
       }
       expect(levelWon, isTrue);

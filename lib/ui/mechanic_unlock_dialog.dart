@@ -893,7 +893,7 @@ class _FtueHeroIllustration extends StatelessWidget {
                   child: Transform.scale(
                     scale: pulse,
                     child: Image.asset(
-                      'assets/images/effect_outerglow.png',
+                      'assets/images/effect_outerglow.webp',
                       fit: BoxFit.contain,
                     ),
                   ),

@@ -2,8 +2,129 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import '../services/player_progress_service.dart';
 import 'unity_ui_kit.dart';
+
+/// Shared async sprite cache for extracted Flower Merge flower growth stages (`0..3`),
+/// color-matched drifting petals, golden sunburst/burst effects, and animated butterfly parts.
+class _GardenFlowerSpriteCache {
+  _GardenFlowerSpriteCache._();
+  static final _GardenFlowerSpriteCache instance = _GardenFlowerSpriteCache._();
+
+  final ValueNotifier<int> version = ValueNotifier<int>(0);
+  final Map<FlowerType, List<ui.Image?>> stages = {};
+  final Map<FlowerType, ui.Image?> petals = {};
+  final List<ui.Image?> burstFrames = List<ui.Image?>.filled(8, null);
+
+  ui.Image? bloomRays;
+  ui.Image? sparkleStar;
+  ui.Image? glintDot;
+  ui.Image? butterflyBody;
+  ui.Image? butterflyWingL;
+  ui.Image? butterflyWingR;
+
+  final Set<String> _loadingKeys = <String>{};
+  bool _sharedFxLoaded = false;
+
+  static const Map<FlowerType, String> _flowerPrefix = {
+    FlowerType.tulipPink: 'tulip',
+    FlowerType.trioDaisy: 'daisy',
+    FlowerType.sunflower: 'sunflower',
+    FlowerType.scarletPoppy: 'poppy',
+    FlowerType.crystalLotus: 'lotus',
+  };
+
+  List<ui.Image?>? stagesFor(FlowerType type) => stages[type];
+
+  bool hasStages(FlowerType type) {
+    final list = stages[type];
+    return list != null && list[0] != null && list[3] != null;
+  }
+
+  Future<ui.Image?> _decodeAsset(String path) async {
+    try {
+      final data = await rootBundle.load(path);
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      return frame.image;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> preloadForFlowerType(FlowerType type) async {
+    await Future.wait([
+      _preloadFlower(type),
+      _preloadSharedFx(),
+    ]);
+  }
+
+  Future<void> _preloadFlower(FlowerType type) async {
+    final prefix = _flowerPrefix[type];
+    if (prefix == null) return;
+    final lockKey = 'flower_$prefix';
+    if (_loadingKeys.contains(lockKey) || hasStages(type)) return;
+    _loadingKeys.add(lockKey);
+
+    try {
+      final results = await Future.wait([
+        _decodeAsset('assets/images/flowers/${prefix}_stage_0.webp'),
+        _decodeAsset('assets/images/flowers/${prefix}_stage_1.webp'),
+        _decodeAsset('assets/images/flowers/${prefix}_stage_2.webp'),
+        _decodeAsset('assets/images/flowers/${prefix}_stage_3.webp'),
+        _decodeAsset('assets/images/flowers/petal_$prefix.webp'),
+      ]);
+      stages[type] = results.sublist(0, 4);
+      petals[type] = results[4];
+      version.value++;
+    } finally {
+      _loadingKeys.remove(lockKey);
+    }
+  }
+
+  Future<void> _preloadSharedFx() async {
+    if (_sharedFxLoaded || _loadingKeys.contains('shared_fx')) return;
+    _loadingKeys.add('shared_fx');
+    try {
+      final fxFuture = Future.wait([
+        _decodeAsset('assets/images/flowers/fx_bloom_rays.webp'),
+        _decodeAsset('assets/images/flowers/fx_sparkle.webp'),
+        _decodeAsset('assets/images/flowers/fx_glint.webp'),
+        _decodeAsset('assets/images/flowers/fx_butterfly_body.webp'),
+        _decodeAsset('assets/images/flowers/fx_butterfly_wing_l.webp'),
+        _decodeAsset('assets/images/flowers/fx_butterfly_wing_r.webp'),
+      ]);
+      final burstFuture = Future.wait(
+        List.generate(
+          8,
+          (i) => _decodeAsset('assets/images/flowers/fx_burst_$i.webp'),
+        ),
+      );
+
+      final fx = await fxFuture;
+      final bursts = await burstFuture;
+      bloomRays = fx[0];
+      sparkleStar = fx[1];
+      glintDot = fx[2];
+      butterflyBody = fx[3];
+      butterflyWingL = fx[4];
+      butterflyWingR = fx[5];
+      for (int i = 0; i < 8; i++) {
+        burstFrames[i] = bursts[i];
+      }
+      _sharedFxLoaded = true;
+      version.value++;
+    } finally {
+      _loadingKeys.remove('shared_fx');
+    }
+  }
+}
+
+/// Preloads the sprite stages and shared bloom FX for [flowerType] ahead of Level Complete.
+Future<void> precacheGardenFlowerAssets(FlowerType flowerType) {
+  return _GardenFlowerSpriteCache.instance.preloadForFlowerType(flowerType);
+}
 
 /// Studio-grade Endgame Water Jar & Flower Garden Metagame View (`Panels 3 -> 4 -> 5 -> 6`)
 /// harmonized 100% with the original royal-indigo & gold Unity UI theme:
@@ -71,9 +192,19 @@ class _WaterGardenViewState extends State<WaterGardenView>
   bool _showClaimModal = false;
   bool _showingNextVase = false;
 
+  void _preloadActiveAndNextFlowers() {
+    final cache = _GardenFlowerSpriteCache.instance;
+    unawaited(cache.preloadForFlowerType(widget.advanceResult.config.flowerType));
+    final nextCfg = VaseMilestoneConfig.getForVaseId(
+      widget.advanceResult.vaseId + 1,
+    );
+    unawaited(cache.preloadForFlowerType(nextCfg.flowerType));
+  }
+
   @override
   void initState() {
     super.initState();
+    _preloadActiveAndNextFlowers();
     final is100 = widget.advanceResult.didReach100Percent;
     final totalDurationMs = is100 ? 2480 : 1580;
 
@@ -173,6 +304,14 @@ class _WaterGardenViewState extends State<WaterGardenView>
   }
 
   @override
+  void didUpdateWidget(covariant WaterGardenView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.advanceResult.vaseId != widget.advanceResult.vaseId) {
+      _preloadActiveAndNextFlowers();
+    }
+  }
+
+  @override
   void dispose() {
     _claimDelayTimer?.cancel();
     _entranceCtrl.dispose();
@@ -249,6 +388,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
       _seqCtrl,
       _ambientCtrl,
       _nextVaseCtrl,
+      _GardenFlowerSpriteCache.instance.version,
     ]);
 
     return LayoutBuilder(
@@ -343,6 +483,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                     child: CustomPaint(
                                       painter: _WaterGardenMasterPainter(
                                         config: activeCfg,
+                                        oldWaterProgress: 0.0,
                                         waterProgress: 0.0,
                                         jarEnterProgress: 0.0,
                                         pourProgress: 0.0,
@@ -355,6 +496,8 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                         is100Percent: false,
                                         isNewVaseReveal: true,
                                         newVaseSparkleT: rawNext,
+                                        spriteVersion: _GardenFlowerSpriteCache
+                                            .instance.version.value,
                                       ),
                                     ),
                                   ),
@@ -375,6 +518,8 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                   child: CustomPaint(
                                     painter: _WaterGardenMasterPainter(
                                       config: activeCfg,
+                                      oldWaterProgress:
+                                          widget.advanceResult.oldProgress,
                                       waterProgress: currentProgress,
                                       jarEnterProgress: _jarEnterAnim.value,
                                       pourProgress: _pourAnim.value,
@@ -388,6 +533,8 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                       is100Percent: is100,
                                       isNewVaseReveal: false,
                                       newVaseSparkleT: 0.0,
+                                      spriteVersion: _GardenFlowerSpriteCache
+                                          .instance.version.value,
                                     ),
                                   ),
                                 ),
@@ -2011,6 +2158,7 @@ class _GlassPalette {
 /// Renders in strict physical back-to-front 3D order for authentic glass/water/stem refraction.
 class _WaterGardenMasterPainter extends CustomPainter {
   final VaseMilestoneConfig config;
+  final double oldWaterProgress;
   final double waterProgress;
   final double jarEnterProgress;
   final double pourProgress;
@@ -2022,13 +2170,18 @@ class _WaterGardenMasterPainter extends CustomPainter {
   final bool is100Percent;
   final bool isNewVaseReveal;
   final double newVaseSparkleT;
+  final int spriteVersion;
 
   static final Path _vaseOuterPath = Path();
   static final Path _vaseInnerPath = Path();
   static final Path _scratchPath = Path();
   static final Path _petalPath = Path();
-  static final Paint _paint = Paint()..isAntiAlias = true;
-  static final Paint _fxPaint = Paint()..isAntiAlias = true;
+  static final Paint _paint = Paint()
+    ..isAntiAlias = true
+    ..filterQuality = FilterQuality.high;
+  static final Paint _fxPaint = Paint()
+    ..isAntiAlias = true
+    ..filterQuality = FilterQuality.high;
   static final TextPainter _textPainter = TextPainter(
     textDirection: TextDirection.ltr,
   );
@@ -2044,6 +2197,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
   _WaterGardenMasterPainter({
     required this.config,
+    required this.oldWaterProgress,
     required this.waterProgress,
     required this.jarEnterProgress,
     required this.pourProgress,
@@ -2055,6 +2209,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required this.is100Percent,
     required this.isNewVaseReveal,
     required this.newVaseSparkleT,
+    required this.spriteVersion,
   });
 
   @override
@@ -2063,12 +2218,14 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..color = Colors.white
       ..shader = null
       ..maskFilter = null
+      ..filterQuality = FilterQuality.high
       ..blendMode = BlendMode.srcOver
       ..style = PaintingStyle.fill;
     _fxPaint
       ..color = Colors.white
       ..shader = null
       ..maskFilter = null
+      ..filterQuality = FilterQuality.high
       ..blendMode = BlendMode.srcOver
       ..style = PaintingStyle.fill;
 
@@ -2080,7 +2237,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     if (raysProgress > 0.01) {
       _drawCelebrationSunburst(
         canvas,
-        Offset(cx, metrics.topRimY + 12),
+        Offset(cx, metrics.topRimY - 34),
         raysProgress,
       );
     }
@@ -2222,13 +2379,14 @@ class _WaterGardenMasterPainter extends CustomPainter {
       );
     }
 
-    // 9. 3D Tumbling Drifting Petals, Pollen Motes & Halo Sparkles
+    // 9. Magic Bloom Burst FX, Tumbling Real Petals, Butterflies & Starlight Sparkles
     if (bloomProgress > 0.14) {
       _drawFloatingPetalsAndSparkles(
         canvas: canvas,
         cx: cx,
         topY: metrics.topRimY - 24,
         intensity: ((bloomProgress - 0.14) / 0.86).clamp(0.0, 1.0),
+        bloomProgress: bloomProgress,
         flowerType: config.flowerType,
       );
     } else if (isNewVaseReveal && newVaseSparkleT < 0.98) {
@@ -2248,6 +2406,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
   ) {
     final p = progress.clamp(0.0, 1.0);
     const maxR = 205.0;
+    final raysImg = _GardenFlowerSpriteCache.instance.bloomRays;
 
     _fxPaint
       ..blendMode = BlendMode.plus
@@ -2256,7 +2415,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
         center,
         maxR,
         [
-          const Color(0xFFFFF8C4).withValues(alpha: 0.46 * p),
+          const Color(0xFFFFF8C4).withValues(alpha: 0.44 * p),
           const Color(0xFFFFD86B).withValues(alpha: 0.18 * p),
           const Color(0xFF4FF6FF).withValues(alpha: 0.08 * p),
           const Color(0x004FF6FF),
@@ -2265,37 +2424,60 @@ class _WaterGardenMasterPainter extends CustomPainter {
       );
     canvas.drawCircle(center, maxR, _fxPaint);
 
-    const rayCount = 14;
-    final rot = ambientPhase * 0.22;
-    _fxPaint.maskFilter = _blurSoft;
-    for (int i = 0; i < rayCount; i++) {
-      final a = (i * math.pi * 2.0) / rayCount + rot;
-      final isMajor = i.isEven;
-      final halfSpan = isMajor ? 0.088 : 0.042;
-      final rayR = isMajor ? maxR : maxR * 0.82;
-      _scratchPath
-        ..reset()
-        ..moveTo(center.dx, center.dy)
-        ..lineTo(
-          center.dx + rayR * math.cos(a - halfSpan),
-          center.dy + rayR * math.sin(a - halfSpan),
-        )
-        ..lineTo(
-          center.dx + rayR * math.cos(a + halfSpan),
-          center.dy + rayR * math.sin(a + halfSpan),
-        )
-        ..close();
-
-      _fxPaint.shader = ui.Gradient.radial(
-        center,
-        rayR,
-        [
-          (isMajor ? const Color(0xFFFFF8D2) : const Color(0xFF9DF8FF))
-              .withValues(alpha: (isMajor ? 0.34 : 0.22) * p),
-          const Color(0x00FFFDE7),
-        ],
+    if (raysImg != null) {
+      final pulse = 0.96 + 0.06 * math.sin(ambientPhase * 1.5);
+      final dstHalf = 195.0 * Curves.easeOutCubic.transform(p) * pulse;
+      _fxPaint
+        ..shader = null
+        ..color = Colors.white.withValues(alpha: (0.82 * p).clamp(0.0, 1.0))
+        ..blendMode = BlendMode.plus;
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(ambientPhase * 0.20);
+      canvas.drawImageRect(
+        raysImg,
+        Rect.fromLTWH(0, 0, raysImg.width.toDouble(), raysImg.height.toDouble()),
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: dstHalf * 2.0,
+          height: dstHalf * 2.0,
+        ),
+        _fxPaint,
       );
-      canvas.drawPath(_scratchPath, _fxPaint);
+      canvas.restore();
+    } else {
+      const rayCount = 14;
+      final rot = ambientPhase * 0.22;
+      _fxPaint.maskFilter = _blurSoft;
+      for (int i = 0; i < rayCount; i++) {
+        final a = (i * math.pi * 2.0) / rayCount + rot;
+        final isMajor = i.isEven;
+        final halfSpan = isMajor ? 0.088 : 0.042;
+        final rayR = isMajor ? maxR : maxR * 0.82;
+        _scratchPath
+          ..reset()
+          ..moveTo(center.dx, center.dy)
+          ..lineTo(
+            center.dx + rayR * math.cos(a - halfSpan),
+            center.dy + rayR * math.sin(a - halfSpan),
+          )
+          ..lineTo(
+            center.dx + rayR * math.cos(a + halfSpan),
+            center.dy + rayR * math.sin(a + halfSpan),
+          )
+          ..close();
+
+        _fxPaint.shader = ui.Gradient.radial(
+          center,
+          rayR,
+          [
+            (isMajor ? const Color(0xFFFFF8D2) : const Color(0xFF9DF8FF))
+                .withValues(alpha: (isMajor ? 0.34 : 0.22) * p),
+            const Color(0x00FFFDE7),
+          ],
+        );
+        canvas.drawPath(_scratchPath, _fxPaint);
+      }
     }
 
     if (p > 0.05 && p < 0.88) {
@@ -2747,22 +2929,27 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required bool hasWater,
     required double bloomFraction,
   }) {
+    final usingSprites = _GardenFlowerSpriteCache.instance.hasStages(
+      config.flowerType,
+    );
     if (!hasWater) {
       canvas.save();
       canvas.clipPath(_vaseInnerPath);
       final fadeTop = metrics.topRimY + 6;
       final fadeBot = metrics.neckY + 22;
+      final topX = usingSprites ? cx : cx + 5;
+      final botX = usingSprites ? cx - 1.5 : cx + 2;
       _paint
         ..style = PaintingStyle.stroke
         ..strokeWidth = 5.4
         ..strokeCap = StrokeCap.round
         ..color = Colors.white
         ..shader = ui.Gradient.linear(
-          Offset(cx + 5, fadeTop),
-          Offset(cx + 2, fadeBot),
+          Offset(topX, fadeTop),
+          Offset(botX, fadeBot),
           const [Color(0xCC359438), Color(0x00359438)],
         );
-      canvas.drawLine(Offset(cx + 5, fadeTop), Offset(cx + 2, fadeBot), _paint);
+      canvas.drawLine(Offset(topX, fadeTop), Offset(botX, fadeBot), _paint);
       _paint.shader = null;
       canvas.restore();
       return;
@@ -2782,7 +2969,52 @@ class _WaterGardenMasterPainter extends CustomPainter {
     const refractShift = 3.2;
     final stemBaseY = math.min(metrics.innerBaseY - 12, waterTopY + 95);
     final neckMidY = metrics.topRimY + 6;
-    final stemExitX = ui.lerpDouble(cx + 12, cx + 1, bloomFraction.clamp(0.0, 1.0))!;
+    final stemExitX = usingSprites
+        ? cx
+        : ui.lerpDouble(cx + 12, cx + 1, bloomFraction.clamp(0.0, 1.0))!;
+
+    // When using real flower sprites, seamlessly connect the air-gap stem from vase rim down to waterTopY
+    if (usingSprites && waterTopY > neckMidY + 2) {
+      canvas.restore();
+      canvas.save();
+      canvas.clipPath(_vaseInnerPath);
+      canvas.clipRect(
+        Rect.fromLTRB(
+          cx - metrics.mouthHalfW - 4,
+          neckMidY,
+          cx + metrics.mouthHalfW + 4,
+          waterTopY + 1.5,
+        ),
+      );
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5.4
+        ..strokeCap = StrokeCap.round
+        ..shader = null
+        ..color = const Color(0xD82F943A);
+      _scratchPath
+        ..reset()
+        ..moveTo(cx, neckMidY)
+        ..quadraticBezierTo(
+          cx + 1.2,
+          (neckMidY + waterTopY) * 0.5,
+          cx + refractShift * 0.4,
+          waterTopY + 1.5,
+        );
+      canvas.drawPath(_scratchPath, _paint);
+      canvas.restore();
+
+      canvas.save();
+      canvas.clipPath(_vaseInnerPath);
+      canvas.clipRect(
+        Rect.fromLTRB(
+          cx - metrics.bellyHalfW - 4,
+          waterTopY,
+          cx + metrics.bellyHalfW + 4,
+          metrics.innerBaseY + 6,
+        ),
+      );
+    }
 
     _paint
       ..style = PaintingStyle.stroke
@@ -3132,6 +3364,20 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required double bloomFraction,
     required FlowerType flowerType,
   }) {
+    if (_GardenFlowerSpriteCache.instance.hasStages(flowerType)) {
+      _drawSpriteBotanicals(
+        canvas: canvas,
+        cx: cx,
+        metrics: metrics,
+        waterTopY: waterTopY,
+        hasWater: hasWater,
+        waterFraction: waterFraction,
+        bloomFraction: bloomFraction,
+        flowerType: flowerType,
+      );
+      return;
+    }
+
     final sway = 0.032 * math.sin(ambientPhase);
     final upperClipTop = -160.0;
     final upperClipBottom = hasWater ? waterTopY : (metrics.topRimY + 10);
@@ -3343,6 +3589,207 @@ class _WaterGardenMasterPainter extends CustomPainter {
       rightAppear: rightExtendT,
       sway: sway,
     );
+  }
+
+  /// Renders authentic extracted Flower Merge stage sprites (`0..3`) cleanly anchored at the
+  /// crystal vase neck so both pre-bloom buds (`chưa nở`) and 100% full bloom (`nở hoa`)
+  /// emerge organically out of the water vase without vector stems or hard cuts.
+  void _drawSpriteBotanicals({
+    required Canvas canvas,
+    required double cx,
+    required _VaseMetrics metrics,
+    required double waterTopY,
+    required bool hasWater,
+    required double waterFraction,
+    required double bloomFraction,
+    required FlowerType flowerType,
+  }) {
+    final cache = _GardenFlowerSpriteCache.instance;
+    final stages = cache.stagesFor(flowerType);
+    if (stages == null || stages[0] == null || stages[3] == null) return;
+
+    final boxH = switch (flowerType) {
+      FlowerType.tulipPink || FlowerType.sunflower => 162.0,
+      _ => 176.0,
+    };
+    final boxW = boxH * (640.0 / 600.0);
+    final stemAnchor = Offset(cx, metrics.topRimY + 10.5);
+    final rimMouthBottom =
+        metrics.topRimY + metrics.ellipseHalfHeight(metrics.mouthHalfW) * 0.68;
+    final clipBottom = hasWater
+        ? math.min(waterTopY + 3.0, math.max(metrics.topRimY + 11.5, rimMouthBottom))
+        : (metrics.topRimY + 11.0);
+
+    void drawStage(
+      ui.Image img, {
+      required double scaleX,
+      required double scaleY,
+      required double angleRad,
+      double alpha = 1.0,
+    }) {
+      if (alpha <= 0.01 || scaleX <= 0.01 || scaleY <= 0.01) return;
+      _paint
+        ..style = PaintingStyle.fill
+        ..shader = null
+        ..maskFilter = null
+        ..blendMode = BlendMode.srcOver
+        ..color = Colors.white.withValues(alpha: alpha.clamp(0.0, 1.0));
+      canvas.save();
+      canvas.clipRect(Rect.fromLTRB(0.0, -180.0, 380.0, clipBottom));
+      canvas.translate(stemAnchor.dx, stemAnchor.dy);
+      canvas.rotate(angleRad);
+      canvas.scale(scaleX, scaleY);
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(-boxW * 0.5, -boxH * (444.0 / 450.0), boxW, boxH),
+        _paint,
+      );
+      canvas.restore();
+    }
+
+    final sway = 0.024 * math.sin(ambientPhase);
+    final breatheY = 1.0 + 0.013 * math.sin(ambientPhase * 2.0);
+    final tB = bloomFraction.clamp(0.0, 1.0);
+
+    // 1. Pre-bloom state (`chưa nở` when water < 100% or revealing next vase)
+    if (!is100Percent || tB <= 0.01 || isNewVaseReveal) {
+      final wp = isNewVaseReveal ? 0.0 : waterFraction.clamp(0.0, 1.0);
+      final stage0 = stages[0]!;
+      final stage1 = stages[1] ?? stage0;
+
+      // Cross threshold at 50%: smooth Spine-inspired bud-to-sprout pop (`00_01`)
+      const threshold = 0.48;
+      if (wp < threshold) {
+        drawStage(
+          stage0,
+          scaleX: 1.18,
+          scaleY: 1.18 * breatheY,
+          angleRad: sway,
+        );
+      } else if (oldWaterProgress < threshold && wp < 0.62) {
+        final popT = ((wp - threshold) / (0.62 - threshold)).clamp(0.0, 1.0);
+        if (popT < 0.34) {
+          final u = popT / 0.34;
+          final sc = ui.lerpDouble(1.18, 0.52, Curves.easeInBack.transform(u))!;
+          drawStage(stage0, scaleX: sc * 0.94, scaleY: sc * 1.08, angleRad: sway);
+        } else {
+          final u = (popT - 0.34) / 0.66;
+          final sc = ui.lerpDouble(0.50, 1.08, Curves.easeOutBack.transform(u))!;
+          drawStage(stage1, scaleX: sc, scaleY: sc * breatheY, angleRad: sway);
+        }
+      } else {
+        drawStage(
+          stage1,
+          scaleX: 1.08,
+          scaleY: 1.08 * breatheY,
+          angleRad: sway,
+        );
+      }
+      return;
+    }
+
+    // 2. Full 100% Bloom choreography (`đầy 100% -> nở hoa ra`, following `02_03` Spine curve)
+    final startIdx = oldWaterProgress < 0.48 ? 0 : 1;
+    final startImg = stages[startIdx] ?? stages[0]!;
+    final startScale = startIdx == 0 ? 1.18 : 1.08;
+    final stage2 = stages[2] ?? stages[3]!;
+    final stage3 = stages[3]!;
+
+    if (tB < 0.28) {
+      // Anticipation stretch -> squash -> compress into bloom spark
+      double sx = 1.0;
+      double sy = 1.0;
+      if (tB < 0.10) {
+        final u = Curves.easeInOutCubic.transform(tB / 0.10);
+        sx = ui.lerpDouble(1.0, 0.92, u)!;
+        sy = ui.lerpDouble(1.0, 1.15, u)!;
+      } else if (tB < 0.20) {
+        final u = Curves.easeInOutCubic.transform((tB - 0.10) / 0.10);
+        sx = ui.lerpDouble(0.92, 1.08, u)!;
+        sy = ui.lerpDouble(1.15, 0.84, u)!;
+      } else {
+        final u = Curves.easeInCubic.transform((tB - 0.20) / 0.08);
+        sx = ui.lerpDouble(1.08, 0.26, u)!;
+        sy = ui.lerpDouble(0.84, 0.26, u)!;
+      }
+      drawStage(
+        startImg,
+        scaleX: startScale * sx,
+        scaleY: startScale * sy,
+        angleRad: sway * 0.5,
+      );
+
+      // Building golden bloom spark before burst
+      if (tB > 0.14) {
+        final chargeT = ((tB - 0.14) / 0.14).clamp(0.0, 1.0);
+        final sparkCenter = Offset(cx, metrics.topRimY - 42);
+        _fxPaint
+          ..blendMode = BlendMode.plus
+          ..maskFilter = null
+          ..shader = ui.Gradient.radial(
+            sparkCenter,
+            48.0 * chargeT,
+            [
+              Colors.white.withValues(alpha: 0.72 * chargeT),
+              const Color(0xFFFFE57F).withValues(alpha: 0.42 * chargeT),
+              const Color(0x00FFE57F),
+            ],
+            const [0.0, 0.48, 1.0],
+          );
+        canvas.drawCircle(sparkCenter, 48.0 * chargeT, _fxPaint);
+        _fxPaint
+          ..shader = null
+          ..blendMode = BlendMode.srcOver;
+      }
+    } else if (tB < 0.48) {
+      // Unfurling rapidly through Stage 2 right inside the magic burst puff
+      final u = Curves.easeOutCubic.transform(((tB - 0.28) / 0.20).clamp(0.0, 1.0));
+      final sc = ui.lerpDouble(0.32, 1.04, u)!;
+      drawStage(stage2, scaleX: sc, scaleY: sc, angleRad: sway * 0.6);
+    } else {
+      // Stage 3 full bouquet with Spine elastic settle (`1.07 -> 0.95 -> 1.02 -> 1.0`)
+      if (tB < 0.56) {
+        final crossAlpha = 1.0 - ((tB - 0.48) / 0.08).clamp(0.0, 1.0);
+        drawStage(
+          stage2,
+          scaleX: 1.04,
+          scaleY: 1.04,
+          angleRad: sway * 0.7,
+          alpha: crossAlpha * 0.65,
+        );
+      }
+
+      final u = ((tB - 0.48) / 0.52).clamp(0.0, 1.0);
+      double sx = 1.0;
+      double sy = 1.0;
+      if (u < 0.22) {
+        final k = Curves.easeOutCubic.transform(u / 0.22);
+        sx = ui.lerpDouble(0.82, 0.98, k)!;
+        sy = ui.lerpDouble(0.76, 1.08, k)!;
+      } else if (u < 0.48) {
+        final k = Curves.easeInOutCubic.transform((u - 0.22) / 0.26);
+        sx = ui.lerpDouble(0.98, 1.04, k)!;
+        sy = ui.lerpDouble(1.08, 0.95, k)!;
+      } else if (u < 0.74) {
+        final k = Curves.easeInOutCubic.transform((u - 0.48) / 0.26);
+        sx = ui.lerpDouble(1.04, 0.99, k)!;
+        sy = ui.lerpDouble(0.95, 1.025, k)!;
+      } else {
+        final k = Curves.easeInOutCubic.transform((u - 0.74) / 0.26);
+        sx = ui.lerpDouble(0.99, 1.0, k)!;
+        sy = ui.lerpDouble(1.025, 1.0, k)!;
+      }
+
+      final appearAlpha = ((tB - 0.48) / 0.07).clamp(0.0, 1.0);
+      drawStage(
+        stage3,
+        scaleX: sx,
+        scaleY: sy * breatheY,
+        angleRad: sway,
+        alpha: appearAlpha,
+      );
+    }
   }
 
   /// Renders the 3-blossom 3D bouquet with bespoke palettes & petal geometry per milestone.
@@ -5177,14 +5624,56 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// 3D Tumbling Drifting Petals, Fairy-Light Pollen Motes & Haloed 4-Point Starlight Sparkles
+  /// 3D Tumbling Real/Vector Petals, Magic Bloom Burst, Fluttering Butterflies & Sparkles
   void _drawFloatingPetalsAndSparkles({
     required Canvas canvas,
     required double cx,
     required double topY,
     required double intensity,
+    required double bloomProgress,
     required FlowerType flowerType,
   }) {
+    final cache = _GardenFlowerSpriteCache.instance;
+    final usingSprites = cache.hasStages(flowerType);
+    final crownCenterY = usingSprites ? topY - 40.0 : topY;
+
+    // 1. Magic Bloom Burst FX (`SX_effect_ywbd`: golden burst puff + streamers + sparkles)
+    if (bloomProgress >= 0.24 && bloomProgress <= 0.88) {
+      final burstT = ((bloomProgress - 0.24) / 0.64).clamp(0.0, 1.0);
+      final frameIdx = (burstT * 8).floor().clamp(0, 7);
+      final burstImg = cache.burstFrames[frameIdx];
+      if (burstImg != null) {
+        final burstAlpha = burstT < 0.72
+            ? 1.0
+            : (1.0 - ((burstT - 0.72) / 0.28)).clamp(0.0, 1.0);
+        final burstScale = ui.lerpDouble(0.76, 1.18, burstT)!;
+        final size = 186.0 * burstScale;
+        _fxPaint
+          ..style = PaintingStyle.fill
+          ..shader = null
+          ..maskFilter = null
+          ..blendMode = BlendMode.srcOver
+          ..color = Colors.white.withValues(alpha: burstAlpha);
+        canvas.drawImageRect(
+          burstImg,
+          Rect.fromLTWH(
+            0,
+            0,
+            burstImg.width.toDouble(),
+            burstImg.height.toDouble(),
+          ),
+          Rect.fromCenter(
+            center: Offset(cx, crownCenterY + 6.0),
+            width: size,
+            height: size,
+          ),
+          _fxPaint,
+        );
+      }
+    }
+
+    // 2. Tumbling Real Flower Petals (fallback smoothly to vector petals if not cached)
+    final petalImg = cache.petals[flowerType];
     final (petalLight, petalDeep) = switch (flowerType) {
       FlowerType.sunflower => (
           const Color(0xFFFFF59D),
@@ -5215,11 +5704,14 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
     for (int i = 0; i < baseOffsets.length; i++) {
       final b = baseOffsets[i];
-      final driftX = 6.5 * math.sin(ambientPhase + i * 1.15);
-      final driftY = 5.5 * math.cos(ambientPhase * 1.25 + i * 0.9);
-      final pos = Offset(cx + b.dx * intensity + driftX, topY + b.dy + driftY);
+      final driftX = 7.0 * math.sin(ambientPhase + i * 1.15);
+      final driftY = 6.0 * math.cos(ambientPhase * 1.25 + i * 0.9);
+      final pos = Offset(
+        cx + b.dx * intensity + driftX,
+        crownCenterY + b.dy + driftY,
+      );
       final tumble = math.cos(ambientPhase * 1.8 + i * 1.3);
-      final flipY = (0.34 + 0.66 * tumble.abs()) * intensity;
+      final flipY = (0.36 + 0.64 * tumble.abs()) * intensity;
       final isBackSide = tumble < 0;
 
       canvas.save();
@@ -5227,52 +5719,99 @@ class _WaterGardenMasterPainter extends CustomPainter {
       canvas.rotate(0.45 * i + 0.25 * math.sin(ambientPhase + i));
       canvas.scale(intensity, flipY);
 
-      _scratchPath
-        ..reset()
-        ..moveTo(-8.5, 0)
-        ..cubicTo(-4, -6.5, 5, -6.8, 8.5, -0.5)
-        ..cubicTo(5, 5.8, -3, 5.2, -8.5, 0)
-        ..close();
-      _paint
-        ..style = PaintingStyle.fill
-        ..color = Colors.white
-        ..shader = ui.Gradient.linear(
-          const Offset(-8, -5),
-          const Offset(8, 5),
-          isBackSide
-              ? [
-                  petalDeep.withValues(alpha: (0.85 * intensity).clamp(0.0, 1.0)),
-                  petalLight.withValues(alpha: (0.72 * intensity).clamp(0.0, 1.0)),
-                ]
-              : [
-                  petalLight.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
-                  petalDeep.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
-                ],
+      if (petalImg != null) {
+        _paint
+          ..style = PaintingStyle.fill
+          ..shader = null
+          ..maskFilter = null
+          ..blendMode = BlendMode.srcOver
+          ..color = Colors.white.withValues(alpha: (0.94 * intensity).clamp(0.0, 1.0));
+        canvas.drawImageRect(
+          petalImg,
+          Rect.fromLTWH(
+            0,
+            0,
+            petalImg.width.toDouble(),
+            petalImg.height.toDouble(),
+          ),
+          const Rect.fromLTWH(-7.5, -9.8, 15.0, 19.6),
+          _paint,
         );
-      canvas.drawPath(_scratchPath, _paint);
-      _paint.shader = null;
+      } else {
+        _scratchPath
+          ..reset()
+          ..moveTo(-8.5, 0)
+          ..cubicTo(-4, -6.5, 5, -6.8, 8.5, -0.5)
+          ..cubicTo(5, 5.8, -3, 5.2, -8.5, 0)
+          ..close();
+        _paint
+          ..style = PaintingStyle.fill
+          ..color = Colors.white
+          ..shader = ui.Gradient.linear(
+            const Offset(-8, -5),
+            const Offset(8, 5),
+            isBackSide
+                ? [
+                    petalDeep.withValues(alpha: (0.85 * intensity).clamp(0.0, 1.0)),
+                    petalLight.withValues(alpha: (0.72 * intensity).clamp(0.0, 1.0)),
+                  ]
+                : [
+                    petalLight.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
+                    petalDeep.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
+                  ],
+          );
+        canvas.drawPath(_scratchPath, _paint);
+        _paint.shader = null;
+      }
       canvas.restore();
     }
 
-    // Floating warm golden pollen fairy motes
+    // 3. Floating warm golden pollen fairy motes / glint orbs
+    final glintImg = cache.glintDot;
     for (int m = 0; m < 8; m++) {
       final angle = m * 0.785 + ambientPhase * 0.4;
       final r = 54.0 + (m % 3) * 22.0;
       final mx = cx + math.cos(angle) * r;
-      final my = topY - 22 + math.sin(angle * 1.3) * 44.0 - (ambientPhase % 6.28) * 1.5;
+      final my =
+          crownCenterY - 12 + math.sin(angle * 1.3) * 44.0 - (ambientPhase % 6.28) * 1.5;
       final pulse = (0.4 + 0.6 * math.sin(ambientPhase * 2.5 + m)).clamp(0.0, 1.0);
-      _fxPaint
-        ..style = PaintingStyle.fill
-        ..maskFilter = _blurTight
-        ..color = const Color(0xFFFFF59D).withValues(alpha: 0.68 * intensity * pulse);
-      canvas.drawCircle(Offset(mx, my), 2.4, _fxPaint);
+      if (glintImg != null) {
+        final gs = (6.0 + (m % 3) * 2.5) * pulse;
+        _fxPaint
+          ..style = PaintingStyle.fill
+          ..shader = null
+          ..maskFilter = null
+          ..blendMode = BlendMode.plus
+          ..color = Colors.white.withValues(alpha: (0.85 * intensity * pulse).clamp(0.0, 1.0));
+        canvas.drawImageRect(
+          glintImg,
+          Rect.fromLTWH(
+            0,
+            0,
+            glintImg.width.toDouble(),
+            glintImg.height.toDouble(),
+          ),
+          Rect.fromCenter(center: Offset(mx, my), width: gs * 2, height: gs * 2),
+          _fxPaint,
+        );
+      } else {
+        _fxPaint
+          ..style = PaintingStyle.fill
+          ..maskFilter = _blurTight
+          ..color = const Color(0xFFFFF59D).withValues(alpha: 0.68 * intensity * pulse);
+        canvas.drawCircle(Offset(mx, my), 2.4, _fxPaint);
+      }
     }
-    _fxPaint.maskFilter = null;
+    _fxPaint
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver;
 
+    // 4. Twinkling Golden Sparkles (`fx_sparkle.png` + 4-point star glow)
+    final sparkleImg = cache.sparkleStar;
     const starOffsets = <Offset>[
       Offset(-78, -56),
       Offset(82, -52),
-      Offset(0, -98),
+      Offset(0, -92),
       Offset(-96, -8),
       Offset(100, -4),
     ];
@@ -5281,13 +5820,152 @@ class _WaterGardenMasterPainter extends CustomPainter {
           (0.45 + 0.55 * math.sin(ambientPhase * 3.0 + s * 1.4)).clamp(0.0, 1.0) *
               intensity;
       if (twinkle <= 0.08) continue;
-      _drawFourPointStar(
-        canvas,
-        Offset(cx + starOffsets[s].dx, topY + starOffsets[s].dy),
-        7.8 * twinkle,
-        const Color(0xFFFFFDE7),
+      final pt = Offset(cx + starOffsets[s].dx, crownCenterY + starOffsets[s].dy);
+      if (sparkleImg != null) {
+        final sz = 16.0 * twinkle;
+        _fxPaint
+          ..style = PaintingStyle.fill
+          ..shader = null
+          ..maskFilter = null
+          ..blendMode = BlendMode.plus
+          ..color = const Color(0xFFFFF8C4).withValues(alpha: twinkle.clamp(0.0, 1.0));
+        canvas.save();
+        canvas.translate(pt.dx, pt.dy);
+        canvas.rotate(ambientPhase * 0.4 + s);
+        canvas.drawImageRect(
+          sparkleImg,
+          Rect.fromLTWH(
+            0,
+            0,
+            sparkleImg.width.toDouble(),
+            sparkleImg.height.toDouble(),
+          ),
+          Rect.fromCenter(center: Offset.zero, width: sz, height: sz),
+          _fxPaint,
+        );
+        canvas.restore();
+      } else {
+        _drawFourPointStar(
+          canvas,
+          pt,
+          7.8 * twinkle,
+          const Color(0xFFFFFDE7),
+        );
+      }
+    }
+    _fxPaint.blendMode = BlendMode.srcOver;
+
+    // 5. Animated Iridescent Morpho Butterflies (`sxch_an_hd`, matches Flower Merge bloom)
+    final bBody = cache.butterflyBody;
+    final bWingL = cache.butterflyWingL;
+    final bWingR = cache.butterflyWingR;
+    if (bBody != null && bWingL != null && bWingR != null && bloomProgress > 0.42) {
+      final flyInT = Curves.easeOutCubic.transform(
+        ((bloomProgress - 0.42) / 0.34).clamp(0.0, 1.0),
+      );
+      _drawAnimatedButterfly(
+        canvas: canvas,
+        body: bBody,
+        wingL: bWingL,
+        wingR: bWingR,
+        center: Offset(
+          cx + 76.0 * flyInT + 10.0 * math.sin(ambientPhase * 2.0),
+          crownCenterY - 52.0 + 7.5 * math.cos(ambientPhase * 2.8),
+        ),
+        scale: 0.24 * flyInT,
+        tiltRad: -0.34 + 0.14 * math.cos(ambientPhase * 2.0),
+        flapPhase: ambientPhase * 9.5,
+        alpha: flyInT,
+      );
+      _drawAnimatedButterfly(
+        canvas: canvas,
+        body: bBody,
+        wingL: bWingL,
+        wingR: bWingR,
+        center: Offset(
+          cx - 78.0 * flyInT + 9.0 * math.cos(ambientPhase * 2.2 + 1.1),
+          crownCenterY - 26.0 + 6.5 * math.sin(ambientPhase * 2.6 + 0.8),
+        ),
+        scale: 0.18 * flyInT,
+        tiltRad: 0.38 + 0.14 * math.sin(ambientPhase * 2.2),
+        flapPhase: ambientPhase * 10.5 + 1.4,
+        alpha: flyInT * 0.92,
       );
     }
+  }
+
+  void _drawAnimatedButterfly({
+    required Canvas canvas,
+    required ui.Image body,
+    required ui.Image wingL,
+    required ui.Image wingR,
+    required Offset center,
+    required double scale,
+    required double tiltRad,
+    required double flapPhase,
+    required double alpha,
+  }) {
+    if (alpha <= 0.02 || scale <= 0.01) return;
+    final flap = 0.22 + 0.78 * math.cos(flapPhase).abs();
+    _paint
+      ..style = PaintingStyle.fill
+      ..shader = null
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver
+      ..color = Colors.white.withValues(alpha: alpha.clamp(0.0, 1.0));
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(tiltRad);
+    canvas.scale(scale, scale);
+
+    // Left wing anchored smoothly along centerline (`x = -2`)
+    canvas.save();
+    canvas.translate(-2.0, 8.0);
+    canvas.scale(flap, 1.0);
+    canvas.drawImageRect(
+      wingL,
+      Rect.fromLTWH(0, 0, wingL.width.toDouble(), wingL.height.toDouble()),
+      Rect.fromLTWH(
+        -wingL.width.toDouble(),
+        -wingL.height * 0.5,
+        wingL.width.toDouble(),
+        wingL.height.toDouble(),
+      ),
+      _paint,
+    );
+    canvas.restore();
+
+    // Right wing anchored smoothly along centerline (`x = +2`)
+    canvas.save();
+    canvas.translate(2.0, 8.0);
+    canvas.scale(flap, 1.0);
+    canvas.drawImageRect(
+      wingR,
+      Rect.fromLTWH(0, 0, wingR.width.toDouble(), wingR.height.toDouble()),
+      Rect.fromLTWH(
+        0.0,
+        -wingR.height * 0.5,
+        wingR.width.toDouble(),
+        wingR.height.toDouble(),
+      ),
+      _paint,
+    );
+    canvas.restore();
+
+    // Body centered directly over the wing hinge
+    canvas.drawImageRect(
+      body,
+      Rect.fromLTWH(0, 0, body.width.toDouble(), body.height.toDouble()),
+      Rect.fromCenter(
+        center: Offset.zero,
+        width: body.width.toDouble(),
+        height: body.height.toDouble(),
+      ),
+      _paint,
+    );
+
+    canvas.restore();
   }
 
   void _drawNewVaseRevealSparkles({
@@ -5366,7 +6044,8 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WaterGardenMasterPainter oldDelegate) {
-    return oldDelegate.waterProgress != waterProgress ||
+    return oldDelegate.oldWaterProgress != oldWaterProgress ||
+        oldDelegate.waterProgress != waterProgress ||
         oldDelegate.pourProgress != pourProgress ||
         oldDelegate.jarEnterProgress != jarEnterProgress ||
         oldDelegate.jarExitProgress != jarExitProgress ||
@@ -5375,7 +6054,8 @@ class _WaterGardenMasterPainter extends CustomPainter {
         oldDelegate.ambientPhase != ambientPhase ||
         oldDelegate.config.vaseId != config.vaseId ||
         oldDelegate.isNewVaseReveal != isNewVaseReveal ||
-        oldDelegate.newVaseSparkleT != newVaseSparkleT;
+        oldDelegate.newVaseSparkleT != newVaseSparkleT ||
+        oldDelegate.spriteVersion != spriteVersion;
   }
 }
 

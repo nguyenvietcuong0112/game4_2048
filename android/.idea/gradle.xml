@@ -7,9 +7,9 @@
         <compositeConfiguration>
           <compositeBuild compositeDefinitionSource="SCRIPT">
             <builds>
-              <build path="$USER_HOME$/development/flutter/packages/flutter_tools/gradle" name="gradle">
+              <build path="C:/flutter/packages/flutter_tools/gradle" name="gradle">
                 <projects>
-                  <project path="$USER_HOME$/development/flutter/packages/flutter_tools/gradle" />
+                  <project path="C:/flutter/packages/flutter_tools/gradle" />
                 </projects>
               </build>
             </builds>
@@ -19,13 +19,17 @@
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
         <option name="modules">
           <set>
-            <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/audioplayers_android-5.3.0/android" />
-            <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/jni-1.1.1/android" />
-            <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/jni_flutter-1.0.4+1/android" />
-            <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/shared_preferences_android-2.5.4/android" />
+            <option value="$USER_HOME$/AppData/Local/Pub/Cache/hosted/pub.dev/audioplayers_android-5.3.0/android" />
+            <option value="$USER_HOME$/AppData/Local/Pub/Cache/hosted/pub.dev/firebase_analytics-12.6.1/android" />
+            <option value="$USER_HOME$/AppData/Local/Pub/Cache/hosted/pub.dev/firebase_core-4.15.2/android" />
+            <option value="$USER_HOME$/AppData/Local/Pub/Cache/hosted/pub.dev/firebase_crashlytics-5.4.1/android" />
+            <option value="$USER_HOME$/AppData/Local/Pub/Cache/hosted/pub.dev/jni-1.1.1/android" />
+            <option value="$USER_HOME$/AppData/Local/Pub/Cache/hosted/pub.dev/jni_flutter-1.0.4+1/android" />
+            <option value="$USER_HOME$/AppData/Local/Pub/Cache/hosted/pub.dev/shared_preferences_android-2.5.4/android" />
+            <option value="C:/flutter/packages/flutter_tools/gradle" />
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/app" />
-            <option value="$USER_HOME$/development/flutter/packages/flutter_tools/gradle" />
+            <option value="$PROJECT_DIR$/../funtap_global_sdk/android" />
           </set>
         </option>
       </GradleProjectSettings>

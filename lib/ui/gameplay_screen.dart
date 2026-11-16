@@ -1235,6 +1235,9 @@ class _GameplayScreenState extends State<GameplayScreen>
                     },
                     onJumpToLevel: (targetLv) {
                       widget.audio.playClick();
+                      if (!targetLv.isBonus) {
+                        widget.progress.cheatSyncVaseToLevel(targetLv.number);
+                      }
                       _startLevel(targetLv);
                     },
                     onInstantWinPopup: () {

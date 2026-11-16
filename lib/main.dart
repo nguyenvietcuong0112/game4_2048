@@ -13,6 +13,7 @@ import 'services/player_progress_service.dart';
 import 'ui/gameplay_screen.dart';
 import 'ui/intro_splash_view.dart';
 import 'ui/unity_ui_kit.dart';
+import 'ui/water_garden_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,20 +54,17 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
     with WidgetsBindingObserver {
   static const List<String> _criticalUiAssetImages = [
     'assets/images/Background_Core.png',
-    'assets/images/BG.png',
+    'assets/images/BG.webp',
     'assets/images/Logo.png',
     'assets/images/Loading_BG.png',
     'assets/images/Loading_Progress.png',
     'assets/images/Icon_Coin.png',
     'assets/images/Icon_Clock.png',
-    'assets/images/Icon_Timer.png',
     'assets/images/Icon_Settings.png',
     'assets/images/progress_combo_bg.png',
     'assets/images/progress_combo_fg.png',
-    'assets/images/text_newfeature.png',
-    'assets/images/effect_outerglow.png',
+    'assets/images/effect_outerglow.webp',
     'assets/images/effect_star.png',
-    'assets/images/btn_green.png',
     'assets/images/popup_bg.png',
     'assets/images/frame_content.png',
     'assets/images/Button_Green.png',
@@ -206,6 +204,7 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
           _audio.init(),
           spriteFuture,
           _prewarmUiImageCache(),
+          precacheGardenFlowerAssets(_progress.currentVaseConfig.flowerType),
         ]).then((loaded) {
           results = loaded;
           realAssetProgress = 1.0;

@@ -65,7 +65,7 @@ class AudioHapticsService extends ChangeNotifier {
 
     try {
       await FlameAudio.audioCache.loadAll([
-        'bgm_gameplay.wav',
+        'bgm_gameplay.mp3',
         'sfx_block_attract.wav',
         'sfx_block_grab.wav',
         'sfx_block_merge.wav',
@@ -118,7 +118,7 @@ class AudioHapticsService extends ChangeNotifier {
     try {
       _bgmPlaying = true;
       FlameAudio.bgm.audioPlayer.positionUpdater = _DisabledPositionUpdater();
-      await FlameAudio.bgm.play('bgm_gameplay.wav', volume: _bgmVolume);
+      await FlameAudio.bgm.play('bgm_gameplay.mp3', volume: _bgmVolume);
       FlameAudio.bgm.audioPlayer.positionUpdater = _DisabledPositionUpdater();
     } catch (_) {
       _bgmPlaying = false;

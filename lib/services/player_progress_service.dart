@@ -482,6 +482,44 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Syncs the vase milestone & step to match a campaign [level] jumped to in QA/Cheat.
+  void cheatSyncVaseToLevel(int level) {
+    final targetVaseId = VaseMilestoneConfig.determineInitialVaseId(level);
+    final cfg = VaseMilestoneConfig.getForVaseId(targetVaseId);
+    _vaseCurrentId = targetVaseId;
+    _vaseStepCount = (level - cfg.startLevel).clamp(0, cfg.totalSteps - 1);
+    _prefs?.setInt(_kVaseCurrentId, _vaseCurrentId);
+    _prefs?.setInt(_kVaseStepCount, _vaseStepCount);
+    notifyListeners();
+  }
+
+  /// Sets current vase progress to `totalSteps - 1` so winning the next level immediately triggers 100% bloom.
+  void cheatPrepareNextWinBloom() {
+    final cfg = currentVaseConfig;
+    _vaseStepCount = (cfg.totalSteps - 1).clamp(0, cfg.totalSteps);
+    _vaseClaimedIds.remove(cfg.vaseId);
+    _prefs?.setInt(_kVaseStepCount, _vaseStepCount);
+    _prefs?.setStringList(
+      _kVaseClaimedIds,
+      _vaseClaimedIds.map((i) => i.toString()).toList(),
+    );
+    notifyListeners();
+  }
+
+  /// Cycles to the next vase (`1 -> 2 -> 3 -> 4 -> 5 -> 1`) at step 0 for quick flower testing.
+  void cheatCycleVaseFlower() {
+    _vaseCurrentId = (_vaseCurrentId % 5) + 1;
+    _vaseStepCount = 0;
+    _vaseClaimedIds.remove(_vaseCurrentId);
+    _prefs?.setInt(_kVaseCurrentId, _vaseCurrentId);
+    _prefs?.setInt(_kVaseStepCount, _vaseStepCount);
+    _prefs?.setStringList(
+      _kVaseClaimedIds,
+      _vaseClaimedIds.map((i) => i.toString()).toList(),
+    );
+    notifyListeners();
+  }
+
   Future<void> cheatResetAllProgress() async {
     flushPendingWinCoins();
     _currentLevel = 1;
@@ -620,20 +658,39 @@ class VaseMilestoneConfig {
     if (id <= 4 && id >= 1) {
       return milestones[id - 1];
     }
-    // High-level looping milestones (10 levels per vase)
-    final cycle = (id - 5);
+    // High-level looping milestones (10 levels per vase):
+    // Vase 5 is Crystal Lotus; Vase 6+ rotates cleanly across all 5 flowers & vase shapes.
+    final cycle = (id - 5).clamp(0, 1000000);
     final start = 27 + cycle * 10;
+    final slot = cycle % 5;
+    if (slot == 0) {
+      return VaseMilestoneConfig(
+        vaseId: id,
+        title: 'Prism Lotus Vase',
+        flowerTitle: 'Crystal Lotus',
+        shapeType: VaseShapeType.prismLotus,
+        flowerType: FlowerType.crystalLotus,
+        startLevel: start,
+        endLevel: start + 9,
+        totalSteps: 10,
+        unlockMechanicId: null,
+        rewardTitle: 'Crystal Bloom Chest',
+        rewardCoins: 500,
+        rewardNote: '+500 Coins & Next Crystal Vase!',
+      );
+    }
+    final template = milestones[slot - 1];
     return VaseMilestoneConfig(
       vaseId: id,
-      title: 'Prism Lotus Vase',
-      flowerTitle: 'Crystal Lotus',
-      shapeType: VaseShapeType.prismLotus,
-      flowerType: FlowerType.crystalLotus,
+      title: template.title,
+      flowerTitle: template.flowerTitle,
+      shapeType: template.shapeType,
+      flowerType: template.flowerType,
       startLevel: start,
       endLevel: start + 9,
       totalSteps: 10,
       unlockMechanicId: null,
-      rewardTitle: 'Crystal Bloom Chest',
+      rewardTitle: '${template.flowerTitle} Chest',
       rewardCoins: 500,
       rewardNote: '+500 Coins & Next Crystal Vase!',
     );

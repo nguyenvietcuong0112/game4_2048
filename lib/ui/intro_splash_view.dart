@@ -68,7 +68,7 @@ class IntroSplashView extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           Image.asset(
-            'assets/images/BG.png',
+            'assets/images/BG.webp',
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,

@@ -401,18 +401,25 @@ class _WaterGardenViewState extends State<WaterGardenView>
           context,
           UnityCoinsWidget.hudTopUnity + UnityCoinsWidget.heightUnity + 14.0,
         );
-        final ribbonTop = math.max(coinsBottomSafeY - 6.0, safeH * 0.048);
-        final ribbonH = (safeH * 0.146).clamp(96.0, 136.0);
+        final ribbonTop = math.max(coinsBottomSafeY - 10.0, safeH * 0.038);
+        final ribbonH = (safeH * 0.130).clamp(88.0, 120.0);
         final ribbonW = math.min(safeW - 12.0, 412.0);
 
         final bottomPad = math.max(12.0, safeH * 0.020);
-        final bottomControlsEstimatedH = 92.0 + ux(context, 224.0);
-        final stageTop = ribbonTop + ribbonH - 12.0;
-        final stageBottom = math.max(
+        final bottomControlsEstimatedH = 104.0 + ux(context, 224.0);
+        final stageTop = ribbonTop + ribbonH + 2.0;
+        final maxControlsTop = math.max(
           stageTop + 176.0,
-          safeH - bottomPad - bottomControlsEstimatedH + 8.0,
+          safeH - bottomPad - bottomControlsEstimatedH,
         );
-        final stageAvailH = stageBottom - stageTop;
+        final idealStageH = (safeH * 0.375).clamp(176.0, 320.0);
+        final stageAvailH = math
+            .min(maxControlsTop - stageTop + 4.0, idealStageH)
+            .clamp(176.0, 320.0);
+        final controlsTop = (stageTop + stageAvailH + 4.0).clamp(
+          stageTop + 176.0,
+          maxControlsTop,
+        );
 
         return SizedBox.expand(
           child: GestureDetector(
@@ -457,8 +464,9 @@ class _WaterGardenViewState extends State<WaterGardenView>
                     child: FittedBox(
                       fit: BoxFit.contain,
                       child: SizedBox(
+                        key: const ValueKey('garden_vase_stage'),
                         width: 380,
-                        height: 418,
+                        height: 448,
                         child: RepaintBoundary(
                           child: AnimatedBuilder(
                             animation: stageListenable,
@@ -584,10 +592,10 @@ class _WaterGardenViewState extends State<WaterGardenView>
                   ),
                 ),
 
-                // 3. Bottom Section: Gold-Rimmed Royal-Indigo Progress Card + Native Old-Theme CTA Buttons
+                // 3. Progress Card + CTA Buttons lifted right below the pedestal (never pinned down at screen bottom)
                 if (!_showClaimModal)
                   Positioned(
-                    bottom: bottomPad,
+                    top: controlsTop,
                     left: 16,
                     right: 16,
                     child: AnimatedBuilder(
@@ -637,7 +645,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                   );
                                 },
                               ),
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 12),
                               if (is100 && !_showingNextVase)
                                 UnityCtaButton(
                                   key: const ValueKey('garden_claim_btn'),
@@ -2154,7 +2162,7 @@ class _GlassPalette {
   }
 }
 
-/// Zero-Allocation Master 3D Painter for the Garden Stage (`380 x 418` virtual canvas):
+/// Zero-Allocation Master 3D Painter for the Garden Stage (`380 x 448` virtual canvas):
 /// Renders in strict physical back-to-front 3D order for authentic glass/water/stem refraction.
 class _WaterGardenMasterPainter extends CustomPainter {
   final VaseMilestoneConfig config;
@@ -2230,7 +2238,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final cx = size.width * 0.5;
-    final cy = size.height * 0.575;
+    final cy = size.height * 0.630;
     final metrics = _VaseMetrics.forShape(config.shapeType, cy);
 
     // 0. Celebration Sunburst God-Rays & Shockwave behind the vase
@@ -6061,7 +6069,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
 
 /// Reusable Side-by-Side Level Complete Monetization Action Bar (100% 3-Slice `UnityNineSlice`):
-/// - Left Button: [UnityStackedCoinCtaButton] (`Button_Green.png` + `Inset_Button_CTA.png` + `+${rewardCoins}`)
+/// - Left Button: [UnityStackedCoinCtaButton] (`Button_Green.png` + `+${rewardCoins}`)
 /// - Right Button: [UnityStackedAdCtaButton] (`Button_Yellow.png` + `Icon_Ads.png` + `+${rewardCoins * 2}`)
 class LevelCompleteDualActionRow extends StatelessWidget {
   final int rewardCoins;

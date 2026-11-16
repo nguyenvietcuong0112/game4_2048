@@ -281,7 +281,7 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Block Order 2048',
+      title: 'Water Block: Number Merge',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,

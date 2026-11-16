@@ -62,6 +62,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool _hideCheatHudButton = false;
   int _lastDisplayComboCount = 1;
   MechanicUnlockInfo? _activeMechanicModal;
+  MechanicUnlockInfo? _activeBoosterArrowHint;
 
   String? _lockedToastMessage;
   Timer? _lockedToastTimer;
@@ -231,9 +232,6 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
 
     if (unlock != null && mounted) {
-      if (unlock.isPowerUp) {
-        widget.progress.setFreePowerUpPending(unlock.id, true);
-      }
       AnalyticsService.logMechanicUnlock(mechanicId: unlock.id, level: lv.number);
       AnalyticsService.logPopupShow(name: 'mechanic_${unlock.id}', level: lv.number);
       setState(() {
@@ -265,6 +263,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _settingsOpen = false;
       _cheatOpen = false;
       _activeMechanicModal = null;
+      _activeBoosterArrowHint = null;
       _syncGamePauseState();
     });
     _game.loadLevel(level);
@@ -561,11 +560,18 @@ class _GameplayScreenState extends State<GameplayScreen>
   /// 3. If `!isFree && count <= 0` -> open `PowerUpBuyPopup` (`600` coins) BEFORE checking board pair!
   /// 4. Check `DoesGameStatePermitUsage` (`canLevelUpNotifier.value`)
   /// 5. Consume (`consumeFreePowerUp` or `consumeLevelUp`) & execute `triggerLevelUpPowerUp()`!
+  void _clearBoosterArrowHint(String powerUpId) {
+    if (_activeBoosterArrowHint?.id == powerUpId) {
+      setState(() => _activeBoosterArrowHint = null);
+    }
+  }
+
   void _handleLevelUpTap({bool fromFtue = false}) {
     if (!_isLevelUpUnlocked) {
       _showLockedBoosterToast(PlayerProgressService.levelUpUnlockLevel);
       return;
     }
+    _clearBoosterArrowHint(MechanicUnlockInfo.levelUpPowerUp.id);
     if (_game.isResolving) return;
 
     final isFree = fromFtue ||
@@ -616,6 +622,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _showLockedBoosterToast(PlayerProgressService.timeFreezeUnlockLevel);
       return;
     }
+    _clearBoosterArrowHint(MechanicUnlockInfo.timeFreezePowerUp.id);
     if (_game.isResolving) return;
 
     final isFree = fromFtue ||
@@ -684,26 +691,24 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
   }
 
-  static const int _mechanicUnlockRewardCoins = 50;
-
-  void _handleMechanicUnlockClaim({required int multiplier}) {
+  void _handleFeatureUnlockClaim({required int multiplier}) {
     final modal = _activeMechanicModal;
-    if (modal == null) return;
-    final reward = _mechanicUnlockRewardCoins * multiplier;
+    if (modal == null || !modal.isPowerUp) return;
+    final reward = modal.unlockRewardCount * multiplier;
     widget.audio.playCoinCollect();
-    widget.progress.addCoins(reward);
-    _coinBounceCtrl.forward(from: 0.0);
+    widget.progress.grantPowerUpById(modal.id, count: reward);
     AnalyticsService.logEarnResource(
       level: _activeLevel.number,
-      type: 'currency',
-      name: 'coins',
+      type: 'booster',
+      name: modal.analyticsName,
       amount: reward.toDouble(),
-      reason: multiplier > 1 ? 'mechanic_unlock_x2_ad' : 'mechanic_unlock_claim',
-      balance: widget.progress.coins.toDouble(),
+      reason: multiplier > 1 ? 'feature_unlock_x2_ad' : 'feature_unlock_claim',
+      balance: widget.progress.powerUpCountById(modal.id).toDouble(),
     );
     widget.progress.markMechanicSeen(modal.id);
     setState(() {
       _activeMechanicModal = null;
+      _activeBoosterArrowHint = modal;
       _syncGamePauseState();
     });
   }
@@ -715,21 +720,9 @@ class _GameplayScreenState extends State<GameplayScreen>
     widget.progress.markMechanicSeen(modal.id);
     setState(() {
       _activeMechanicModal = null;
+      _activeBoosterArrowHint = modal.isPowerUp ? modal : null;
       _syncGamePauseState();
     });
-  }
-
-  void _handleActivatePowerUpFromFtue(MechanicUnlockInfo modal) {
-    final isLvUp = modal.isLevelUpPowerUp;
-    setState(() {
-      _activeMechanicModal = null;
-      _syncGamePauseState();
-    });
-    if (isLvUp) {
-      _handleLevelUpTap(fromFtue: true);
-    } else {
-      _handleTimeFreezeTap(fromFtue: true);
-    }
   }
 
   String _formatTimer(int totalSeconds) {
@@ -763,12 +756,9 @@ class _GameplayScreenState extends State<GameplayScreen>
 
     final isTutorialLevel1 =
         !_activeLevel.isBonus && _activeLevel.number == 1;
-    final isMechanicFeaturePopup =
-        _activeMechanicModal != null && !_activeMechanicModal!.isPowerUp;
     final hideBaseCoins = _showWinOverlay ||
         (_showLoseOverlay && !_loseInFailedStage) ||
-        _buyPopupIsLevelUp != null ||
-        isMechanicFeaturePopup;
+        _buyPopupIsLevelUp != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFF47279B),
@@ -1017,6 +1007,8 @@ class _GameplayScreenState extends State<GameplayScreen>
                                 count: widget.progress.levelUpCount,
                                 isActionable:
                                     _game.canLevelUpNotifier.value,
+                                isHighlighted: _activeBoosterArrowHint?.id ==
+                                    MechanicUnlockInfo.levelUpPowerUp.id,
                                 onTap: _handleLevelUpTap,
                               ),
                             );
@@ -1061,12 +1053,37 @@ class _GameplayScreenState extends State<GameplayScreen>
                                 isFree: isFree,
                                 count: widget.progress.timeFreezeCount,
                                 isActionable: _game.canUseTimeFreeze,
+                                isHighlighted: _activeBoosterArrowHint?.id ==
+                                    MechanicUnlockInfo.timeFreezePowerUp.id,
                                 onTap: _handleTimeFreezeTap,
                               ),
                             );
                           },
                         ),
                       ),
+
+                      if (_activeBoosterArrowHint != null &&
+                          _activeMechanicModal == null &&
+                          !_showWinOverlay &&
+                          !_showLoseOverlay &&
+                          _buyPopupIsLevelUp == null &&
+                          !_settingsOpen &&
+                          !_cheatOpen &&
+                          !_showExitRestartPopup)
+                        Positioned(
+                          bottom: safePadding.bottom +
+                              ux(
+                                context,
+                                UnityPowerUpHudButton.bottomOffsetUnity +
+                                    UnityPowerUpHudButton.scaledUnitySize +
+                                    14,
+                              ),
+                          child: PowerUpHudArrowHint(
+                            key: const ValueKey('booster_hud_arrow_hint'),
+                            horizontalOffsetUnity:
+                                _activeBoosterArrowHint!.hudHorizontalOffsetUnity,
+                          ),
+                        ),
 
                       // Bottom-Right Settings Circle Button (`Play_Scene.png`: `137x137`, `right = 58`, straddling golden footer trim)
                       Positioned(
@@ -1434,36 +1451,36 @@ class _GameplayScreenState extends State<GameplayScreen>
               },
             ),
 
-          // 11. `MechanicFTUE.prefab` (1-step) & `PowerUpFTUEView.prefab` (2-step -> immediate free execution!)
+          // 11. Unified Unlock Popup:
+          //     - Boosters (`New Feature`): Green `Claim` (+1) & Yellow `Claim X2` (+2 Ads)
+          //     - Mechanics (`New Mechanic`): Single centered long green `Next Level`
           if (_activeMechanicModal != null)
-            if (_activeMechanicModal!.isPowerUp)
-              PowerUpFtueOverlay(
-                key: ValueKey('ftue_${_activeMechanicModal!.id}'),
-                info: _activeMechanicModal!,
-                onContinueStep1: widget.audio.playClick,
-                onActivateFreePowerUp: () =>
-                    _handleActivatePowerUpFromFtue(_activeMechanicModal!),
-              )
-            else
-              MechanicUnlockDialog(
-                key: ValueKey('ftue_${_activeMechanicModal!.id}'),
-                info: _activeMechanicModal!,
-                onClaim: () => _handleMechanicUnlockClaim(multiplier: 1),
-                onClaimX2: () {
-                  AdsManager.showRewardedAd(
-                    placement: 'mechanic_unlock_x2',
-                    levelNumber: _activeLevel.number,
-                    onAdFailed: _handleRewardedAdFailed,
-                    onRewardResult: (success) {
-                      if (success && mounted && _activeMechanicModal != null) {
-                        _handleMechanicUnlockClaim(multiplier: 2);
-                      }
-                    },
-                  );
-                },
-                onClose: _dismissMechanicUnlockModal,
-                onDismiss: _dismissMechanicUnlockModal,
-              ),
+            MechanicUnlockDialog(
+              key: ValueKey('ftue_${_activeMechanicModal!.id}'),
+              info: _activeMechanicModal!,
+              onClaim: _activeMechanicModal!.isPowerUp
+                  ? () => _handleFeatureUnlockClaim(multiplier: 1)
+                  : _dismissMechanicUnlockModal,
+              onClaimX2: _activeMechanicModal!.isPowerUp
+                  ? () {
+                      AdsManager.showRewardedAd(
+                        placement: 'feature_unlock_x2',
+                        levelNumber: _activeLevel.number,
+                        onAdFailed: _handleRewardedAdFailed,
+                        onRewardResult: (success) {
+                          if (success &&
+                              mounted &&
+                              _activeMechanicModal != null) {
+                            _handleFeatureUnlockClaim(multiplier: 2);
+                          }
+                        },
+                      );
+                    }
+                  : null,
+              onNextLevel: _dismissMechanicUnlockModal,
+              onClose: _dismissMechanicUnlockModal,
+              onDismiss: _dismissMechanicUnlockModal,
+            ),
 
           // 12. Two-Stage `WinGameplayView.prefab` (`Level complete!` -> `AMAZING!` + Coin Flight or Garden Metagame)
           if (_showWinOverlay)
@@ -1552,10 +1569,8 @@ class _GameplayScreenState extends State<GameplayScreen>
               },
             ),
 
-          // 14. Elevated Top-Left `CoinsWidget` (`overrideSorting: true` during `WinGameplayView`, `PlayOnPopupView`, & `MechanicUnlockDialog`)
-          if (_showWinOverlay ||
-              (_showLoseOverlay && !_loseInFailedStage) ||
-              isMechanicFeaturePopup)
+          // 14. Elevated Top-Left `CoinsWidget` (`overrideSorting: true` during `WinGameplayView` & `PlayOnPopupView`)
+          if (_showWinOverlay || (_showLoseOverlay && !_loseInFailedStage))
             SafeArea(
               child: Align(
                 alignment: Alignment.topLeft,

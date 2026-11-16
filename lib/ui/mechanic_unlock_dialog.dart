@@ -10,6 +10,11 @@ class MechanicUnlockInfo {
   final String iconAsset;
   final bool isPowerUp;
   final bool isLevelUpPowerUp;
+  final int unlockRewardCount;
+  final double hudHorizontalOffsetUnity;
+  final String analyticsName;
+
+  bool get isMechanic => !isPowerUp;
 
   const MechanicUnlockInfo({
     required this.id,
@@ -19,6 +24,9 @@ class MechanicUnlockInfo {
     required this.iconAsset,
     this.isPowerUp = false,
     this.isLevelUpPowerUp = false,
+    this.unlockRewardCount = 1,
+    this.hudHorizontalOffsetUnity = 0.0,
+    this.analyticsName = '',
   });
 
   static const ice = MechanicUnlockInfo(
@@ -57,6 +65,9 @@ class MechanicUnlockInfo {
     iconAsset: 'assets/images/PowerUp_LevelUp.png',
     isPowerUp: true,
     isLevelUpPowerUp: true,
+    unlockRewardCount: 1,
+    hudHorizontalOffsetUnity: -UnityPowerUpHudButton.horizontalOffsetUnity,
+    analyticsName: 'level_up',
   );
 
   static const timeFreezePowerUp = MechanicUnlockInfo(
@@ -67,6 +78,9 @@ class MechanicUnlockInfo {
     iconAsset: 'assets/images/PowerUp_TimeFreeze.png',
     isPowerUp: true,
     isLevelUpPowerUp: false,
+    unlockRewardCount: 1,
+    hudHorizontalOffsetUnity: UnityPowerUpHudButton.horizontalOffsetUnity,
+    analyticsName: 'time_freeze',
   );
 }
 
@@ -282,23 +296,19 @@ class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
   }
 }
 
-/// Redesigned `New Feature` Unlock Popup matching `assets/UI Fix/New mechanic/New_Mechanic.png` (`884x1044` Unity px):
-/// - Dark backdrop (`0xCC060414`)
-/// - `popup_bg.png` (`884x1021` at `top = 23`)
-/// - `Frame_Popup_Title.png` (`558x143` centered at `top = 0`) with `"New Feature"`
-/// - `Button_Close.png` (`139x139` at `right = 14, top = 4`)
-/// - `frame_content.png` (`784x495` at `left = 50, top = 167`):
-///   - Top `#5A270B` mechanic title (`info.title`)
-///   - Center `Icon_Mechanic_*.png`
-///   - Bottom `#5A270B` mechanic description (`info.note`)
-/// - Bottom Buttons Row (`top = 725`):
-///   - Left green `"Claim"` button (`Button_Green.png`, `393x221`)
-///   - Right yellow `"Claim X2"` button (`Button_Yellow.png`, `386x221` + `Icon_Ads.png` `122x127`)
+/// Unified Unlock Popup (`884x1044` Unity px) supporting both feature categories:
+/// - **Boosters (`info.isPowerUp == true`) — `New Feature`**:
+///   - Header ribbon: `"New Feature"`
+///   - Dual bottom actions (`top = 725`): Green `"Claim"` (+1) & Yellow `"Claim X2"` (+2 Ad)
+/// - **Mechanics (`info.isPowerUp == false`) — `New Mechanic`**:
+///   - Header ribbon: `"New Mechanic"`
+///   - Single centered long green `"Next Level"` button (`top = 725`, `560x221`)
 class MechanicUnlockDialog extends StatefulWidget {
   final MechanicUnlockInfo info;
   final VoidCallback onDismiss;
   final VoidCallback? onClaim;
   final VoidCallback? onClaimX2;
+  final VoidCallback? onNextLevel;
   final VoidCallback? onClose;
 
   const MechanicUnlockDialog({
@@ -307,6 +317,7 @@ class MechanicUnlockDialog extends StatefulWidget {
     required this.onDismiss,
     this.onClaim,
     this.onClaimX2,
+    this.onNextLevel,
     this.onClose,
   });
 
@@ -317,8 +328,6 @@ class MechanicUnlockDialog extends StatefulWidget {
 class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
     with SingleTickerProviderStateMixin {
   late final AnimationController _entranceCtrl;
-  bool _claimPressed = false;
-  bool _claimX2Pressed = false;
 
   @override
   void initState() {
@@ -337,11 +346,16 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
 
   void _handleClaim() => (widget.onClaim ?? widget.onDismiss).call();
   void _handleClaimX2() => (widget.onClaimX2 ?? widget.onDismiss).call();
+  void _handleNextLevel() =>
+      (widget.onNextLevel ?? widget.onClaim ?? widget.onDismiss).call();
   void _handleClose() => (widget.onClose ?? widget.onDismiss).call();
 
   @override
   Widget build(BuildContext context) {
     final info = widget.info;
+    final isBooster = info.isPowerUp;
+    final headerTitle = isBooster ? 'New Feature' : 'New Mechanic';
+    final ribbonWidthUnity = isBooster ? 558.0 : 576.0;
 
     return ColoredBox(
       color: const Color(0xCC060414),
@@ -403,7 +417,7 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              // Top Brown Mechanic Title (`info.title`)
+                              // Top Brown Feature/Mechanic Title (`info.title`)
                               FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(
@@ -425,7 +439,7 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
 
                               SizedBox(height: ux(context, 10)),
 
-                              // Center Reworked Mechanic Icon (`Icon_Mechanic_*.png`)
+                              // Center Booster / Mechanic Icon
                               Expanded(
                                 child: Padding(
                                   padding: EdgeInsets.symmetric(
@@ -464,121 +478,85 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
                     ),
                   ),
 
-                  // 3. Bottom-Left Green `"Claim"` Button (`Button_Green.png`, `393x221` at `left = 51, top = 727`)
-                  Positioned(
-                    left: ux(context, 51),
-                    top: ux(context, 727),
-                    width: ux(context, 393),
-                    height: ux(context, 221),
-                    child: GestureDetector(
-                      key: const ValueKey('mechanic_claim_btn'),
-                      behavior: HitTestBehavior.opaque,
-                      onTapDown: (_) => setState(() => _claimPressed = true),
-                      onTapUp: (_) {
-                        setState(() => _claimPressed = false);
-                        _handleClaim();
-                      },
-                      onTapCancel: () => setState(() => _claimPressed = false),
-                      child: AnimatedScale(
-                        scale: _claimPressed ? 0.94 : 1.0,
-                        duration: const Duration(milliseconds: 80),
-                        curve: Curves.easeOutCubic,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Positioned.fill(
-                              child: Image.asset(
-                                'assets/images/Button_Green.png',
-                                fit: BoxFit.fill,
-                              ),
-                            ),
-                            Padding(
-                              padding: EdgeInsets.only(
-                                left: ux(context, 32),
-                                right: ux(context, 32),
-                                bottom: ux(context, 12),
-                              ),
-                              child: const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: UnitySdfText(
-                                  'Claim',
-                                  unityFontSize: 64,
-                                  material: UnityTextMaterial.ctaGreen,
-                                ),
-                              ),
-                            ),
-                          ],
+                  // 3. Bottom Action Buttons:
+                  //    - Boosters (`New Feature`): Green "Claim" + Yellow "Claim X2" (Ads)
+                  //    - Mechanics (`New Mechanic`): Single centered long green "Next Level"
+                  if (isBooster) ...[
+                    Positioned(
+                      left: ux(context, 51),
+                      top: ux(context, 727),
+                      width: ux(context, 393),
+                      height: ux(context, 221),
+                      child: _UnlockPillButton(
+                        buttonKey: const ValueKey('mechanic_claim_btn'),
+                        sprite: 'Button_Green.png',
+                        label: 'Claim',
+                        unityFontSize: 64,
+                        material: UnityTextMaterial.ctaGreen,
+                        textPadding: EdgeInsets.only(
+                          left: ux(context, 32),
+                          right: ux(context, 32),
+                          bottom: ux(context, 12),
                         ),
+                        onTap: _handleClaim,
                       ),
                     ),
-                  ),
-
-                  // 4. Bottom-Right Yellow `"Claim X2"` Ad Button (`Button_Yellow.png`, `386x221` at `right = 45, top = 725`)
-                  Positioned(
-                    right: ux(context, 45),
-                    top: ux(context, 725),
-                    width: ux(context, 386),
-                    height: ux(context, 221),
-                    child: GestureDetector(
-                      key: const ValueKey('mechanic_claim_x2_btn'),
-                      behavior: HitTestBehavior.opaque,
-                      onTapDown: (_) => setState(() => _claimX2Pressed = true),
-                      onTapUp: (_) {
-                        setState(() => _claimX2Pressed = false);
-                        _handleClaimX2();
-                      },
-                      onTapCancel: () =>
-                          setState(() => _claimX2Pressed = false),
-                      child: AnimatedScale(
-                        scale: _claimX2Pressed ? 0.94 : 1.0,
-                        duration: const Duration(milliseconds: 80),
-                        curve: Curves.easeOutCubic,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          clipBehavior: Clip.none,
-                          children: [
-                            Positioned.fill(
-                              child: Image.asset(
-                                'assets/images/Button_Yellow.png',
-                                fit: BoxFit.fill,
-                              ),
-                            ),
-                            Padding(
-                              padding: EdgeInsets.only(
-                                left: ux(context, 36),
-                                right: ux(context, 28),
-                                bottom: ux(context, 10),
-                              ),
-                              child: const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: UnitySdfText(
-                                  'Claim X2',
-                                  unityFontSize: 58,
-                                  material: UnityTextMaterial.ctaYellowButton,
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              left: -ux(context, 8),
-                              top: -ux(context, 42),
-                              width: ux(context, 122),
-                              height: ux(context, 127),
-                              child: Image.asset(
-                                'assets/images/Icon_Ads.png',
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                          ],
+                    Positioned(
+                      right: ux(context, 45),
+                      top: ux(context, 725),
+                      width: ux(context, 386),
+                      height: ux(context, 221),
+                      child: _UnlockPillButton(
+                        buttonKey: const ValueKey('mechanic_claim_x2_btn'),
+                        sprite: 'Button_Yellow.png',
+                        label: 'Claim X2',
+                        unityFontSize: 58,
+                        material: UnityTextMaterial.ctaYellowButton,
+                        textPadding: EdgeInsets.only(
+                          left: ux(context, 36),
+                          right: ux(context, 28),
+                          bottom: ux(context, 10),
                         ),
+                        badgeOverlay: Positioned(
+                          left: -ux(context, 8),
+                          top: -ux(context, 42),
+                          width: ux(context, 122),
+                          height: ux(context, 127),
+                          child: Image.asset(
+                            'assets/images/Icon_Ads.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        onTap: _handleClaimX2,
                       ),
                     ),
-                  ),
+                  ] else
+                    Positioned(
+                      left: ux(context, (884 - 560) * 0.5),
+                      top: ux(context, 725),
+                      width: ux(context, 560),
+                      height: ux(context, 221),
+                      child: _UnlockPillButton(
+                        buttonKey: const ValueKey('mechanic_next_level_btn'),
+                        sprite: 'Button_Green.png',
+                        useNineSlice: true,
+                        label: 'Next Level',
+                        unityFontSize: 64,
+                        material: UnityTextMaterial.ctaGreen,
+                        textPadding: EdgeInsets.only(
+                          left: ux(context, 44),
+                          right: ux(context, 44),
+                          bottom: ux(context, 12),
+                        ),
+                        onTap: _handleNextLevel,
+                      ),
+                    ),
 
-                  // 5. Top Header Ribbon (`Frame_Popup_Title.png`, `558x143` centered at `top = 0`, `"New Feature"`)
+                  // 4. Top Header Ribbon (`Frame_Popup_Title.png`, `"New Feature"` or `"New Mechanic"`)
                   Positioned(
-                    left: ux(context, (884 - 558) * 0.5),
+                    left: ux(context, (884 - ribbonWidthUnity) * 0.5),
                     top: 0,
-                    width: ux(context, 558),
+                    width: ux(context, ribbonWidthUnity),
                     height: ux(context, 143),
                     child: IgnorePointer(
                       child: UnityNineSlice(
@@ -589,11 +567,11 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
                           ux(context, 40),
                           ux(context, 16),
                         ),
-                        child: const FittedBox(
+                        child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: UnitySdfText(
-                            'New Feature',
-                            unityFontSize: 64,
+                            headerTitle,
+                            unityFontSize: isBooster ? 64 : 62,
                             material: UnityTextMaterial.popupTitle,
                           ),
                         ),
@@ -601,7 +579,7 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
                     ),
                   ),
 
-                  // 6. Top-Right Red-Gold Close Button (`Button_Close.png`, `139x139` at `right = 14, top = 4`)
+                  // 5. Top-Right Red-Gold Close Button (`Button_Close.png`, `139x139` at `right = 14, top = 4`)
                   Positioned(
                     right: ux(context, 14),
                     top: ux(context, 4),
@@ -624,43 +602,109 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
   }
 }
 
-/// Exact 1:1 2-Step `PowerUpFTUEView.prefab` + `PowerUpTutorialScreenPresenter`:
-/// - **Step 1**: Fullscreen `#0F204A` (`98%` alpha), `TitleContainer` (`"Level Up"` / `"Time Freeze"`,
-///   `125.5` yellow) **ABOVE** `SubTitleContainer` (`"New power-up unlocked!"`, `62.86` white/blue stroke),
-///   pink `Glow_02` + sparkles + bare `PowerUp_*.png` (`475 x 540`, NO base/free badge),
-///   `Box_Text.png` instructions, and `"Continue"` button.
-/// - **Step 2** (after tapping `"Continue"`): Center card fades out, dark `#0F204A` veil stays active,
-///   and the target bottom `UnityPowerUpHudButton` is elevated above the dark veil at its exact bottom
-///   HUD coordinates (`X = ∓118.4` Unity px) with `SelectedHighlight_01` glow, `PowerUp_Free.png` `"FREE"`
-///   badge, and wobbling `PowerUp_Icon_Arrow.png` (`↓`) pointer arrow! Tapping it immediately executes
-///   the free booster without decrementing the player's `3` initial inventory!
-class PowerUpFtueOverlay extends StatefulWidget {
-  final MechanicUnlockInfo info;
-  final VoidCallback? onContinueStep1;
-  final VoidCallback onActivateFreePowerUp;
+class _UnlockPillButton extends StatefulWidget {
+  final Key buttonKey;
+  final String sprite;
+  final bool useNineSlice;
+  final String label;
+  final double unityFontSize;
+  final UnityTextMaterial material;
+  final EdgeInsetsGeometry textPadding;
+  final Widget? badgeOverlay;
+  final VoidCallback onTap;
 
-  const PowerUpFtueOverlay({
-    super.key,
-    required this.info,
-    this.onContinueStep1,
-    required this.onActivateFreePowerUp,
+  const _UnlockPillButton({
+    required this.buttonKey,
+    required this.sprite,
+    this.useNineSlice = false,
+    required this.label,
+    required this.unityFontSize,
+    required this.material,
+    required this.textPadding,
+    this.badgeOverlay,
+    required this.onTap,
   });
 
   @override
-  State<PowerUpFtueOverlay> createState() => _PowerUpFtueOverlayState();
+  State<_UnlockPillButton> createState() => _UnlockPillButtonState();
 }
 
-class _PowerUpFtueOverlayState extends State<PowerUpFtueOverlay>
+class _UnlockPillButtonState extends State<_UnlockPillButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: widget.buttonKey,
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.94 : 1.0,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOutCubic,
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: widget.useNineSlice
+                  ? UnityNineSlice(
+                      sprite: widget.sprite,
+                      pixelMultiplier: 1.0,
+                    )
+                  : Image.asset(
+                      'assets/images/${widget.sprite}',
+                      fit: BoxFit.fill,
+                    ),
+            ),
+            Padding(
+              padding: widget.textPadding,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: UnitySdfText(
+                  widget.label,
+                  unityFontSize: widget.unityFontSize,
+                  material: widget.material,
+                ),
+              ),
+            ),
+            if (widget.badgeOverlay != null) widget.badgeOverlay!,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Non-blocking animated pointer arrow rendered directly above a newly unlocked
+/// bottom HUD booster button once its `New Feature` popup is dismissed.
+class PowerUpHudArrowHint extends StatefulWidget {
+  final double horizontalOffsetUnity;
+
+  const PowerUpHudArrowHint({
+    super.key,
+    required this.horizontalOffsetUnity,
+  });
+
+  @override
+  State<PowerUpHudArrowHint> createState() => _PowerUpHudArrowHintState();
+}
+
+class _PowerUpHudArrowHintState extends State<PowerUpHudArrowHint>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  int _step = 0;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 1600),
     )..repeat();
   }
 
@@ -670,266 +714,33 @@ class _PowerUpFtueOverlayState extends State<PowerUpFtueOverlay>
     super.dispose();
   }
 
-  void _handleContinue() {
-    if (_step != 0) return;
-    widget.onContinueStep1?.call();
-    setState(() => _step = 1);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final info = widget.info;
-    final isLevelUp = info.isLevelUpPowerUp;
-
-    return Container(
-      color: const Color(0xFA0F204A),
-      child: SafeArea(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Step 1: Center Unlock Card (`Title` ABOVE `SubTitle`, bare icon, `Box_Text`, `Continue`)
-            if (_step == 0)
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.82, end: 1.0),
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOutBack,
-                builder: (context, pop, child) => Transform.scale(
-                  scale: pop,
-                  child: Opacity(
-                    opacity: pop.clamp(0.0, 1.0),
-                    child: child,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    const Spacer(flex: 3),
-
-                    // `TitleContainer` ABOVE `SubTitleContainer` (`PowerUpFTUEView.prefab`!)
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: ux(context, 48)),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: UnitySdfText(
-                          info.title,
-                          unityFontSize: 122,
-                          material: UnityTextMaterial.ctaYellow,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: ux(context, 10)),
-                    UnitySdfText(
-                      info.subtitle,
-                      unityFontSize: 62,
-                      material: UnityTextMaterial.tutorialText,
-                    ),
-
-                    const Spacer(flex: 2),
-
-                    // Bare `PowerUp_LevelUp.png` / `PowerUp_TimeFreeze.png`
-                    _FtueHeroIllustration(
-                      controller: _ctrl,
-                      iconAsset: info.iconAsset,
-                      iconUnityWidth: 310,
-                      iconUnityHeight: 310,
-                    ),
-
-                    const Spacer(flex: 2),
-
-                    // `InstructionsPanel` (`Box_Text.png`, `890.5 x 229.0`)
-                    UnityNineSlice(
-                      sprite: 'Box_Text.png',
-                      width: ux(context, 890),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: ux(context, 56),
-                        vertical: ux(context, 44),
-                      ),
-                      child: Text(
-                        info.note,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'Baloo2',
-                          fontSize: ux(context, 52),
-                          fontWeight: FontWeight.w700,
-                          fontVariations: const [FontVariation('wght', 700)],
-                          color: const Color(0xFF06269A),
-                          height: 1.22,
-                        ),
-                      ),
-                    ),
-
-                    const Spacer(flex: 3),
-
-                    // `Button_CTA` (`499 x 221`, `"Continue"`, `fontSize = 68`)
-                    UnityCtaButton(
-                      label: 'Continue',
-                      unityWidth: 499,
-                      unityHeight: 221,
-                      unityFontSize: 68,
-                      onTap: _handleContinue,
-                    ),
-
-                    const Spacer(flex: 3),
-                  ],
-                ),
-              ),
-
-            // Step 2: Highlighted Bottom `"FREE"` Power-Up Button + Wobbling `PowerUp_Icon_Arrow.png` (`↓`)
-            if (_step == 1)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: ux(context, UnityPowerUpHudButton.bottomOffsetUnity),
-                child: SizedBox(
-                  height: ux(context, 480),
-                  child: AnimatedBuilder(
-                    animation: _ctrl,
-                    builder: (context, _) {
-                      final phase = _ctrl.value * math.pi * 4;
-                      final bobY = ux(context, 16.0 * math.sin(phase));
-                      final wobbleRot = 0.045 * math.sin(phase * 0.5);
-                      final targetOffsetX = ux(
-                        context,
-                        isLevelUp
-                            ? -UnityPowerUpHudButton.horizontalOffsetUnity
-                            : UnityPowerUpHudButton.horizontalOffsetUnity,
-                      );
-
-                      return Stack(
-                        alignment: Alignment.bottomCenter,
-                        clipBehavior: Clip.none,
-                        children: [
-                          // Wobbling lime-green downward pointer arrow (`PowerUp_Icon_Arrow.png`)
-                          Positioned(
-                            bottom: ux(
-                                  context,
-                                  UnityPowerUpHudButton.scaledUnitySize + 18,
-                                ) -
-                                bobY,
-                            child: Transform.translate(
-                              offset: Offset(targetOffsetX, 0),
-                              child: IgnorePointer(
-                                child: Transform.rotate(
-                                  angle: wobbleRot,
-                                  child: Image.asset(
-                                    'assets/images/PowerUp_Icon_Arrow.png',
-                                    width: ux(context, 92),
-                                    height: ux(context, 188),
-                                    fit: BoxFit.contain,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          // Elevated `"FREE"` Power-Up Button at exact HUD X/Y position!
-                          Positioned(
-                            bottom: 0,
-                            child: Transform.translate(
-                              offset: Offset(targetOffsetX, 0),
-                              child: UnityPowerUpHudButton(
-                                key: ValueKey(
-                                  isLevelUp
-                                      ? 'ftue_free_level_up_btn'
-                                      : 'ftue_free_time_freeze_btn',
-                                ),
-                                isLevelUp: isLevelUp,
-                                isUnlocked: true,
-                                isFree: true,
-                                count: 3,
-                                isActionable: true,
-                                isHighlighted: true,
-                                onTap: widget.onActivateFreePowerUp,
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-          ],
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, child) {
+          final phase = _ctrl.value * math.pi * 2;
+          final bobY = ux(context, 16.0 * math.sin(phase));
+          final wobbleRot = 0.045 * math.sin(phase * 0.5);
+          return Transform.translate(
+            offset: Offset(
+              ux(context, widget.horizontalOffsetUnity),
+              bobY,
+            ),
+            child: Transform.rotate(
+              angle: wobbleRot,
+              child: child,
+            ),
+          );
+        },
+        child: Image.asset(
+          'assets/images/PowerUp_Icon_Arrow.png',
+          width: ux(context, 92),
+          height: ux(context, 188),
+          fit: BoxFit.contain,
         ),
       ),
-    );
-  }
-}
-
-class _FtueHeroIllustration extends StatelessWidget {
-  final AnimationController controller;
-  final String iconAsset;
-  final double iconUnityWidth;
-  final double iconUnityHeight;
-
-  const _FtueHeroIllustration({
-    required this.controller,
-    required this.iconAsset,
-    required this.iconUnityWidth,
-    required this.iconUnityHeight,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final phase = controller.value * math.pi * 2;
-        final pulse = 1.0 + 0.04 * math.sin(phase);
-        final starTwinkle = (0.72 + 0.28 * math.sin(phase * 2.0)).clamp(0.0, 1.0);
-        return SizedBox(
-          width: ux(context, 820),
-          height: ux(context, 580),
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              // 1. Soft Purple Outer Glow (`effect_outerglow.png`, `1080x1335`)
-              Positioned(
-                left: -ux(context, 130),
-                right: -ux(context, 130),
-                top: -ux(context, 240),
-                bottom: -ux(context, 240),
-                child: IgnorePointer(
-                  child: Transform.scale(
-                    scale: pulse,
-                    child: Image.asset(
-                      'assets/images/effect_outerglow.webp',
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
-
-              // 2. Golden 4-Point Sparkle Stars (`effect_star.png`, `703x527`)
-              IgnorePointer(
-                child: Opacity(
-                  opacity: starTwinkle,
-                  child: Transform.scale(
-                    scale: 0.97 + 0.05 * math.sin(phase),
-                    child: Image.asset(
-                      'assets/images/effect_star.png',
-                      width: ux(context, 703),
-                      height: ux(context, 527),
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
-
-              // 3. Center Mechanic / Booster Icon
-              Transform.scale(
-                scale: 0.98 + 0.03 * pulse,
-                child: Image.asset(
-                  iconAsset,
-                  width: ux(context, iconUnityWidth),
-                  height: ux(context, iconUnityHeight),
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

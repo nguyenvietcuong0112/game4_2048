@@ -255,7 +255,7 @@ class _PowerUpOfferColumn extends StatelessWidget {
 }
 
 /// Gold-rimmed `CoinPurchasePanel/BuyButton` (`Button_CTA.png`):
-/// Stacked `"Buy"` on top + `Inset_Button_CTA.png` (`Icon_Coin.png` + `600` / `450`) below.
+/// Stacked `"Buy"` on top + clean `Icon_Coin.png` + `600` / `450` below directly on button face.
 /// Uses `UnityButtonColorFilters.disabledSilver` + `ctaGray` when unaffordable.
 class _PowerUpStackedBuyButton extends StatefulWidget {
   final String label;
@@ -328,38 +328,28 @@ class _PowerUpStackedBuyButtonState extends State<_PowerUpStackedBuyButton> {
                   material: textMat,
                 ),
               ),
-              SizedBox(height: ux(context, 4)),
-              UnityNineSlice(
-                sprite: 'Inset_Button_CTA.png',
-                width: ux(context, 236),
-                height: ux(context, 58),
-                tint: enabled ? null : const Color(0xFF99A3B0),
-                padding: EdgeInsets.symmetric(
-                  horizontal: ux(context, 16),
-                  vertical: ux(context, 4),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
-                      'assets/images/Icon_Coin.png',
-                      width: ux(context, 46),
-                      height: ux(context, 46),
-                    ),
-                    SizedBox(width: ux(context, 10)),
-                    Flexible(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: UnitySdfText(
-                          '${widget.coinPrice}',
-                          unityFontSize: 48,
-                          material: textMat,
-                        ),
+              SizedBox(height: ux(context, 2)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    'assets/images/Icon_Coin.png',
+                    width: ux(context, 48),
+                    height: ux(context, 48),
+                  ),
+                  SizedBox(width: ux(context, 10)),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: UnitySdfText(
+                        '${widget.coinPrice}',
+                        unityFontSize: 52,
+                        material: textMat,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),

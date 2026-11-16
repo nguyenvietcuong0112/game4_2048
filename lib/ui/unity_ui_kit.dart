@@ -830,14 +830,6 @@ class UnityButtonColorFilters {
     0.00, 0.00, 0.00, 1, 0,
   ]);
 
-  /// Shifts green `Inset_Button_CTA.png` into warm recessed amber-brown matching `Button_Yellow.png`.
-  static const ColorFilter amberInsetFromGreen = ColorFilter.matrix(<double>[
-    0.15, 0.88, 0.00, 0, 14,
-    0.05, 0.40, 0.00, 0, 4,
-    0.00, 0.04, 0.04, 0, 0,
-    0.00, 0.00, 0.00, 1, 0,
-  ]);
-
   static ColorFilter? forSkin(UnityButtonSkin skin, {required bool enabled}) {
     if (!enabled) return disabledSilver;
     return switch (skin) {
@@ -849,7 +841,7 @@ class UnityButtonColorFilters {
 }
 
 /// Gold-rimmed 3-Slice Pill CTA Button (`Button_CTA.png`) with spring scale squish and
-/// optional `Inset_Button_CTA.png` coin price box or `Icon_Ad.png` badge.
+/// optional inline coin price or `Icon_Ad.png` badge.
 class UnityCtaButton extends StatefulWidget {
   final String label;
   final VoidCallback? onTap;
@@ -939,9 +931,6 @@ class _UnityCtaButtonState extends State<UnityCtaButton> {
     bool enabled,
   ) {
     if (widget.coinPrice != null) {
-      final insetSprite = widget.skin == UnityButtonSkin.red
-          ? 'Inset_Button_CTA_Red.png'
-          : 'Inset_Button_CTA.png';
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -959,30 +948,21 @@ class _UnityCtaButtonState extends State<UnityCtaButton> {
             ),
           ),
           SizedBox(width: ux(context, 16)),
-          UnityNineSlice(
-            sprite: insetSprite,
-            height: ux(context, 90),
-            padding: EdgeInsets.symmetric(
-              horizontal: ux(context, 22),
-              vertical: ux(context, 8),
-            ),
-            tint: enabled ? null : const Color(0xFF99A3B0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/images/Icon_Coin.png',
-                  width: ux(context, 62),
-                  height: ux(context, 62),
-                ),
-                SizedBox(width: ux(context, 10)),
-                UnitySdfText(
-                  '${widget.coinPrice}',
-                  unityFontSize: widget.unityFontSize * 0.94,
-                  material: textMat,
-                ),
-              ],
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/Icon_Coin.png',
+                width: ux(context, 62),
+                height: ux(context, 62),
+              ),
+              SizedBox(width: ux(context, 10)),
+              UnitySdfText(
+                '${widget.coinPrice}',
+                unityFontSize: widget.unityFontSize * 0.94,
+                material: textMat,
+              ),
+            ],
           ),
         ],
       );
@@ -1030,11 +1010,78 @@ class _UnityCtaButtonState extends State<UnityCtaButton> {
   }
 }
 
-/// Reusable 3-Slice Stacked Green Coin CTA Button (`Button_CTA.png` / `Button_Green.png` + `Inset_Button_CTA.png`):
+/// Shared clean 2-line `[label / Icon_Coin + coinLabel]` layout rendered directly
+/// inside CTA pill surfaces without any dark recessed inset frame.
+class _StackedCoinRewardContent extends StatelessWidget {
+  final String label;
+  final String coinLabel;
+  final double unityFontSize;
+  final UnityTextMaterial material;
+  final double hRatio;
+  final EdgeInsetsGeometry padding;
+
+  const _StackedCoinRewardContent({
+    required this.label,
+    required this.coinLabel,
+    required this.unityFontSize,
+    required this.material,
+    required this.hRatio,
+    required this.padding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: UnitySdfText(
+              label,
+              unityFontSize: unityFontSize,
+              material: material,
+              singleTextNode: true,
+            ),
+          ),
+          SizedBox(height: ux(context, 2 * hRatio)),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                'assets/images/Icon_Coin.png',
+                width: ux(context, 48 * hRatio),
+                height: ux(context, 48 * hRatio),
+                fit: BoxFit.contain,
+              ),
+              SizedBox(width: ux(context, 10)),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: UnitySdfText(
+                    coinLabel,
+                    unityFontSize: unityFontSize * 0.88,
+                    material: material,
+                    singleTextNode: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Reusable 3-Slice Stacked Green Coin CTA Button (`Button_CTA.png` / `Button_Green.png`):
 /// - Preserves circular `1:1` gold capsule end-caps via [UnityNineSlice] (`UnitySliceSpec(110, 0, 110, 0)`)
 ///   so the button never distorts across single-button or dual-button widths!
 /// - Top line: [label] (`UnityTextMaterial.ctaGreen`)
-/// - Bottom recessed socket: `Inset_Button_CTA.png` (`Icon_Coin.png` + [coinLabel])
+/// - Bottom line: crisp `Icon_Coin.png` + [coinLabel] directly on the green pill surface
 class UnityStackedCoinCtaButton extends StatefulWidget {
   final String label;
   final String coinLabel;
@@ -1096,69 +1143,20 @@ class _UnityStackedCoinCtaButtonState extends State<UnityStackedCoinCtaButton> {
           height: h,
           colorFilter:
               enabled ? null : UnityButtonColorFilters.disabledSilver,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Upper Primary Label (`"Next Level"`)
-              Positioned(
-                left: ux(context, 38),
-                right: ux(context, 38),
-                top: ux(context, 20 * hRatio),
-                bottom: ux(context, (22 + widget.insetUnityHeight) * hRatio),
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: UnitySdfText(
-                      widget.label,
-                      unityFontSize: widget.unityFontSize,
-                      material: textMat,
-                      singleTextNode: true,
-                    ),
-                  ),
-                ),
+          child: Center(
+            child: _StackedCoinRewardContent(
+              label: widget.label,
+              coinLabel: widget.coinLabel,
+              unityFontSize: widget.unityFontSize,
+              material: textMat,
+              hRatio: hRatio,
+              padding: EdgeInsets.fromLTRB(
+                ux(context, 38),
+                ux(context, 12 * hRatio),
+                ux(context, 38),
+                ux(context, 22 * hRatio),
               ),
-
-              // Bottom-Docked Recessed Arch Socket (`Inset_Button_CTA.png` flush on inner gold rim)
-              Positioned(
-                bottom: ux(context, 22 * hRatio),
-                child: UnityNineSlice(
-                  sprite: 'Inset_Button_CTA.png',
-                  width: ux(context, widget.insetUnityWidth),
-                  height: ux(context, widget.insetUnityHeight * hRatio),
-                  tint: enabled ? null : const Color(0xFF99A3B0),
-                  padding: EdgeInsets.fromLTRB(
-                    ux(context, 20),
-                    ux(context, 4 * hRatio),
-                    ux(context, 20),
-                    ux(context, 2 * hRatio),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/images/Icon_Coin.png',
-                        width: ux(context, 44 * hRatio),
-                        height: ux(context, 44 * hRatio),
-                        fit: BoxFit.contain,
-                      ),
-                      SizedBox(width: ux(context, 8)),
-                      Flexible(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: UnitySdfText(
-                            widget.coinLabel,
-                            unityFontSize: widget.unityFontSize * 0.82,
-                            material: textMat,
-                            singleTextNode: true,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1169,7 +1167,7 @@ class _UnityStackedCoinCtaButtonState extends State<UnityStackedCoinCtaButton> {
 /// Reusable 3-Slice Stacked Golden-Yellow Rewarded-Ad CTA Button (`Button_Yellow.png` + `Icon_Ads.png`):
 /// - Preserves circular `1:1` gold capsule end-caps via [UnityNineSlice] (`UnitySliceSpec(110, 0, 110, 0)`)!
 /// - Overlapping top-left 3D clapperboard badge `Icon_Ads.png` matching `LoseOverlay` (`Out of time!`).
-/// - Recessed amber `Inset_Button_CTA.png` socket (`Icon_Coin.png` + [coinLabel]).
+/// - Crisp `Icon_Coin.png` + [coinLabel] directly beneath [label] on the yellow pill surface.
 class UnityStackedAdCtaButton extends StatefulWidget {
   final String label;
   final String coinLabel;
@@ -1230,72 +1228,20 @@ class _UnityStackedAdCtaButtonState extends State<UnityStackedAdCtaButton> {
               sprite: 'Button_Yellow.png',
               colorFilter:
                   enabled ? null : UnityButtonColorFilters.disabledSilver,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Upper Primary Label (`"Reward x2"`)
-                  Positioned(
-                    left: ux(context, 52),
-                    right: ux(context, 36),
-                    top: ux(context, 20 * hRatio),
-                    bottom:
-                        ux(context, (22 + widget.insetUnityHeight) * hRatio),
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: UnitySdfText(
-                          widget.label,
-                          unityFontSize: widget.unityFontSize,
-                          material: textMat,
-                          singleTextNode: true,
-                        ),
-                      ),
-                    ),
+              child: Center(
+                child: _StackedCoinRewardContent(
+                  label: widget.label,
+                  coinLabel: widget.coinLabel,
+                  unityFontSize: widget.unityFontSize,
+                  material: textMat,
+                  hRatio: hRatio,
+                  padding: EdgeInsets.fromLTRB(
+                    ux(context, 52),
+                    ux(context, 12 * hRatio),
+                    ux(context, 34),
+                    ux(context, 22 * hRatio),
                   ),
-
-                  // Bottom-Docked Recessed Arch Socket (`Inset_Button_CTA.png` flush on inner gold rim)
-                  Positioned(
-                    bottom: ux(context, 22 * hRatio),
-                    child: UnityNineSlice(
-                      sprite: 'Inset_Button_CTA.png',
-                      width: ux(context, widget.insetUnityWidth),
-                      height: ux(context, widget.insetUnityHeight * hRatio),
-                      colorFilter: enabled
-                          ? UnityButtonColorFilters.amberInsetFromGreen
-                          : UnityButtonColorFilters.disabledSilver,
-                      padding: EdgeInsets.fromLTRB(
-                        ux(context, 20),
-                        ux(context, 4 * hRatio),
-                        ux(context, 20),
-                        ux(context, 2 * hRatio),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset(
-                            'assets/images/Icon_Coin.png',
-                            width: ux(context, 44 * hRatio),
-                            height: ux(context, 44 * hRatio),
-                            fit: BoxFit.contain,
-                          ),
-                          SizedBox(width: ux(context, 8)),
-                          Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: UnitySdfText(
-                                widget.coinLabel,
-                                unityFontSize: widget.unityFontSize * 0.82,
-                                material: textMat,
-                                singleTextNode: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

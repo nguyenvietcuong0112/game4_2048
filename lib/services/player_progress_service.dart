@@ -349,6 +349,24 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Returns current inventory count for any booster by feature [powerUpId].
+  int powerUpCountById(String powerUpId) => switch (powerUpId) {
+        'pu_level_up' => _levelUpCount,
+        'pu_time_freeze' => _timeFreezeCount,
+        _ => 0,
+      };
+
+  /// Grants [count] units of a booster identified by [powerUpId].
+  void grantPowerUpById(String powerUpId, {int count = 1}) {
+    if (count <= 0) return;
+    switch (powerUpId) {
+      case 'pu_level_up':
+        grantFreePowerUp(isLevelUp: true, count: count);
+      case 'pu_time_freeze':
+        grantFreePowerUp(isLevelUp: false, count: count);
+    }
+  }
+
   bool buyLevelUpPack({int cost = levelUpPackCost, int count = 3}) =>
       buyPowerUpPack(isLevelUp: true, cost: cost, count: count);
 
@@ -453,13 +471,13 @@ class PlayerProgressService extends ChangeNotifier {
       addCoins(cfg.rewardCoins);
     }
 
-    // Unlock mechanic if applicable
-    if (cfg.unlockMechanicId != null) {
+    // Mark non-booster mechanic milestones seen upon vase claim;
+    // in-game boosters present their "New Feature" popup (Claim / Claim X2)
+    // upon entering their unlock level.
+    if (cfg.unlockMechanicId != null &&
+        cfg.unlockMechanicId != 'pu_level_up' &&
+        cfg.unlockMechanicId != 'pu_time_freeze') {
       markMechanicSeen(cfg.unlockMechanicId!);
-      if (cfg.unlockMechanicId == 'pu_level_up' ||
-          cfg.unlockMechanicId == 'pu_time_freeze') {
-        setFreePowerUpPending(cfg.unlockMechanicId!, true);
-      }
     }
 
     // Advance to next vase

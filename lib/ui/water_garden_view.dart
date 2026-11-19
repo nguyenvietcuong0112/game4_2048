@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import '../services/audio_haptics_service.dart';
 import '../services/player_progress_service.dart';
+import '../services/remote_config_service.dart';
+import 'flower_bloom_congrats_popup.dart';
+import 'mechanic_unlock_dialog.dart';
 import 'unity_ui_kit.dart';
 
 /// Shared async sprite cache for extracted Flower Merge flower growth stages (`0..3`),
@@ -151,6 +154,8 @@ class WaterGardenView extends StatefulWidget {
   final VoidCallback? onRewardX2;
   final bool isActionBusy;
   final VoidCallback onClaimMilestone;
+  final Future<bool> Function()? onClaimMilestoneX2;
+  final VoidCallback? onBloomCongratsShown;
   final bool showGardenBackdrop;
   final bool playEntranceAnim;
   final AudioHapticsService? audio;
@@ -166,6 +171,8 @@ class WaterGardenView extends StatefulWidget {
     this.onRewardX2,
     this.isActionBusy = false,
     required this.onClaimMilestone,
+    this.onClaimMilestoneX2,
+    this.onBloomCongratsShown,
     this.showGardenBackdrop = true,
     this.playEntranceAnim = true,
     this.audio,
@@ -180,7 +187,6 @@ class _WaterGardenViewState extends State<WaterGardenView>
   late final AnimationController _entranceCtrl;
   late final AnimationController _seqCtrl;
   late final AnimationController _ambientCtrl;
-  late final AnimationController _claimCardCtrl;
   late final AnimationController _nextVaseCtrl;
 
   late final Animation<double> _jarEnterAnim;
@@ -194,6 +200,8 @@ class _WaterGardenViewState extends State<WaterGardenView>
   bool _isSkipped = false;
   bool _showClaimModal = false;
   bool _showingNextVase = false;
+  bool _milestoneClaimed = false;
+  bool _claimX2InFlight = false;
   bool _sfxPourTriggered = false;
   bool _sfxGrowTriggered = false;
   bool _sfxBloomTriggered = false;
@@ -232,11 +240,6 @@ class _WaterGardenViewState extends State<WaterGardenView>
       vsync: this,
       duration: const Duration(milliseconds: 5600),
     )..repeat();
-
-    _claimCardCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 420),
-    );
 
     _nextVaseCtrl = AnimationController(
       vsync: this,
@@ -293,19 +296,30 @@ class _WaterGardenViewState extends State<WaterGardenView>
       if (!mounted ||
           !widget.advanceResult.didReach100Percent ||
           _showingNextVase ||
-          _showClaimModal) {
+          _showClaimModal ||
+          _milestoneClaimed) {
         return;
       }
-      // Brief celebratory beat to admire the 100% Checkmark & full bouquet before sliding up the Reward Card
+      // Brief celebratory beat to admire the full Stage-3 blooming flower before presenting the Congrats Popup
       _claimDelayTimer?.cancel();
-      _claimDelayTimer = Timer(const Duration(milliseconds: 160), () {
-        if (mounted && !_showingNextVase && !_showClaimModal) {
-          setState(() {
-            _showClaimModal = true;
-          });
-          _claimCardCtrl.forward(from: 0.0);
+      _claimDelayTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted &&
+            !_showingNextVase &&
+            !_showClaimModal &&
+            !_milestoneClaimed) {
+          _openBloomCongratsModal();
         }
       });
+    });
+  }
+
+  void _openBloomCongratsModal() {
+    if (_showClaimModal || _showingNextVase || _milestoneClaimed) return;
+    _fastForwardSequenceIfRunning();
+    widget.audio?.playWinAmazing();
+    widget.onBloomCongratsShown?.call();
+    setState(() {
+      _showClaimModal = true;
     });
   }
 
@@ -351,7 +365,6 @@ class _WaterGardenViewState extends State<WaterGardenView>
     _entranceCtrl.dispose();
     _seqCtrl.dispose();
     _ambientCtrl.dispose();
-    _claimCardCtrl.dispose();
     _nextVaseCtrl.dispose();
     super.dispose();
   }
@@ -372,23 +385,49 @@ class _WaterGardenViewState extends State<WaterGardenView>
     if (_isSkipped && _seqCtrl.value >= 1.0) return;
     _isSkipped = true;
     _fastForwardSequenceIfRunning();
-    if (widget.advanceResult.didReach100Percent && !_showClaimModal) {
-      setState(() {
-        _showClaimModal = true;
-      });
-      _claimCardCtrl.forward(from: 0.0);
+    if (widget.advanceResult.didReach100Percent &&
+        !_showClaimModal &&
+        !_milestoneClaimed) {
+      _openBloomCongratsModal();
     } else {
       setState(() {});
     }
   }
 
   void _handleClaimTapped() {
-    if (widget.isActionBusy) return;
+    if (widget.isActionBusy || _claimX2InFlight || _milestoneClaimed) return;
+    _milestoneClaimed = true;
     _fastForwardSequenceIfRunning();
     widget.audio?.playGardenNewVaseReveal();
     widget.onClaimMilestone();
     if (!mounted) return;
     setState(() {
+      _showClaimModal = false;
+      _showingNextVase = true;
+    });
+    _nextVaseCtrl.forward(from: 0.0);
+  }
+
+  Future<void> _handleClaimX2Tapped() async {
+    if (widget.isActionBusy || _claimX2InFlight || _milestoneClaimed) return;
+    final onClaimX2 = widget.onClaimMilestoneX2;
+    if (onClaimX2 == null) {
+      _handleClaimTapped();
+      return;
+    }
+    setState(() => _claimX2InFlight = true);
+    final rewarded = await onClaimX2();
+    if (!mounted) return;
+    if (!rewarded) {
+      // Ad cancelled or unavailable -> keep Congrats Popup open so player can retry or claim 1x!
+      setState(() => _claimX2InFlight = false);
+      return;
+    }
+    _milestoneClaimed = true;
+    _fastForwardSequenceIfRunning();
+    widget.audio?.playGardenNewVaseReveal();
+    setState(() {
+      _claimX2InFlight = false;
       _showClaimModal = false;
       _showingNextVase = true;
     });
@@ -756,7 +795,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                   unityFontSize: 68,
                                   onTap: widget.isActionBusy
                                       ? null
-                                      : _handleClaimTapped,
+                                      : _openBloomCongratsModal,
                                 )
                               else
                                 _buildDualNextAndRewardButtons(),
@@ -767,36 +806,16 @@ class _WaterGardenViewState extends State<WaterGardenView>
                     ),
                   ),
 
-                // 4. Panel 5: Native Old-Theme `popup_bg.png` + `Frame_Popup_Title.png` + `frame_content.png`
-                //    `"New Mechanic!"` Reward Card over lower half so the full blooming bouquet shines above!
+                // 4. Celebratory Full-Modal Flower Bloom Congrats Reward Popup (`Claim` + `Claim x2`)
                 if (_showClaimModal)
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: bottomPad,
-                    child: Center(
-                      child: AnimatedBuilder(
-                        animation: _claimCardCtrl,
-                        builder: (context, cardChild) {
-                          final raw = _claimCardCtrl.value.clamp(0.0, 1.0);
-                          final slideT = Curves.easeOutCubic.transform(raw);
-                          final scaleT = Curves.easeOutBack.transform(raw);
-                          return Transform.translate(
-                            offset: Offset(0, (1.0 - slideT) * 48.0),
-                            child: Transform.scale(
-                              scale: (0.84 + 0.16 * scaleT).clamp(0.5, 1.12),
-                              alignment: Alignment.bottomCenter,
-                              child: cardChild,
-                            ),
-                          );
-                        },
-                        child: _buildNewMechanicCard(
-                          context: context,
-                          config: widget.advanceResult.config,
-                          maxCardHeight: safeH * 0.50,
-                          onClaim: _handleClaimTapped,
-                        ),
-                      ),
+                  Positioned.fill(
+                    child: FlowerBloomCongratsPopup(
+                      config: widget.advanceResult.config,
+                      isBusy: widget.isActionBusy || _claimX2InFlight,
+                      onClaim: _handleClaimTapped,
+                      onClaimX2: widget.onClaimMilestoneX2 != null
+                          ? _handleClaimX2Tapped
+                          : null,
                     ),
                   ),
               ],
@@ -868,12 +887,17 @@ class _WaterGardenViewState extends State<WaterGardenView>
               : '100%')
         : (usingMechanicBar ? 'Next feature' : 'Bonus chest');
 
+    final BoosterType? featureBooster =
+        mechanicId != null ? BoosterType.fromId(mechanicId) : null;
+
     final String? featureAsset = switch (mechanicId) {
       'ice' => 'assets/images/Icon_Mechanic_Ice.png',
       'dud' => 'assets/images/Icon_Mechanic_Blocker.png',
       'pu_level_up' => 'assets/images/PowerUp_LevelUp.png',
       'arrows' => 'assets/images/Icon_Mechanic_SingleAxis.png',
       'pu_time_freeze' => 'assets/images/PowerUp_TimeFreeze.png',
+      'pu_shuffle' => null,
+      'pu_hammer' => null,
       'pinned' => 'assets/images/Icon_Mechanic_Cage.png',
       _ => isNewVaseMystery
           ? null
@@ -1008,26 +1032,31 @@ class _WaterGardenViewState extends State<WaterGardenView>
             width: 148.0 * s,
             height: 148.0 * s,
             child: Center(
-              child: featureAsset != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(20.0 * s),
-                      child: Image.asset(
-                        featureAsset,
-                        width: 132.0 * s,
-                        height: 132.0 * s,
-                        fit: BoxFit.contain,
-                      ),
+              child: featureBooster != null
+                  ? BoosterIconWidget(
+                      type: featureBooster,
+                      size: 130.0 * s,
                     )
-                  : Text(
-                      '?',
-                      style: TextStyle(
-                        fontFamily: 'Baloo2',
-                        fontSize: 82.0 * s,
-                        fontWeight: FontWeight.w900,
-                        height: 1.0,
-                        color: const Color(0xFF5A270B),
-                      ),
-                    ),
+                  : featureAsset != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(20.0 * s),
+                          child: Image.asset(
+                            featureAsset,
+                            width: 132.0 * s,
+                            height: 132.0 * s,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Text(
+                          '?',
+                          style: TextStyle(
+                            fontFamily: 'Baloo2',
+                            fontSize: 82.0 * s,
+                            fontWeight: FontWeight.w900,
+                            height: 1.0,
+                            color: const Color(0xFF5A270B),
+                          ),
+                        ),
             ),
           ),
 
@@ -1078,168 +1107,6 @@ class _WaterGardenViewState extends State<WaterGardenView>
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  /// Panel 5 `"New Mechanic!"` Reward Popup Card reusing 100% `UnityNineSlice` & `UnityCtaButton`:
-  /// - `popup_bg.png` 9-slice gold-rimmed royal-blue body
-  /// - `Frame_Popup_Title.png` 3-slice top header ribbon (`"New Mechanic!"` / `"Bonus Reward!"`)
-  /// - `frame_content.png` 9-slice warm cream inner well with 3D reward icon + coins + `#5A270B` title
-  /// - `UnityCtaButton` (`Button_CTA.png`) `"Claim"` button!
-  Widget _buildNewMechanicCard({
-    required BuildContext context,
-    required VaseMilestoneConfig config,
-    required double maxCardHeight,
-    required VoidCallback onClaim,
-  }) {
-    final modalHeaderTitle =
-        config.unlockMechanicId != null ? 'New Mechanic!' : 'Bonus Reward!';
-    final cardW = ux(context, 884);
-    final cardH = ux(context, 856);
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: math.min(cardW, 380.0),
-        maxHeight: math.max(ux(context, 720), maxCardHeight),
-      ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: SizedBox(
-          width: cardW,
-          height: cardH,
-          child: Stack(
-            alignment: Alignment.topCenter,
-            clipBehavior: Clip.none,
-            children: [
-              // 1. 9-Slice Gold-Rimmed Royal-Blue Popup Body (`popup_bg.png`, exact 884px width -> 1:1 arch continuity)
-              Positioned(
-                left: 0,
-                right: 0,
-                top: ux(context, 42),
-                bottom: 0,
-                child: const UnityNineSlice(
-                  sprite: 'popup_bg.png',
-                  pixelMultiplier: 1.0,
-                ),
-              ),
-
-              // 2. 9-Slice Warm Cream Inner Content Well (`frame_content.png`, exact 784px width -> 1:1 corner continuity)
-              Positioned(
-                left: ux(context, 50),
-                right: ux(context, 50),
-                top: ux(context, 162),
-                height: ux(context, 434),
-                child: UnityNineSlice(
-                  sprite: 'frame_content.png',
-                  pixelMultiplier: 1.0,
-                  padding: EdgeInsets.fromLTRB(
-                    ux(context, 34),
-                    ux(context, 20),
-                    ux(context, 34),
-                    ux(context, 26),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          alignment: Alignment.center,
-                          clipBehavior: Clip.none,
-                          children: [
-                            Positioned.fill(
-                              child: FittedBox(
-                                fit: BoxFit.contain,
-                                child: AnimatedBuilder(
-                                  animation: _ambientCtrl,
-                                  builder: (context, _) {
-                                    return _RewardShowcaseGraphic(
-                                      mechanicId: config.unlockMechanicId,
-                                      ambientPhase:
-                                          _ambientCtrl.value * math.pi * 2.0,
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              right: ux(context, 34),
-                              bottom: ux(context, 10),
-                              child: UnitySdfText(
-                                '+${config.rewardCoins}',
-                                unityFontSize: 48,
-                                material: UnityTextMaterial.winCoinAmount,
-                                singleTextNode: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: ux(context, 8)),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          config.rewardTitle,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          style: TextStyle(
-                            fontFamily: 'Baloo2',
-                            fontSize: ux(context, 56),
-                            fontWeight: FontWeight.w800,
-                            fontVariations: const [FontVariation('wght', 800)],
-                            height: 1.05,
-                            color: const Color(0xFF5A270B),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // 3. Bottom Shared `UnityCtaButton` (`Button_CTA.png`, `"Claim"`)
-              Positioned(
-                bottom: ux(context, 34),
-                child: UnityCtaButton(
-                  label: 'Claim',
-                  unityWidth: 480,
-                  unityHeight: 205,
-                  unityFontSize: 64,
-                  onTap: widget.isActionBusy ? null : onClaim,
-                ),
-              ),
-
-              // 4. 3-Slice Top Overlapping Ribbon (`Frame_Popup_Title.png`)
-              Positioned(
-                top: 0,
-                width: ux(context, 636),
-                height: ux(context, 150),
-                child: Container(
-                  key: ValueKey<String>(modalHeaderTitle),
-                  alignment: Alignment.center,
-                  child: UnityNineSlice(
-                    sprite: 'Frame_Popup_Title.png',
-                    padding: EdgeInsets.fromLTRB(
-                      ux(context, 52),
-                      ux(context, 8),
-                      ux(context, 52),
-                      ux(context, 18),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: UnitySdfText(
-                        modalHeaderTitle,
-                        unityFontSize: 60,
-                        material: UnityTextMaterial.popupTitle,
-                        singleTextNode: true,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1886,312 +1753,6 @@ class _BadgeGlyphPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _BadgeGlyphPainter oldDelegate) =>
       oldDelegate.mode != mode;
-}
-
-/// 3D Reward Showcase inside the `"New Mechanic!"` Card (Panel 5):
-/// Combines golden comic sun-ticks, custom 3D crystal Ice Cube / Booster pedestal, and stacked 3D Gold Coins.
-class _RewardShowcaseGraphic extends StatelessWidget {
-  final String? mechanicId;
-  final double ambientPhase;
-
-  const _RewardShowcaseGraphic({
-    required this.mechanicId,
-    required this.ambientPhase,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        CustomPaint(
-          size: const Size(224, 128),
-          painter: _RewardShowcasePainter(
-            drawCustomIceCube: mechanicId == 'ice',
-            drawCoinTreasureOnly: mechanicId == null,
-            ambientPhase: ambientPhase,
-          ),
-        ),
-        if (mechanicId == 'pu_level_up')
-          Transform.translate(
-            offset: const Offset(-18, 2),
-            child: Image.asset(
-              'assets/images/PowerUp_LevelUp.png',
-              width: 78,
-              height: 78,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ),
-        if (mechanicId == 'pu_time_freeze')
-          Transform.translate(
-            offset: const Offset(-18, 2),
-            child: Image.asset(
-              'assets/images/PowerUp_TimeFreeze.png',
-              width: 78,
-              height: 78,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _RewardShowcasePainter extends CustomPainter {
-  final bool drawCustomIceCube;
-  final bool drawCoinTreasureOnly;
-  final double ambientPhase;
-
-  const _RewardShowcasePainter({
-    required this.drawCustomIceCube,
-    required this.drawCoinTreasureOnly,
-    required this.ambientPhase,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width * 0.5;
-    final cy = size.height * 0.50;
-    final fxCenter = drawCoinTreasureOnly ? Offset(cx - 1, cy + 10) : Offset(cx, cy);
-    final glowRadius = drawCoinTreasureOnly ? 50.0 : 62.0;
-    final paint = Paint()..isAntiAlias = true;
-
-    // 1. Soft sky-gold radial glow tightly cradling the reward coins
-    paint
-      ..color = Colors.white
-      ..shader = ui.Gradient.radial(
-        fxCenter,
-        glowRadius,
-        const [
-          Color(0x99FFF8E1),
-          Color(0x44FFE082),
-          Color(0x00FFE082),
-        ],
-        const [0.0, 0.58, 1.0],
-      );
-    canvas.drawCircle(fxCenter, glowRadius, paint);
-    paint.shader = null;
-
-    // 2. Golden Comic Celebration Ticks radiating closely around the coins
-    final pulse = 1.0 + 0.06 * math.sin(ambientPhase * 2.0);
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.4
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0xFFFFCA28);
-
-    const rayAngles = <double>[
-      -2.68,
-      -2.26,
-      -1.86,
-      -1.28,
-      -0.88,
-      -0.46,
-    ];
-    final baseR1 = drawCoinTreasureOnly ? 37.0 : 48.0;
-    final baseR2 = drawCoinTreasureOnly ? 47.0 : 60.0;
-    final yScale = drawCoinTreasureOnly ? 0.68 : 0.80;
-    for (final a in rayAngles) {
-      final r1 = baseR1 * pulse;
-      final r2 = baseR2 * pulse;
-      canvas.drawLine(
-        Offset(
-          fxCenter.dx + r1 * math.cos(a),
-          fxCenter.dy + r1 * math.sin(a) * yScale,
-        ),
-        Offset(
-          fxCenter.dx + r2 * math.cos(a),
-          fxCenter.dy + r2 * math.sin(a) * yScale,
-        ),
-        paint,
-      );
-    }
-
-    // Ground soft shadow
-    paint
-      ..style = PaintingStyle.fill
-      ..color = const Color(0x241B2B65);
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 36), width: 126, height: 16),
-      paint,
-    );
-
-    // 3. Isometric 3D Translucent Faceted Ice Cube Block (Matches Panel 5 1:1!)
-    if (drawCustomIceCube) {
-      _draw3DIceBlock(canvas, Offset(cx - 18, cy + 2));
-    }
-
-    // 4. Gleaming 3D Stacked Gold Coins beside the mechanic (or center treasure pile)
-    if (drawCoinTreasureOnly) {
-      _drawCoinStack(canvas, Offset(cx - 22, cy + 18), count: 3, radius: 17);
-      _drawCoinStack(canvas, Offset(cx + 18, cy + 14), count: 4, radius: 18);
-      _drawCoinStack(canvas, Offset(cx - 2, cy + 26), count: 2, radius: 17);
-    } else {
-      _drawCoinStack(canvas, Offset(cx + 40, cy + 16), count: 3, radius: 16.0);
-      _drawCoinStack(canvas, Offset(cx + 17, cy + 26), count: 2, radius: 15.5);
-    }
-  }
-
-  void _draw3DIceBlock(Canvas canvas, Offset c) {
-    final p = Paint()..isAntiAlias = true;
-    final path = Path();
-
-    final top = Offset(c.dx, c.dy - 36);
-    final midL = Offset(c.dx - 34, c.dy - 19);
-    final midR = Offset(c.dx + 34, c.dy - 19);
-    final midF = Offset(c.dx, c.dy - 2);
-    final botL = Offset(c.dx - 33, c.dy + 21);
-    final botR = Offset(c.dx + 33, c.dy + 21);
-    final botF = Offset(c.dx, c.dy + 38);
-
-    // Top diamond facet
-    path
-      ..reset()
-      ..moveTo(top.dx, top.dy)
-      ..lineTo(midR.dx, midR.dy)
-      ..lineTo(midF.dx, midF.dy)
-      ..lineTo(midL.dx, midL.dy)
-      ..close();
-    p
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        top,
-        midF,
-        const [Color(0xFFEFFCFF), Color(0xFF8BE8FF)],
-      );
-    canvas.drawPath(path, p);
-
-    // Left facet
-    path
-      ..reset()
-      ..moveTo(midL.dx, midL.dy)
-      ..lineTo(midF.dx, midF.dy)
-      ..lineTo(botF.dx, botF.dy)
-      ..lineTo(botL.dx, botL.dy)
-      ..close();
-    p
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        midL,
-        botF,
-        const [Color(0xFF72E2FF), Color(0xFF28AAE8)],
-      );
-    canvas.drawPath(path, p);
-
-    // Right facet
-    path
-      ..reset()
-      ..moveTo(midF.dx, midF.dy)
-      ..lineTo(midR.dx, midR.dy)
-      ..lineTo(botR.dx, botR.dy)
-      ..lineTo(botF.dx, botF.dy)
-      ..close();
-    p
-      ..color = Colors.white
-      ..shader = ui.Gradient.linear(
-        midR,
-        botF,
-        const [Color(0xFF47C8F5), Color(0xFF1380C9)],
-      );
-    canvas.drawPath(path, p);
-    p.shader = null;
-
-    // Diagonal frost shine streaks
-    p
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.2
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0x8CFFFFFF);
-    canvas.drawLine(
-      Offset(c.dx - 24, c.dy - 6),
-      Offset(c.dx - 11, c.dy + 16),
-      p,
-    );
-    canvas.drawLine(
-      Offset(c.dx + 12, c.dy - 2),
-      Offset(c.dx + 23, c.dy + 14),
-      p,
-    );
-
-    // Specular crystal bevel edges
-    p
-      ..strokeWidth = 2.0
-      ..strokeJoin = StrokeJoin.round
-      ..color = const Color(0xEEFFFFFF);
-    canvas.drawLine(midL, midF, p);
-    canvas.drawLine(midF, midR, p);
-    canvas.drawLine(midF, botF, p);
-
-    path
-      ..reset()
-      ..moveTo(top.dx, top.dy)
-      ..lineTo(midR.dx, midR.dy)
-      ..lineTo(botR.dx, botR.dy)
-      ..lineTo(botF.dx, botF.dy)
-      ..lineTo(botL.dx, botL.dy)
-      ..lineTo(midL.dx, midL.dy)
-      ..close();
-    p
-      ..strokeWidth = 2.2
-      ..color = const Color(0xCC58C8F2);
-    canvas.drawPath(path, p);
-  }
-
-  void _drawCoinStack(
-    Canvas canvas,
-    Offset baseCenter, {
-    required int count,
-    required double radius,
-  }) {
-    final p = Paint()..isAntiAlias = true;
-    final hOval = radius * 0.56;
-    const stepY = 5.5;
-
-    for (int i = 0; i < count; i++) {
-      final cy = baseCenter.dy - i * stepY;
-      final sideRect = Rect.fromCenter(
-        center: Offset(baseCenter.dx, cy + 2.6),
-        width: radius * 2,
-        height: hOval * 2,
-      );
-      p
-        ..style = PaintingStyle.fill
-        ..shader = null
-        ..color = const Color(0xFFD97706);
-      canvas.drawOval(sideRect, p);
-
-      final topRect = Rect.fromCenter(
-        center: Offset(baseCenter.dx, cy),
-        width: radius * 2,
-        height: hOval * 2,
-      );
-      p
-        ..color = Colors.white
-        ..shader = ui.Gradient.linear(
-          Offset(baseCenter.dx - radius, cy - hOval),
-          Offset(baseCenter.dx + radius, cy + hOval),
-          const [
-            Color(0xFFFFF59D),
-            Color(0xFFFFCA28),
-            Color(0xFFF59E0B),
-          ],
-          const [0.0, 0.5, 1.0],
-        );
-      canvas.drawOval(topRect, p);
-      p.shader = null;
-
-      p
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = const Color(0xCCFFFDE7);
-      canvas.drawOval(topRect.deflate(2.5), p);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RewardShowcasePainter oldDelegate) =>
-      oldDelegate.ambientPhase != ambientPhase ||
-      oldDelegate.drawCustomIceCube != drawCustomIceCube;
 }
 
 /// Parametric 3D silhouette metrics for the 5 sculpted vase shapes.

@@ -13,6 +13,8 @@ class PlayerProgressService extends ChangeNotifier {
   static const _kMaxHearts = 'bo_max_hearts';
   static const _kLevelUpCount = 'bo_pu_level_up';
   static const _kTimeFreezeCount = 'bo_pu_time_freeze';
+  static const _kShuffleCount = 'bo_pu_shuffle';
+  static const _kHammerCount = 'bo_pu_hammer';
   static const _kSeenMechanics = 'bo_seen_mechanics';
   static const _kFreePowerUpsPending = 'bo_free_pu_pending';
   static const _kFtueLoadingLogged = 'bo_ftue_loading_logged';
@@ -26,14 +28,21 @@ class PlayerProgressService extends ChangeNotifier {
   static const int lifeRegenSeconds = 15 * 60; // 1 Heart per 15 minutes (900s)
   static const int refillLivesCost = 900;
 
-  /// Exact Unity `remote_config.json` power-up progression & economy settings:
-  /// - `LevelUp` (`type = 0`): `unlock_level = 17`, `initial_inventory = 3`, `price_coins = 600` (`x3`)
-  /// - `TimeFreeze` (`type = 1`): `unlock_level = 27`, `initial_inventory = 3`, `price_coins = 450` (`x3`), `duration = 20s`
+  /// Power-up progression & economy settings (unlock order/levels driven by
+  /// `RemoteConfigService.boosterUnlockOrder`):
   static const int winRewardX2UnlockLevel = 7;
-  static const int levelUpUnlockLevel = 17;
-  static const int timeFreezeUnlockLevel = 27;
+  static int get levelUpUnlockLevel =>
+      RemoteConfigService.boosterLevelUpUnlockLevel;
+  static int get timeFreezeUnlockLevel =>
+      RemoteConfigService.boosterTimeFreezeUnlockLevel;
+  static int get shuffleUnlockLevel =>
+      RemoteConfigService.boosterShuffleUnlockLevel;
+  static int get hammerUnlockLevel =>
+      RemoteConfigService.boosterHammerUnlockLevel;
   static const int levelUpPackCost = 600;
   static const int timeFreezePackCost = 450;
+  static const int shufflePackCost = 450;
+  static const int hammerPackCost = 550;
   static const int initialPowerUpInventory = 3;
 
   SharedPreferences? _prefs;
@@ -47,6 +56,8 @@ class PlayerProgressService extends ChangeNotifier {
   int? _infinityExpireMs;
   int _levelUpCount = initialPowerUpInventory;
   int _timeFreezeCount = initialPowerUpInventory;
+  int _shuffleCount = initialPowerUpInventory;
+  int _hammerCount = initialPowerUpInventory;
   int _pendingWinCoins = 0;
   int _pendingMilestoneCoins = 0;
   Set<String> _seenMechanics = {};
@@ -69,6 +80,8 @@ class PlayerProgressService extends ChangeNotifier {
   bool get isHeartsMax => _lives >= _maxLives;
   int get levelUpCount => _levelUpCount;
   int get timeFreezeCount => _timeFreezeCount;
+  int get shuffleCount => _shuffleCount;
+  int get hammerCount => _hammerCount;
   int get pendingWinCoins => _pendingWinCoins;
   int get pendingMilestoneCoins => _pendingMilestoneCoins;
   bool get isFtueCompleted => _ftueCompleted;
@@ -102,6 +115,24 @@ class PlayerProgressService extends ChangeNotifier {
     return effective >= timeFreezeUnlockLevel;
   }
 
+  bool isShuffleUnlockedForLevel(int levelNumber) {
+    final effective = levelNumber >= 1000 ? _highestLevel : levelNumber;
+    return effective >= shuffleUnlockLevel;
+  }
+
+  bool isHammerUnlockedForLevel(int levelNumber) {
+    final effective = levelNumber >= 1000 ? _highestLevel : levelNumber;
+    return effective >= hammerUnlockLevel;
+  }
+
+  bool isBoosterUnlockedForLevel(BoosterType type, int levelNumber) =>
+      switch (type) {
+        BoosterType.levelUp => isLevelUpUnlockedForLevel(levelNumber),
+        BoosterType.timeFreeze => isTimeFreezeUnlockedForLevel(levelNumber),
+        BoosterType.shuffle => isShuffleUnlockedForLevel(levelNumber),
+        BoosterType.hammer => isHammerUnlockedForLevel(levelNumber),
+      };
+
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _currentLevel = _prefs?.getInt(_kCurrentLevel) ?? 1;
@@ -118,6 +149,10 @@ class PlayerProgressService extends ChangeNotifier {
         _prefs?.getInt(_kLevelUpCount) ?? initialPowerUpInventory;
     _timeFreezeCount =
         _prefs?.getInt(_kTimeFreezeCount) ?? initialPowerUpInventory;
+    _shuffleCount =
+        _prefs?.getInt(_kShuffleCount) ?? initialPowerUpInventory;
+    _hammerCount =
+        _prefs?.getInt(_kHammerCount) ?? initialPowerUpInventory;
     _seenMechanics = (_prefs?.getStringList(_kSeenMechanics) ?? []).toSet();
     _freePowerUpsPending =
         (_prefs?.getStringList(_kFreePowerUpsPending) ?? []).toSet();
@@ -595,64 +630,106 @@ class PlayerProgressService extends ChangeNotifier {
     return true;
   }
 
-  bool buyPowerUpPack({
-    required bool isLevelUp,
-    int? cost,
-    int count = 3,
-  }) {
-    final resolvedCost = cost ??
-        (isLevelUp
-            ? RemoteConfigService.boosterLevelUpPrice
-            : RemoteConfigService.boosterTimeFreezePrice);
-    if (!spendCoins(resolvedCost)) return false;
-    if (isLevelUp) {
-      _levelUpCount += count;
-      _prefs?.setInt(_kLevelUpCount, _levelUpCount);
-    } else {
-      _timeFreezeCount += count;
-      _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
-    }
+  bool consumeShuffle() {
+    if (_shuffleCount <= 0) return false;
+    _shuffleCount--;
+    _prefs?.setInt(_kShuffleCount, _shuffleCount);
     notifyListeners();
     return true;
   }
 
+  bool consumeHammer() {
+    if (_hammerCount <= 0) return false;
+    _hammerCount--;
+    _prefs?.setInt(_kHammerCount, _hammerCount);
+    notifyListeners();
+    return true;
+  }
+
+  bool consumeBooster(BoosterType type) => switch (type) {
+        BoosterType.levelUp => consumeLevelUp(),
+        BoosterType.timeFreeze => consumeTimeFreeze(),
+        BoosterType.shuffle => consumeShuffle(),
+        BoosterType.hammer => consumeHammer(),
+      };
+
+  int boosterCount(BoosterType type) => switch (type) {
+        BoosterType.levelUp => _levelUpCount,
+        BoosterType.timeFreeze => _timeFreezeCount,
+        BoosterType.shuffle => _shuffleCount,
+        BoosterType.hammer => _hammerCount,
+      };
+
+  bool buyPowerUpPack({
+    bool? isLevelUp,
+    BoosterType? boosterType,
+    int? cost,
+    int count = 3,
+  }) {
+    final resolvedType = boosterType ??
+        ((isLevelUp ?? true) ? BoosterType.levelUp : BoosterType.timeFreeze);
+    final resolvedCost = cost ?? RemoteConfigService.priceForBooster(resolvedType);
+    if (!spendCoins(resolvedCost)) return false;
+    _addBoosterInventory(resolvedType, count);
+    notifyListeners();
+    return true;
+  }
+
+  void _addBoosterInventory(BoosterType type, int count) {
+    switch (type) {
+      case BoosterType.levelUp:
+        _levelUpCount += count;
+        _prefs?.setInt(_kLevelUpCount, _levelUpCount);
+      case BoosterType.timeFreeze:
+        _timeFreezeCount += count;
+        _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
+      case BoosterType.shuffle:
+        _shuffleCount += count;
+        _prefs?.setInt(_kShuffleCount, _shuffleCount);
+      case BoosterType.hammer:
+        _hammerCount += count;
+        _prefs?.setInt(_kHammerCount, _hammerCount);
+    }
+  }
+
   void grantFreePowerUp({
-    required bool isLevelUp,
+    bool? isLevelUp,
+    BoosterType? boosterType,
     int count = 1,
   }) {
-    if (isLevelUp) {
-      _levelUpCount += count;
-      _prefs?.setInt(_kLevelUpCount, _levelUpCount);
-    } else {
-      _timeFreezeCount += count;
-      _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
-    }
+    if (count <= 0) return;
+    final resolvedType = boosterType ??
+        ((isLevelUp ?? true) ? BoosterType.levelUp : BoosterType.timeFreeze);
+    _addBoosterInventory(resolvedType, count);
     notifyListeners();
   }
 
   /// Returns current inventory count for any booster by feature [powerUpId].
-  int powerUpCountById(String powerUpId) => switch (powerUpId) {
-        'pu_level_up' => _levelUpCount,
-        'pu_time_freeze' => _timeFreezeCount,
-        _ => 0,
-      };
+  int powerUpCountById(String powerUpId) {
+    final type = BoosterType.fromId(powerUpId);
+    if (type == null) return 0;
+    return boosterCount(type);
+  }
 
   /// Grants [count] units of a booster identified by [powerUpId].
   void grantPowerUpById(String powerUpId, {int count = 1}) {
     if (count <= 0) return;
-    switch (powerUpId) {
-      case 'pu_level_up':
-        grantFreePowerUp(isLevelUp: true, count: count);
-      case 'pu_time_freeze':
-        grantFreePowerUp(isLevelUp: false, count: count);
-    }
+    final type = BoosterType.fromId(powerUpId);
+    if (type == null) return;
+    grantFreePowerUp(boosterType: type, count: count);
   }
 
   bool buyLevelUpPack({int? cost, int count = 3}) =>
-      buyPowerUpPack(isLevelUp: true, cost: cost, count: count);
+      buyPowerUpPack(boosterType: BoosterType.levelUp, cost: cost, count: count);
 
   bool buyTimeFreezePack({int? cost, int count = 3}) =>
-      buyPowerUpPack(isLevelUp: false, cost: cost, count: count);
+      buyPowerUpPack(boosterType: BoosterType.timeFreeze, cost: cost, count: count);
+
+  bool buyShufflePack({int? cost, int count = 3}) =>
+      buyPowerUpPack(boosterType: BoosterType.shuffle, cost: cost, count: count);
+
+  bool buyHammerPack({int? cost, int count = 3}) =>
+      buyPowerUpPack(boosterType: BoosterType.hammer, cost: cost, count: count);
 
   // ── Cheat / QA Helpers (Gated by `RemoteConfigService.cheatEnable`) ────────
 
@@ -663,7 +740,12 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void cheatSetPowerUps({int? levelUp, int? timeFreeze}) {
+  void cheatSetPowerUps({
+    int? levelUp,
+    int? timeFreeze,
+    int? shuffle,
+    int? hammer,
+  }) {
     if (levelUp != null) {
       _levelUpCount = levelUp.clamp(0, 9999);
       _prefs?.setInt(_kLevelUpCount, _levelUpCount);
@@ -671,6 +753,14 @@ class PlayerProgressService extends ChangeNotifier {
     if (timeFreeze != null) {
       _timeFreezeCount = timeFreeze.clamp(0, 9999);
       _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
+    }
+    if (shuffle != null) {
+      _shuffleCount = shuffle.clamp(0, 9999);
+      _prefs?.setInt(_kShuffleCount, _shuffleCount);
+    }
+    if (hammer != null) {
+      _hammerCount = hammer.clamp(0, 9999);
+      _prefs?.setInt(_kHammerCount, _hammerCount);
     }
     notifyListeners();
   }
@@ -700,6 +790,8 @@ class PlayerProgressService extends ChangeNotifier {
       'arrows',
       'pu_level_up',
       'pu_time_freeze',
+      'pu_shuffle',
+      'pu_hammer',
     ]);
     _prefs?.setStringList(_kSeenMechanics, _seenMechanics.toList());
     notifyListeners();
@@ -775,8 +867,11 @@ class PlayerProgressService extends ChangeNotifier {
     );
   }
 
-  VaseMilestoneConfig _completeVaseClaimMetadata() {
+  VaseMilestoneConfig? _completeVaseClaimMetadata() {
     final cfg = currentVaseConfig;
+    if (_vaseClaimedIds.contains(cfg.vaseId)) {
+      return null;
+    }
     _vaseClaimedIds.add(cfg.vaseId);
     _vaseUnlockedIds.add(cfg.vaseId);
     _prefs?.setStringList(
@@ -792,8 +887,7 @@ class PlayerProgressService extends ChangeNotifier {
     // in-game boosters present their "New Feature" popup (Claim / Claim X2)
     // upon entering their unlock level.
     if (cfg.unlockMechanicId != null &&
-        cfg.unlockMechanicId != 'pu_level_up' &&
-        cfg.unlockMechanicId != 'pu_time_freeze') {
+        BoosterType.fromId(cfg.unlockMechanicId) == null) {
       markMechanicSeen(cfg.unlockMechanicId!);
     }
 
@@ -806,27 +900,33 @@ class PlayerProgressService extends ChangeNotifier {
   }
 
   /// Claims current vase milestone reward immediately (used by direct callers/unit tests).
-  void claimCurrentVaseMilestone() {
+  void claimCurrentVaseMilestone({int multiplier = 1}) {
+    final safeMult = multiplier.clamp(1, 10);
     final cfg = _completeVaseClaimMetadata();
-    if (cfg.rewardCoins > 0) {
-      addCoins(cfg.rewardCoins);
+    if (cfg == null) return;
+    final total = cfg.rewardCoins * safeMult;
+    if (total > 0) {
+      addCoins(total);
     }
     notifyListeners();
   }
 
   /// Stages current vase milestone reward into `_pendingMilestoneCoins` so the Claim button's
   /// flying coins visibly tick the HUD balance up while persisting full total to disk for safety.
-  int stageCurrentVaseMilestoneClaim() {
+  int stageCurrentVaseMilestoneClaim({int multiplier = 1}) {
+    final safeMult = multiplier.clamp(1, 10);
     final cfg = _completeVaseClaimMetadata();
-    if (cfg.rewardCoins > 0) {
-      _pendingMilestoneCoins += cfg.rewardCoins;
+    if (cfg == null) return 0;
+    final total = cfg.rewardCoins * safeMult;
+    if (total > 0) {
+      _pendingMilestoneCoins += total;
       _prefs?.setInt(
         _kCoins,
         _coins + _pendingWinCoins + _pendingMilestoneCoins,
       );
     }
     notifyListeners();
-    return cfg.rewardCoins;
+    return total;
   }
 
   void cheatAdvanceVaseToFull() {
@@ -890,6 +990,8 @@ class PlayerProgressService extends ChangeNotifier {
     _infinityExpireMs = null;
     _levelUpCount = initialPowerUpInventory;
     _timeFreezeCount = initialPowerUpInventory;
+    _shuffleCount = initialPowerUpInventory;
+    _hammerCount = initialPowerUpInventory;
     _seenMechanics.clear();
     _freePowerUpsPending.clear();
     _vaseCurrentId = 1;
@@ -905,6 +1007,8 @@ class PlayerProgressService extends ChangeNotifier {
     await _prefs?.remove(_kInfinityExpireMs);
     await _prefs?.setInt(_kLevelUpCount, _levelUpCount);
     await _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
+    await _prefs?.setInt(_kShuffleCount, _shuffleCount);
+    await _prefs?.setInt(_kHammerCount, _hammerCount);
     await _prefs?.setStringList(_kSeenMechanics, const []);
     await _prefs?.setStringList(_kFreePowerUpsPending, const []);
     await _prefs?.setInt(_kVaseCurrentId, 1);
@@ -1085,53 +1189,88 @@ class MechanicUnlockMilestone {
     required this.note,
   });
 
-  /// Exact unlock schedule verified against `all_121_levels.json` and `PlayerProgressService`:
-  /// Ice (Lv 7) -> Stone Blocker (Lv 14) -> Level Up (Lv 17) ->
-  /// Arrow Block (Lv 22) -> Time Freeze (Lv 27) -> Screwed Block (Lv 42).
-  static const List<MechanicUnlockMilestone> schedule = [
-    MechanicUnlockMilestone(
-      startLevel: 1,
-      unlockLevel: 7,
-      mechanicId: 'ice',
-      title: 'Ice Blocks',
-      note: 'Unlocks at Level 7!',
-    ),
-    MechanicUnlockMilestone(
-      startLevel: 7,
-      unlockLevel: 14,
-      mechanicId: 'dud',
-      title: 'Stone Blocker',
-      note: 'Unlocks at Level 14!',
-    ),
-    MechanicUnlockMilestone(
-      startLevel: 14,
-      unlockLevel: PlayerProgressService.levelUpUnlockLevel,
-      mechanicId: 'pu_level_up',
-      title: 'Level Up',
-      note: 'Booster unlocks at Level 17!',
-    ),
-    MechanicUnlockMilestone(
-      startLevel: PlayerProgressService.levelUpUnlockLevel,
-      unlockLevel: 22,
-      mechanicId: 'arrows',
-      title: 'Arrow Block',
-      note: 'Unlocks at Level 22!',
-    ),
-    MechanicUnlockMilestone(
-      startLevel: 22,
-      unlockLevel: PlayerProgressService.timeFreezeUnlockLevel,
-      mechanicId: 'pu_time_freeze',
-      title: 'Time Freeze',
-      note: 'Booster unlocks at Level 27!',
-    ),
-    MechanicUnlockMilestone(
-      startLevel: PlayerProgressService.timeFreezeUnlockLevel,
-      unlockLevel: 42,
-      mechanicId: 'pinned',
-      title: 'Screwed Block',
-      note: 'Unlocks at Level 42!',
-    ),
-  ];
+  /// Dynamic unlock schedule merging the 4 fixed campaign mechanics
+  /// (`ice: 7`, `dud: 14`, `arrows: 22`, `pinned: 42`) with Remote Config's
+  /// `booster_unlock_order` (default: `pu_level_up: 17`, `pu_time_freeze: 27`).
+  static List<MechanicUnlockMilestone> get schedule {
+    final raw = <({
+      int unlockLevel,
+      int sortTieOrder,
+      String mechanicId,
+      String title,
+      String note,
+    })>[
+      const (
+        unlockLevel: 7,
+        sortTieOrder: 100,
+        mechanicId: 'ice',
+        title: 'Ice Blocks',
+        note: 'Unlocks at Level 7!',
+      ),
+      const (
+        unlockLevel: 14,
+        sortTieOrder: 101,
+        mechanicId: 'dud',
+        title: 'Stone Blocker',
+        note: 'Unlocks at Level 14!',
+      ),
+      const (
+        unlockLevel: 22,
+        sortTieOrder: 102,
+        mechanicId: 'arrows',
+        title: 'Arrow Block',
+        note: 'Unlocks at Level 22!',
+      ),
+      const (
+        unlockLevel: 42,
+        sortTieOrder: 103,
+        mechanicId: 'pinned',
+        title: 'Screwed Block',
+        note: 'Unlocks at Level 42!',
+      ),
+    ];
+
+    final boosters = RemoteConfigService.boosterUnlockOrder;
+    for (int i = 0; i < boosters.length; i++) {
+      final b = boosters[i];
+      raw.add((
+        unlockLevel: b.unlockLevel,
+        sortTieOrder: i, // Boosters keep their Remote Config order on ties
+        mechanicId: b.id,
+        title: b.type.displayTitle,
+        note: 'Booster unlocks at Level ${b.unlockLevel}!',
+      ));
+    }
+
+    raw.sort((a, b) {
+      final lvCmp = a.unlockLevel.compareTo(b.unlockLevel);
+      if (lvCmp != 0) return lvCmp;
+      return a.sortTieOrder.compareTo(b.sortTieOrder);
+    });
+
+    final result = <MechanicUnlockMilestone>[];
+    int prevStart = 1;
+    int prevUnlock = 1;
+    for (int i = 0; i < raw.length; i++) {
+      final item = raw[i];
+      final startLevel =
+          i == 0 ? 1 : (item.unlockLevel > prevUnlock ? prevUnlock : prevStart);
+      result.add(
+        MechanicUnlockMilestone(
+          startLevel: startLevel,
+          unlockLevel: item.unlockLevel,
+          mechanicId: item.mechanicId,
+          title: item.title,
+          note: item.note,
+        ),
+      );
+      if (item.unlockLevel > prevUnlock) {
+        prevStart = startLevel;
+        prevUnlock = item.unlockLevel;
+      }
+    }
+    return List<MechanicUnlockMilestone>.unmodifiable(result);
+  }
 }
 
 class MechanicUnlockProgressResult {

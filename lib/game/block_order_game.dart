@@ -675,6 +675,14 @@ class _SpotlightDimVeilComponent extends PositionComponent {
   }
 }
 
+class _HammerStrikeAnim {
+  final PieceComponent target;
+  final double impactTime = HammerSwingSmashVfx.impactTime;
+  double elapsed = 0.0;
+
+  _HammerStrikeAnim({required this.target});
+}
+
 class BlockOrderGame extends FlameGame with DragCallbacks {
   static const double _absorbDurationSeconds = 0.28;
 
@@ -685,6 +693,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   final VoidCallback onTimeExpired;
   final VoidCallback? onFirstAction;
   final ValueChanged<int>? onTutorialMergeStep;
+  final ValueChanged<bool>? onHammerApplied;
 
   LevelDefinition _level;
   LevelDefinition get currentLevel => _level;
@@ -693,6 +702,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   final ValueNotifier<double> timeFreezeNotifier = ValueNotifier<double>(0.0);
   final ValueNotifier<bool> isTimeFrozenNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<bool> canLevelUpNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> canShuffleNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> canHammerNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> isHammerTargetingNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<bool> isTimerStartedNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<double> winScreenFlashNotifier =
       ValueNotifier<double>(0.0);
@@ -810,9 +822,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   _MergeColorTransitionController? _candidateTransition;
   final List<_MergeColorTransitionController> _mergeTransitions = [];
 
-  // Active `0.28s` linear absorb & Level-Up flight animations
+  // Active `0.28s` linear absorb, Level-Up flight & Hammer strike animations
   final List<_AbsorbingMergeAnim> _absorbingAnims = [];
   _LevelUpFlightAnim? _levelUpFlight;
+  _HammerStrikeAnim? _hammerStrike;
+  bool _pendingHammerIsFree = false;
 
   BlockOrderGame({
     required LevelDefinition initialLevel,
@@ -823,6 +837,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     required this.onTimeExpired,
     this.onFirstAction,
     this.onTutorialMergeStep,
+    this.onHammerApplied,
   }) : _level = initialLevel {
     remainingSecondsNotifier.value = initialLevel.timeSeconds;
     isSpotlightTutorialActiveNotifier.value =
@@ -833,10 +848,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   Color backgroundColor() => const Color(0x00000000);
 
   bool get isBusyWithPowerUp =>
-      _levelUpFlight != null || isTimeFreezeIntroInFlight;
+      _levelUpFlight != null || _hammerStrike != null || isTimeFreezeIntroInFlight;
 
   bool get isResolving =>
       _levelUpFlight != null ||
+      _hammerStrike != null ||
       _absorbingAnims.isNotEmpty ||
       isTimeFreezeIntroInFlight;
 
@@ -867,6 +883,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     required bool modalPaused,
     required bool canSuspendBoard,
   }) {
+    if (modalPaused && isHammerTargetingNotifier.value) {
+      cancelHammerTargeting();
+    }
     isModalPaused = modalPaused;
     allowEngineSleepBehindModal = modalPaused && canSuspendBoard;
     if (!allowEngineSleepBehindModal && paused) {
@@ -1157,6 +1176,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _candidateTransition = null;
     _absorbingAnims.clear();
     _levelUpFlight = null;
+    _hammerStrike = null;
+    cancelHammerTargeting();
     _pendingNumberPrewarms.clear();
     if (_isReady && size.x > 10 && size.y > 10) {
       _buildLevelStage(preserveModels: false);
@@ -1584,7 +1605,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       !isModalPaused &&
       !_hasWon &&
       !_hasLost &&
-      _levelUpFlight == null;
+      _levelUpFlight == null &&
+      _hammerStrike == null;
 
   void _triggerBlockedPieceFeedback(PieceComponent piece) {
     if (_lastBlockedFeedbackPiece == piece &&
@@ -1647,6 +1669,18 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     final stagePos = _canvasToStage(event.canvasPosition);
     final hit = _hitTestPiece(stagePos);
+
+    if (isHammerTargetingNotifier.value) {
+      if (hit == null) return;
+      if (isValidHammerTarget(hit)) {
+        applyHammerToPiece(hit);
+      } else {
+        hit.triggerBlockedShake();
+        audio.hapticBlocked();
+      }
+      return;
+    }
+
     if (hit == null) return;
 
     if (!hit.model.canBeDragged ||
@@ -2648,7 +2682,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   /// 3. Absorbs `consumed` linearly over `0.28s` (`1 -> 0` scale) into `_nearestCellWorldPosition`
   ///    while keeping `_MergeOverlap` seam fusion active until `isAbsorbFinished`.
   /// 4. Spawns `MergeSplashVfx` along `OutlineEdgesTouching` + `0.10s`-delayed `MergeBlockSparksVfx`.
-  /// 5. Unlocks ONLY ice blocks whose target `== newNumber` (`0.3833s` badge `Pop` -> shatter -> `1.5x` shake).
+  /// 5. Unlocks ONLY ice blocks whose target `== newNumber` (`0.10s` badge `Pop` -> shatter -> `1.5x` shake).
   void _commitMerge({
     required PieceComponent dragged,
     required PieceComponent target,
@@ -2900,7 +2934,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
   /// Exact `IceComponent` rule (`target == mergedNumber`, NOT `<=`!):
   /// Clears `model.iceTarget = null` immediately in gameplay state while playing
-  /// `IceComponentView.PopThenBreakAsync` (`0.3833s` badge `Pop` -> shatter VFX & SFX -> `1.5x` shake).
+  /// `IceComponentView.PopThenBreakAsync` (`0.10s` badge `Pop` -> shatter VFX & SFX -> `1.5x` shake).
   void _unlockEligibleIceBlocks(int mergedNumber) {
     for (final p in _pieces) {
       if (p.isFlyingOrSwallowed) continue;
@@ -2961,11 +2995,379 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     return (candidates[0], candidates[1]);
   }
 
+  List<PieceComponent> _findShuffleEligiblePieces() {
+    final eligible = <PieceComponent>[];
+    for (final p in _pieces) {
+      if (p.isFlyingOrSwallowed) continue;
+      if (!p.model.isDud && !p.model.isFrozen && p.model.number != null) {
+        eligible.add(p);
+      }
+    }
+    return eligible;
+  }
+
+  bool get _hasValidShuffleMove {
+    final eligible = _findShuffleEligiblePieces();
+    if (eligible.length < 2) return false;
+    final firstNum = eligible.first.model.number;
+    for (int i = 1; i < eligible.length; i++) {
+      if (eligible[i].model.number != firstNum) return true;
+    }
+    return false;
+  }
+
+  /// Picks two valid `1x1` destination cells on the board for splitting [target] in half:
+  /// - Multi-cell blocks (`localCells.length >= 2`): chooses the 2 farthest cells inside
+  ///   [target]'s own footprint (always valid even on a 100% full board, and frees extra space!).
+  /// - `1x1` blocks (`localCells.length == 1`): keeps [target]'s own cell and pairs it with the
+  ///   nearest empty non-wall cell (orthogonally adjacent -> diagonally adjacent -> nearest open cell).
+  (GridCell, GridCell)? _pickHammerSplitCells(PieceComponent target) {
+    final owned = target.model.worldCells.toList(growable: false);
+    if (owned.length >= 2) {
+      owned.sort((a, b) {
+        final rowCmp = a.$2.compareTo(b.$2);
+        return rowCmp != 0 ? rowCmp : a.$1.compareTo(b.$1);
+      });
+      GridCell bestA = owned.first;
+      GridCell bestB = owned.last;
+      int bestDistSq = -1;
+      for (int i = 0; i < owned.length; i++) {
+        for (int j = i + 1; j < owned.length; j++) {
+          final dx = owned[i].$1 - owned[j].$1;
+          final dy = owned[i].$2 - owned[j].$2;
+          final distSq = dx * dx + dy * dy;
+          if (distSq > bestDistSq) {
+            bestDistSq = distSq;
+            bestA = owned[i];
+            bestB = owned[j];
+          }
+        }
+      }
+      return (bestA, bestB);
+    }
+
+    if (owned.isEmpty) return null;
+    final cellA = owned.first;
+
+    final occupied = <GridCell>{};
+    for (final p in _pieces) {
+      if (identical(p, target) || p.isFlyingOrSwallowed) continue;
+      occupied.addAll(p.model.worldCells);
+    }
+
+    bool isOpenCell(int c, int r) {
+      if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) return false;
+      final g = (c, r);
+      if (g == cellA) return false;
+      if (_level.walls.contains(g)) return false;
+      if (occupied.contains(g)) return false;
+      return true;
+    }
+
+    const orthoDirs = <GridCell>[(1, 0), (-1, 0), (0, 1), (0, -1)];
+    for (final (dc, dr) in orthoDirs) {
+      if (isOpenCell(cellA.$1 + dc, cellA.$2 + dr)) {
+        return (cellA, (cellA.$1 + dc, cellA.$2 + dr));
+      }
+    }
+
+    const diagDirs = <GridCell>[(1, 1), (-1, 1), (1, -1), (-1, -1)];
+    for (final (dc, dr) in diagDirs) {
+      if (isOpenCell(cellA.$1 + dc, cellA.$2 + dr)) {
+        return (cellA, (cellA.$1 + dc, cellA.$2 + dr));
+      }
+    }
+
+    GridCell? nearest;
+    int bestDistSq = 1 << 30;
+    for (int r = 0; r < _gridRows; r++) {
+      for (int c = 0; c < _gridCols; c++) {
+        if (!isOpenCell(c, r)) continue;
+        final dx = c - cellA.$1;
+        final dy = r - cellA.$2;
+        final d2 = dx * dx + dy * dy;
+        if (d2 < bestDistSq) {
+          bestDistSq = d2;
+          nearest = (c, r);
+        }
+      }
+    }
+    return nearest != null ? (cellA, nearest) : null;
+  }
+
+  int _allocateNextPieceId() {
+    int maxId = 0;
+    for (final p in _pieces) {
+      if (p.model.id > maxId) maxId = p.model.id;
+    }
+    return maxId + 1;
+  }
+
+  /// Whether [p] can be split in half by `Hammer` into two `1x1` blocks of value `number ~/ 2`
+  /// (requires unfrozen numbered block `>= 4` with 2 valid `1x1` destination cells on the board,
+  /// conserving the exact power-of-2 sum with zero softlock!).
+  bool isValidHammerTarget(PieceComponent p) {
+    if (p.isFlyingOrSwallowed) return false;
+    final n = p.model.number;
+    if (n == null || p.model.isFrozen) return false;
+    if (n < 4 || n.isOdd) return false;
+    return _pickHammerSplitCells(p) != null;
+  }
+
+  bool get _hasValidHammerTarget => _pieces.any(isValidHammerTarget);
+
   void _refreshCanLevelUp() {
-    canLevelUpNotifier.value = !_hasWon &&
-        !_hasLost &&
-        _levelUpFlight == null &&
-        _findLowestMergeablePair() != null;
+    final active = !_hasWon && !_hasLost && _levelUpFlight == null && _hammerStrike == null;
+    canLevelUpNotifier.value = active && _findLowestMergeablePair() != null;
+    canShuffleNotifier.value = active && _hasValidShuffleMove;
+    canHammerNotifier.value = active && _hasValidHammerTarget;
+    if (isHammerTargetingNotifier.value && !canHammerNotifier.value) {
+      cancelHammerTargeting();
+    }
+  }
+
+  bool _piecesShareGridEdge(PieceComponent a, PieceComponent b) {
+    final cellsB = b.model.worldCells;
+    for (final (c, r) in a.model.worldCells) {
+      if (cellsB.contains((c + 1, r)) ||
+          cellsB.contains((c - 1, r)) ||
+          cellsB.contains((c, r + 1)) ||
+          cellsB.contains((c, r - 1))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Triggers the `Shuffle` Power-Up:
+  /// Smart-shuffles `number` values across unlocked numbered pieces (`!isDud && !isFrozen`)
+  /// preserving the exact multiset of numbers (zero softlock / zero polyomino overlap!)
+  /// while maximizing adjacent matching pairs so the player gets fresh immediate merges!
+  bool triggerShufflePowerUp() {
+    if (!_canInteract) return false;
+    final eligible = _findShuffleEligiblePieces();
+    if (eligible.length < 2) return false;
+
+    final original = <int>[for (final p in eligible) p.model.number!];
+    final distinctCount = original.toSet().length;
+    if (distinctCount < 2) return false;
+
+    if (paused) resumeEngine();
+    _cancelDrag(silent: true);
+    cancelHammerTargeting();
+    _notifyFirstAction();
+
+    // Precompute adjacency pairs among eligible pieces for O(1) candidate scoring
+    final adjPairs = <(int, int)>[];
+    for (int i = 0; i < eligible.length; i++) {
+      for (int j = i + 1; j < eligible.length; j++) {
+        if (_piecesShareGridEdge(eligible[i], eligible[j])) {
+          adjPairs.add((i, j));
+        }
+      }
+    }
+
+    final rng = math.Random();
+    List<int>? bestPerm;
+    int bestScore = -1000000;
+
+    for (int attempt = 0; attempt < 36; attempt++) {
+      final candidate = List<int>.from(original)..shuffle(rng);
+      int changed = 0;
+      for (int i = 0; i < candidate.length; i++) {
+        if (candidate[i] != original[i]) changed++;
+      }
+      if (changed < 2) continue;
+
+      int score = changed * 2;
+      for (final (i, j) in adjPairs) {
+        if (candidate[i] == candidate[j]) {
+          score += 12;
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestPerm = candidate;
+      }
+    }
+
+    // Deterministic fallback (e.g. 2-piece board `[2, 4]` -> `[4, 2]`)
+    if (bestPerm == null) {
+      bestPerm = List<int>.from(original);
+      for (int i = 1; i < bestPerm.length; i++) {
+        if (bestPerm[i] != bestPerm[0]) {
+          final tmp = bestPerm[0];
+          bestPerm[0] = bestPerm[i];
+          bestPerm[i] = tmp;
+          break;
+        }
+      }
+    }
+
+    for (int i = 0; i < eligible.length; i++) {
+      final p = eligible[i];
+      final nextNum = bestPerm[i];
+      p.model.number = nextNum;
+      final newStyle = palette.styleFor(number: nextNum, isFrozen: false);
+      p.triggerShuffleRefresh(newStyle: newStyle);
+      _pendingNumberPrewarms.add((p, nextNum * 2));
+      _addToBoardStage(
+        ShuffleSparkVfx(
+          centerPos: p.worldCenter,
+          accentColor: newStyle.topBright,
+          cellSize: _cellSize,
+        ),
+      );
+    }
+
+    audio.playPowerUpSelect();
+    audio.playAttract();
+    audio.hapticMergeImpact();
+    _refreshCanLevelUp();
+    return true;
+  }
+
+  /// Enters interactive `Hammer` targeting mode, highlighting every splittable block (`>= 4`)
+  /// on the board. Does NOT spend the booster until a valid target is tapped!
+  bool enterHammerTargeting({required bool isFree}) {
+    if (!_canInteract) return false;
+    if (!_hasValidHammerTarget) return false;
+    if (paused) resumeEngine();
+
+    _cancelDrag(silent: true);
+    _pendingHammerIsFree = isFree;
+    isHammerTargetingNotifier.value = true;
+    for (final p in _pieces) {
+      p.isHammerTargetHighlighted = isValidHammerTarget(p);
+    }
+    audio.playPowerUpSelect();
+    return true;
+  }
+
+  /// Exits `Hammer` targeting mode cleanly without spending a booster.
+  void cancelHammerTargeting() {
+    if (!isHammerTargetingNotifier.value && !_pendingHammerIsFree) return;
+    isHammerTargetingNotifier.value = false;
+    _pendingHammerIsFree = false;
+    for (final p in _pieces) {
+      p.isHammerTargetHighlighted = false;
+    }
+  }
+
+  /// Smashes [target] with the `Hammer` booster, splitting it in half into TWO `1x1` free blocks
+  /// of value `number ~/ 2` (conserving power-of-2 sum), invoking [onHammerApplied] to spend the booster.
+  bool applyHammerToPiece(PieceComponent target) {
+    if (!_canInteract || !isValidHammerTarget(target)) return false;
+    if (paused) resumeEngine();
+
+    final wasFree = _pendingHammerIsFree;
+    cancelHammerTargeting();
+    _cancelDrag(silent: true);
+    _notifyFirstAction();
+
+    final targetStyle = palette.styleFor(
+      number: target.model.number,
+      isFrozen: false,
+    );
+
+    _hammerStrike = _HammerStrikeAnim(target: target);
+    _addToBoardStage(
+      HammerSwingSmashVfx(
+        centerPos: target.worldCenter,
+        cellSize: _cellSize,
+        debrisPrimary: targetStyle.topBright,
+        debrisSecondary: targetStyle.rimHighlight,
+      ),
+    );
+
+    audio.playLevelUpArrow();
+    onHammerApplied?.call(wasFree);
+    _refreshCanLevelUp();
+    return true;
+  }
+
+  void _completeHammerStrike(_HammerStrikeAnim strike) {
+    _hammerStrike = null;
+    final target = strike.target;
+    if (!target.isMounted || target.isFlyingOrSwallowed) {
+      _refreshCanLevelUp();
+      return;
+    }
+
+    final originalNum = target.model.number;
+    final splitCells = _pickHammerSplitCells(target);
+    if (originalNum == null ||
+        originalNum < 4 ||
+        originalNum.isOdd ||
+        splitCells == null) {
+      _refreshCanLevelUp();
+      return;
+    }
+
+    final halfNum = originalNum ~/ 2;
+    final originCenter = target.worldCenter.clone();
+    final (cellA, cellB) = splitCells;
+    final baseId = _allocateNextPieceId();
+    final baseKey = target.model.key;
+
+    // Remove smashed parent piece and spawn TWO fresh 1x1 half-value free blocks!
+    _pieces.remove(target);
+    target.isSuperseded = true;
+    target.removeFromParent();
+
+    final halfStyle = palette.styleFor(number: halfNum, isFrozen: false);
+    final spawnedSpecs = <(int, String, GridCell)>[
+      (baseId, '${baseKey}_h1', cellA),
+      (baseId + 1, '${baseKey}_h2', cellB),
+    ];
+
+    for (final (pieceId, pieceKey, cell) in spawnedSpecs) {
+      final halfModel = PieceModel(
+        id: pieceId,
+        key: pieceKey,
+        col: cell.$1,
+        row: cell.$2,
+        localCells: const [(0, 0)],
+        number: halfNum,
+        movement: MovementConstraint.free,
+      );
+      final halfComp = PieceComponent(
+        model: halfModel,
+        cellSize: _cellSize,
+        palette: palette,
+        visualSettings: visualSettings,
+        boardOrigin: _boardOrigin,
+      );
+      _pieces.add(halfComp);
+      _addToBoardStage(halfComp);
+      _syncPieceRestPriority(halfComp);
+      halfComp.triggerHammerSplitSpawn(fromCenter: originCenter);
+      _pendingNumberPrewarms.add((halfComp, originalNum));
+      _addToBoardStage(
+        ShuffleSparkVfx(
+          centerPos: Vector2(
+            _boardOrigin.x + (cell.$1 + 0.5) * _cellSize,
+            _boardOrigin.y + (cell.$2 + 0.5) * _cellSize,
+          ),
+          accentColor: halfStyle.topBright,
+          cellSize: _cellSize,
+        ),
+      );
+    }
+
+    _syncOccupancyGrid();
+    audio.playIceBreak();
+    audio.hapticMergeImpact();
+
+    // Punchy micro board shake on hammer slam!
+    _mergeImpactShakeElapsed = 0.0;
+    _mergeImpactShakeDuration = 0.22;
+    _mergeImpactShakeAmpPx = _cellSize * 0.036;
+    _mergeImpactZoomPunch = 0.014;
+
+    _refreshCanLevelUp();
+    _checkWinCondition();
+    _syncSpotlightTutorialState();
   }
 
   /// Triggers the `Level Up` Power-Up (`LevelUpVisualConfig.json`).
@@ -2976,6 +3378,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (paused) resumeEngine();
 
     _cancelDrag(silent: true);
+    cancelHammerTargeting();
     _notifyFirstAction();
 
     final (spent, kept) = pair;
@@ -3036,6 +3439,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
     if (numberedRemaining <= 1) {
+      cancelHammerTargeting();
       _hasWon = true;
       _winZoomTimer = 0.0;
       _winSequenceElapsed = 0.0;
@@ -3464,6 +3868,15 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
 
+    // 6b. `Hammer` Power-Up strike timing (`0.14s` swing -> obstacle smash!)
+    final hammer = _hammerStrike;
+    if (hammer != null) {
+      hammer.elapsed += clampedDt;
+      if (hammer.elapsed >= hammer.impactTime) {
+        _completeHammerStrike(hammer);
+      }
+    }
+
     // 7. Countdown Timer, Time Freeze (`GameplayTimer.IsStarted`), & Merge Combo Window (`3.5s`)
     if (!isModalPaused &&
         !isTimeFreezeIntroInFlight &&
@@ -3495,6 +3908,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
             remainingSecondsNotifier.value = nextVal;
             if (nextVal <= 0 && !_hasWon && !_hasLost) {
               _hasLost = true;
+              cancelHammerTargeting();
               _resetComboState();
               _cancelDrag(silent: true);
               _refreshCanLevelUp();
@@ -3606,6 +4020,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _cancelDrag(silent: true);
     _absorbingAnims.clear();
     _levelUpFlight = null;
+    _hammerStrike = null;
+    cancelHammerTargeting();
     isTimeFreezeIntroInFlight = false;
 
     PieceComponent? survivor;

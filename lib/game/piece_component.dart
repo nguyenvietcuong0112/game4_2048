@@ -341,7 +341,7 @@ class PieceComponent extends PositionComponent {
   BlockColorStyle? _shrinkingScrewStyle;
   double _screwShrinkTimer = -1.0;
 
-  // `IceComponentView` (`FaceCover` + `0.3833s` `"Pop"` clip -> `BreakIce` -> `1.5x` Shake)
+  // `IceComponentView` (`FaceCover` + snappy `0.10s` `"Pop"` -> `BreakIce` -> `1.5x` Shake)
   bool _isIceCovered = false;
   int? _displayIceTarget;
   double _icePopTimer = -1.0;
@@ -355,6 +355,7 @@ class PieceComponent extends PositionComponent {
   bool isFlyingOrSwallowed = false;
   bool isSpotlightHighlighted = false;
   bool isElevatedForSpotlight = false;
+  bool isHammerTargetHighlighted = false;
   Path? _cachedSpotlightOutlinePath;
   double visualScale = 1.0;
   double visualScaleXMultiplier = 1.0;
@@ -838,6 +839,9 @@ class PieceComponent extends PositionComponent {
   // --- PieceFollow Movement & Drag API ---
 
   void beginDragging() {
+    if (_icePopTimer >= 0) {
+      _completeIceBreakNow();
+    }
     isDragging = true;
     _followState = _FollowState.dragging;
     _allowsDragH = model.movement.allowsHorizontal;
@@ -1275,12 +1279,42 @@ class PieceComponent extends PositionComponent {
     }
   }
 
-  // --- IceComponentView `PopThenBreakAsync` (`0.3833s` Pop -> BreakIce -> `1.5x` Shake) ---
+  // --- IceComponentView `PopThenBreakAsync` (`0.10s` Pop -> BreakIce -> `1.5x` Shake) ---
 
   void beginIceUnlockSequence({required VoidCallback onShatter}) {
     if (!_isIceCovered) return;
     _onIceShatterCallback = onShatter;
     _icePopTimer = 0.0;
+  }
+
+  /// Plays a lively split-apart pop animation when spawned by the `Hammer` booster!
+  void triggerHammerSplitSpawn({required Vector2 fromCenter}) {
+    final destOrigin = targetWorldOriginForGrid(model.col, model.row);
+    final startOrigin = fromCenter - Vector2(cellSize * 0.5, cellSize * 0.5);
+    position.setValues(
+      ui.lerpDouble(destOrigin.x, startOrigin.x, 0.58)!,
+      ui.lerpDouble(destOrigin.y, startOrigin.y, 0.58)!,
+    );
+    _visualGridPos.setValues(
+      (position.x - boardOrigin.x) / cellSize,
+      (position.y - boardOrigin.y) / cellSize,
+    );
+    beginSnapping(destOrigin);
+    _mergePulseDuration = 0.24;
+    _mergePulsePeakScale = 1.18;
+    _mergePulseCurve = visualSettings.mergeSurvivorStaysPulseCurve;
+    _mergePulseElapsed = 0.0;
+    levelUpTargetGlow = 0.85;
+    _sandReformFlash = 0.88;
+    _waterSloshVel = 8.0;
+  }
+
+  /// Plays a lively squash-pop + glow + water slosh when `Shuffle` reassigns this piece's number.
+  void triggerShuffleRefresh({required BlockColorStyle newStyle}) {
+    _displayedAppearanceStyle = newStyle;
+    levelUpTargetGlow = 0.85;
+    _sandReformFlash = 0.82;
+    triggerTapSquish();
   }
 
   void _completeIceBreakNow() {
@@ -1299,17 +1333,19 @@ class PieceComponent extends PositionComponent {
 
   double get _currentIceBadgePopScale {
     if (_icePopTimer < 0) return 1.0;
-    final t = _icePopTimer;
+    const dur = UnityComponentVisualConfig.icePopClipDuration;
+    if (dur <= 1e-4) return 1.0;
+    final p = (_icePopTimer / dur).clamp(0.0, 1.0);
     const peak = UnityComponentVisualConfig.icePopPeakScale; // 1.62907
-    if (t <= 0.25) {
-      final u = (t / 0.25).clamp(0.0, 1.0);
+    if (p <= 0.65) {
+      final u = (p / 0.65).clamp(0.0, 1.0);
       final eased = 1.0 - (1.0 - u) * (1.0 - u);
       return ui.lerpDouble(1.0, peak, eased)!;
     }
-    if (t <= 0.33333333) {
+    if (p <= 0.87) {
       return peak;
     }
-    final u = ((t - 0.33333333) / 0.05).clamp(0.0, 1.0);
+    final u = ((p - 0.87) / 0.13).clamp(0.0, 1.0);
     return ui.lerpDouble(peak, 1.0, u)!;
   }
 
@@ -1736,6 +1772,9 @@ class PieceComponent extends PositionComponent {
         if (isSpotlightHighlighted) {
           _drawSpotlightWhiteHighlightBorder(canvas, 0.0, Offset.zero);
         }
+        if (isHammerTargetHighlighted) {
+          _drawHammerTargetHighlightBorder(canvas, 0.0, Offset.zero);
+        }
         return;
       }
     }
@@ -2068,6 +2107,12 @@ class PieceComponent extends PositionComponent {
       _drawSpotlightWhiteHighlightBorder(canvas, liftPx, topJellyShift);
     }
 
+    if (isHammerTargetHighlighted &&
+        !_isBakingGlassShellOnly &&
+        !_areComponentsRemovedForAbsorb) {
+      _drawHammerTargetHighlightBorder(canvas, liftPx, topJellyShift);
+    }
+
     if (visualOpacity < 0.999) {
       canvas.restore();
     }
@@ -2107,6 +2152,44 @@ class PieceComponent extends PositionComponent {
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = strokeW
         ..color = Colors.white.withValues(alpha: (0.96 * pulse).clamp(0.0, 1.0)),
+    );
+    canvas.restore();
+  }
+
+  /// Pulsing golden-orange outer highlight around valid obstacle targets during `Hammer` targeting mode.
+  void _drawHammerTargetHighlightBorder(
+    Canvas canvas,
+    double liftPx,
+    Offset topShift,
+  ) {
+    final fullSilhouette = _cachedSpotlightOutlinePath ??= Path.combine(
+      PathOperation.union,
+      _topPath,
+      _topPath.shift(Offset(0, _lipDepth)),
+    );
+    final pulse = 0.78 + 0.22 * math.sin(_sandShimmerClock * 7.5);
+    final strokeW = (cellSize * 0.056).clamp(2.8, 6.2);
+
+    canvas.save();
+    canvas.translate(topShift.dx * 0.5, -liftPx + topShift.dy * 0.5);
+    canvas.drawPath(
+      fullSilhouette,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = strokeW * 2.5
+        ..color = const Color(0xFFFF9500)
+            .withValues(alpha: (0.42 * pulse).clamp(0.0, 1.0))
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, strokeW * 1.25),
+    );
+    canvas.drawPath(
+      fullSilhouette,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = strokeW
+        ..color = const Color(0xFFFFE14D)
+            .withValues(alpha: (0.98 * pulse).clamp(0.0, 1.0)),
     );
     canvas.restore();
   }
@@ -3836,7 +3919,7 @@ class PieceComponent extends PositionComponent {
 
   /// Authentic `IceCountBadge` (`IceMechanicView.prefab` & reworked `IceLock.png`):
   /// Reworked glossy `IceLock.png` (`159x189`) + crisp solid `#122E7A` `PoetsenOne` digits,
-  /// animated by the 23-frame `0.3833s` `"Pop"` clip (`1.0 -> 1.62907 -> 1.0`) before shattering!
+  /// animated by the snappy `0.10s` `"Pop"` clip (`1.0 -> 1.62907 -> 1.0`) before shattering!
   void _drawFrozenLockBadge(Canvas canvas, int targetNum) {
     final (spanCx, spanCy) = model.spanCenterInCells();
     final rawCenter = model.coversLabel(spanCx, spanCy)
@@ -3849,10 +3932,12 @@ class PieceComponent extends PositionComponent {
         lockImg != null ? (lockImg.width / lockImg.height) : (159.0 / 189.0);
     final badgeH = cellSize * 0.72;
     final badgeW = badgeH * aspect;
+    final popScale = _currentIceBadgePopScale;
+    final lockPopScale = 1.0 + (popScale - 1.0) * 0.42;
     final dst = Rect.fromCenter(
       center: badgeCenter,
-      width: badgeW,
-      height: badgeH,
+      width: badgeW * lockPopScale,
+      height: badgeH * lockPopScale,
     );
 
     if (lockImg != null) {
@@ -3878,8 +3963,8 @@ class PieceComponent extends PositionComponent {
                 ? 0.184
                 : 0.148);
 
-    final popScale = _currentIceBadgePopScale;
-    final textCenter = Offset(badgeCenter.dx, badgeCenter.dy + badgeH * 0.10);
+    final textCenter =
+        Offset(badgeCenter.dx, badgeCenter.dy + badgeH * 0.10 * lockPopScale);
 
     canvas.save();
     canvas.translate(textCenter.dx, textCenter.dy);

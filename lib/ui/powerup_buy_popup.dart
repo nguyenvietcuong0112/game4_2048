@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 import '../services/remote_config_service.dart';
+import 'mechanic_unlock_dialog.dart';
 import 'unity_ui_kit.dart';
 
 /// Exact 1:1 replica of Unity `PowerUpBuyView.prefab`:
 /// - Fullscreen `#0F204A` (`98%` alpha = `0xFA0F204A`) dark backdrop (NO white popup cards!)
 /// - Elevated top-left `CoinsWidget` (`CurrencyBar.ShowCoinsOnPopupLayer`)
 /// - Full-width `Ribbon` (`Banner.png`, `height = 312.19`) containing BOTH uppercase title
-///   (`"LEVEL UP"` / `"TIME FREEZE"`, `fontSize = 90.5`) AND description (`fontSize = 48.0`)
-///   plus top-right `Button_Close.png` (`123.22 x 124.25`)
+///   (`"LEVEL UP"` / `"TIME FREEZE"` / `"SHUFFLE"` / `"HAMMER"`, `fontSize = 90.5`) AND description
+///   (`fontSize = 48.0`) plus top-right `Button_Close.png` (`123.22 x 124.25`)
 /// - Side-by-side horizontal offer row:
 ///   - Left `CoinPurchasePanel`: green `Glow_02` aura, large icon + floating `'x3'` (`fontSize = 118`),
-///     2-line `Button_CTA.png` / `Button_CTA_Disabled.png` (`414.3 x 192.7`) with `"Buy"` on top and
-///     `Inset_Button_CTA.png` (`Icon_Coin.png` + `600` / `450`) below
+///     2-line `Button_CTA.png` (`414.3 x 192.7`) with `"Buy"` on top and coin price below
 ///   - Right `AdsPurchasePanel`: cyan `Glow_02` aura, large icon + floating `'x1'` (`fontSize = 118`),
 ///     `Button_Blue.png` (`416.7 x 192.7`) with `Icon_Ad.png` + `"Watch"`
 class PowerUpBuyPopup extends StatelessWidget {
+  final BoosterType? boosterType;
   final bool isLevelUp;
   final int playerCoins;
   final int? packCost;
@@ -25,7 +26,8 @@ class PowerUpBuyPopup extends StatelessWidget {
 
   const PowerUpBuyPopup({
     super.key,
-    required this.isLevelUp,
+    this.boosterType,
+    this.isLevelUp = true,
     required this.playerCoins,
     this.packCost,
     required this.onBuyPack,
@@ -34,19 +36,15 @@ class PowerUpBuyPopup extends StatelessWidget {
     required this.onClose,
   });
 
+  BoosterType get resolvedBoosterType =>
+      boosterType ?? (isLevelUp ? BoosterType.levelUp : BoosterType.timeFreeze);
+
   @override
   Widget build(BuildContext context) {
-    final resolvedCost = packCost ??
-        (isLevelUp
-            ? RemoteConfigService.boosterLevelUpPrice
-            : RemoteConfigService.boosterTimeFreezePrice);
-    final title = isLevelUp ? 'LEVEL UP' : 'TIME FREEZE';
-    final description = isLevelUp
-        ? 'Merge a matching pair instantly, wherever they are!'
-        : 'Freezes the timer for 20 seconds';
-    final iconAsset = isLevelUp
-        ? 'assets/images/PowerUp_LevelUp.png'
-        : 'assets/images/PowerUp_TimeFreeze.png';
+    final type = resolvedBoosterType;
+    final resolvedCost = packCost ?? RemoteConfigService.priceForBooster(type);
+    final title = type.uppercaseTitle;
+    final description = type.description;
     final canAfford = playerCoins >= resolvedCost;
 
     return TweenAnimationBuilder<double>(
@@ -148,11 +146,10 @@ class PowerUpBuyPopup extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          // Left: `CoinPurchasePanel` (`x3` + Green `Buy` + `600` / `450` Coin Inset)
+                          // Left: `CoinPurchasePanel` (`x3` + Green `Buy` + Coin Inset)
                           Expanded(
                             child: _PowerUpOfferColumn(
-                              iconAsset: iconAsset,
-                              isLevelUp: isLevelUp,
+                              boosterType: type,
                               amountText: 'x3',
                               glowColor: const Color(0xCC15D334),
                               button: _PowerUpStackedBuyButton(
@@ -170,8 +167,7 @@ class PowerUpBuyPopup extends StatelessWidget {
                           // Right: `AdsPurchasePanel` (`x1` + Blue `Icon_Ad` + `Watch`)
                           Expanded(
                             child: _PowerUpOfferColumn(
-                              iconAsset: iconAsset,
-                              isLevelUp: isLevelUp,
+                              boosterType: type,
                               amountText: 'x1',
                               glowColor: const Color(0xCC15D3D3),
                               button: _PowerUpWatchAdButton(
@@ -194,15 +190,13 @@ class PowerUpBuyPopup extends StatelessWidget {
 }
 
 class _PowerUpOfferColumn extends StatelessWidget {
-  final String iconAsset;
-  final bool isLevelUp;
+  final BoosterType boosterType;
   final String amountText;
   final Color glowColor;
   final Widget button;
 
   const _PowerUpOfferColumn({
-    required this.iconAsset,
-    required this.isLevelUp,
+    required this.boosterType,
     required this.amountText,
     required this.glowColor,
     required this.button,
@@ -210,7 +204,7 @@ class _PowerUpOfferColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconSize = isLevelUp ? 168.0 : 174.0;
+    final iconSize = boosterType == BoosterType.levelUp ? 168.0 : 174.0;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -234,11 +228,9 @@ class _PowerUpOfferColumn extends StatelessWidget {
                 height: ux(context, 272),
                 fit: BoxFit.contain,
               ),
-              Image.asset(
-                iconAsset,
-                width: ux(context, iconSize),
-                height: ux(context, iconSize),
-                fit: BoxFit.contain,
+              BoosterIconWidget(
+                type: boosterType,
+                size: ux(context, iconSize),
               ),
               // Floating `'x3'` / `'x1'` at bottom-right
               Positioned(

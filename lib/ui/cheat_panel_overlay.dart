@@ -474,6 +474,14 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
                 onTap: () => _jumpToCampaignLevel(27),
               ),
               _CheatChip(
+                label: 'Lv 32 (Unlock Shuffle)',
+                onTap: () => _jumpToCampaignLevel(32),
+              ),
+              _CheatChip(
+                label: 'Lv 38 (Unlock Hammer)',
+                onTap: () => _jumpToCampaignLevel(38),
+              ),
+              _CheatChip(
                 label: 'Lv 50',
                 onTap: () => _jumpToCampaignLevel(50),
               ),
@@ -660,7 +668,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
     final p = widget.progress;
     return _CheatSectionCard(
       title:
-          '4. Economy (Coins: ${p.coins} | LvUp: ${p.levelUpCount} | Freeze: ${p.timeFreezeCount} | Lives: ${p.lives})',
+          '4. Economy (Coins: ${p.coins} | LvUp: ${p.levelUpCount} | Freeze: ${p.timeFreezeCount} | Shuf: ${p.shuffleCount} | Ham: ${p.hammerCount} | Lives: ${p.lives})',
       child: Wrap(
         spacing: ux(context, 14),
         runSpacing: ux(context, 14),
@@ -688,12 +696,19 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
             onTap: () => p.cheatSetPowerUps(
               levelUp: p.levelUpCount + 5,
               timeFreeze: p.timeFreezeCount + 5,
+              shuffle: p.shuffleCount + 5,
+              hammer: p.hammerCount + 5,
             ),
           ),
           _CheatActionBtn(
             label: 'Boosters = 0',
             color: const Color(0xFF475569),
-            onTap: () => p.cheatSetPowerUps(levelUp: 0, timeFreeze: 0),
+            onTap: () => p.cheatSetPowerUps(
+              levelUp: 0,
+              timeFreeze: 0,
+              shuffle: 0,
+              hammer: 0,
+            ),
           ),
           _CheatActionBtn(
             label: 'Unlock All Boosters',

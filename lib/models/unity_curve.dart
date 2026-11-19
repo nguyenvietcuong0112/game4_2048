@@ -146,8 +146,9 @@ class UnityComponentVisualConfig {
   static const double arrowMargin = 0.05;
   static const double compactScale = 0.60;
 
-  // IceComponentView (`#-8943221095319416374`)
-  static const double icePopClipDuration = 0.38333333; // 23 frames @ 60fps
+  // IceComponentView (`#-8943221095319416374`) — tightened from 0.3833s to 0.10s
+  // so ice shatters right on the merge impact peak instead of lagging behind merge absorb.
+  static const double icePopClipDuration = 0.10; // ~6 frames @ 60fps
   static const double icePopPeakScale = 1.62907;
   static const double iceDamageShakeRangeMultiplier = 1.5;
 }

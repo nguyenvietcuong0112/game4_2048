@@ -121,7 +121,7 @@ class AudioHapticsService extends ChangeNotifier {
     'sfx_block_attract.wav': _SfxSpec(voices: 2, minGapMs: 75, gain: 0.95),
     'sfx_block_merge.wav': _SfxSpec(voices: 2, minGapMs: 45, gain: 0.85),
     'sfx_ice_break_small.wav': _SfxSpec(voices: 2, minGapMs: 95, gain: 0.68),
-    'sfx_ice_break_whole.wav': _SfxSpec(voices: 2, minGapMs: 80, gain: 0.60),
+    'sfx_ice_break_whole.wav': _SfxSpec(voices: 2, minGapMs: 80, gain: 0.68),
     'sfx_button_click.wav': _SfxSpec(voices: 2, minGapMs: 45, gain: 0.58),
     'sfx_pu_select.wav': _SfxSpec(voices: 1, minGapMs: 70, gain: 0.62),
     'sfx_levelup_arrow.wav': _SfxSpec(voices: 1, minGapMs: 60, gain: 1.00),

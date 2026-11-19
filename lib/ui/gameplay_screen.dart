@@ -63,7 +63,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool _showMoreLivesModal = false;
   bool _moreLivesPendingRetry = false;
   bool _heartSpentForCurrentAttempt = false;
-  bool? _buyPopupIsLevelUp; // null = closed, true = Level Up, false = Time Freeze
+  BoosterType? _buyPopupBooster; // null = closed, or active booster buy popup
   bool _settingsOpen = false;
   bool _cheatOpen = false;
   bool _hideCheatHudButton = false;
@@ -135,6 +135,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       onFirstAction: _handleFirstActionInAttempt,
       onLevelWon: _handleLevelWon,
       onTimeExpired: _handleTimeExpired,
+      onHammerApplied: _handleHammerApplied,
       onTutorialMergeStep: (step) {
         if (_shouldTrackFtueForLevel(_activeLevel) &&
             step > _lastLoggedTutMergeStep) {
@@ -150,6 +151,8 @@ class _GameplayScreenState extends State<GameplayScreen>
     _game.remainingSecondsNotifier.addListener(_syncLowTimerPulseTicker);
     _game.isTimeFrozenNotifier.addListener(_syncLowTimerPulseTicker);
     widget.progress.addListener(_syncLifeRegenTicker);
+    RemoteConfigService.boosterUnlockOrderNotifier
+        .addListener(_handleRemoteBoosterOrderChanged);
     _syncLowTimerPulseTicker();
     _syncLifeRegenTicker();
 
@@ -192,6 +195,8 @@ class _GameplayScreenState extends State<GameplayScreen>
     _lockedToastTimer?.cancel();
     _lifeRegenTimer?.cancel();
     widget.progress.removeListener(_syncLifeRegenTicker);
+    RemoteConfigService.boosterUnlockOrderNotifier
+        .removeListener(_handleRemoteBoosterOrderChanged);
     _game.remainingSecondsNotifier.removeListener(_syncLowTimerPulseTicker);
     _game.isTimeFrozenNotifier.removeListener(_syncLowTimerPulseTicker);
     _coinBounceCtrl.dispose();
@@ -273,7 +278,7 @@ class _GameplayScreenState extends State<GameplayScreen>
         _showLoseOverlay ||
         _showExitRestartPopup ||
         _showMoreLivesModal ||
-        _buyPopupIsLevelUp != null ||
+        _buyPopupBooster != null ||
         _settingsOpen ||
         _cheatOpen ||
         _activeMechanicModal != null;
@@ -281,7 +286,7 @@ class _GameplayScreenState extends State<GameplayScreen>
         (_showLoseOverlay && !_losePeekingBoard) ||
         _showExitRestartPopup ||
         _showMoreLivesModal ||
-        _buyPopupIsLevelUp != null ||
+        _buyPopupBooster != null ||
         _settingsOpen ||
         _cheatOpen;
     _game.setModalPauseState(
@@ -291,32 +296,55 @@ class _GameplayScreenState extends State<GameplayScreen>
     _syncLowTimerPulseTicker();
   }
 
+  double _boosterHudOffsetUnity(String powerUpId) {
+    final slot = RemoteConfigService.hudSlotIndexForBooster(powerUpId);
+    const offsets = UnityPowerUpHudButton.slotOffsetsUnity;
+    return offsets[slot.clamp(0, offsets.length - 1)];
+  }
+
+  void _handleRemoteBoosterOrderChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_activeMechanicModal == null &&
+        !_showWinOverlay &&
+        !_showLoseOverlay &&
+        !_showMoreLivesModal) {
+      _checkNewMechanicOrPowerUpUnlock(_activeLevel);
+    }
+  }
+
   void _checkNewMechanicOrPowerUpUnlock(LevelDefinition lv) {
     if (lv.isBonus) return;
     MechanicUnlockInfo? unlock;
-    if (lv.number == PlayerProgressService.levelUpUnlockLevel &&
-        !widget.progress
-            .hasSeenMechanic(MechanicUnlockInfo.levelUpPowerUp.id)) {
-      unlock = MechanicUnlockInfo.levelUpPowerUp;
-    } else if (lv.number == PlayerProgressService.timeFreezeUnlockLevel &&
-        !widget.progress
-            .hasSeenMechanic(MechanicUnlockInfo.timeFreezePowerUp.id)) {
-      unlock = MechanicUnlockInfo.timeFreezePowerUp;
-    } else if (lv.hasPinned &&
+    for (final entry in RemoteConfigService.boosterUnlockOrder) {
+      if (lv.number == entry.unlockLevel &&
+          !widget.progress.hasSeenMechanic(entry.id)) {
+        unlock = MechanicUnlockInfo.forBoosterType(entry.type);
+        break;
+      }
+    }
+    if (unlock == null &&
+        lv.hasPinned &&
         !widget.progress.hasSeenMechanic(MechanicUnlockInfo.pinned.id)) {
       unlock = MechanicUnlockInfo.pinned;
-    } else if (lv.hasArrows &&
+    } else if (unlock == null &&
+        lv.hasArrows &&
         !widget.progress.hasSeenMechanic(MechanicUnlockInfo.arrows.id)) {
       unlock = MechanicUnlockInfo.arrows;
-    } else if (lv.hasDud &&
+    } else if (unlock == null &&
+        lv.hasDud &&
         !widget.progress.hasSeenMechanic(MechanicUnlockInfo.dud.id)) {
       unlock = MechanicUnlockInfo.dud;
-    } else if (lv.hasIce &&
+    } else if (unlock == null &&
+        lv.hasIce &&
         !widget.progress.hasSeenMechanic(MechanicUnlockInfo.ice.id)) {
       unlock = MechanicUnlockInfo.ice;
     }
 
     if (unlock != null && mounted) {
+      if (unlock.isPowerUp) {
+        widget.progress.setFreePowerUpPending(unlock.id, true);
+      }
       AnalyticsService.logMechanicUnlock(mechanicId: unlock.id, level: lv.number);
       AnalyticsService.logPopupShow(name: 'mechanic_${unlock.id}', level: lv.number);
       setState(() {
@@ -345,7 +373,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _playOnsUsedInAttempt = 0;
       _showExitRestartPopup = false;
       _heartSpentForCurrentAttempt = false;
-      _buyPopupIsLevelUp = null;
+      _buyPopupBooster = null;
       _settingsOpen = false;
       _cheatOpen = false;
       _activeMechanicModal = null;
@@ -411,7 +439,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _settingsOpen = false;
       _cheatOpen = false;
       _showExitRestartPopup = false;
-      _buyPopupIsLevelUp = null;
+      _buyPopupBooster = null;
       _syncGamePauseState();
     });
   }
@@ -432,7 +460,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _settingsOpen = false;
       _cheatOpen = false;
       _showExitRestartPopup = false;
-      _buyPopupIsLevelUp = null;
+      _buyPopupBooster = null;
       _syncGamePauseState();
     });
   }
@@ -464,6 +492,33 @@ class _GameplayScreenState extends State<GameplayScreen>
       levelNumber: currentLv,
       onCompleted: _advanceAfterWinExit,
     );
+  }
+
+  Future<int> _handleMilestoneRewardX2Ad() async {
+    int stagedCoins = 0;
+    await AdsManager.showRewardedAd(
+      placement: 'flower_bloom_x2',
+      levelNumber: _activeLevel.number,
+      onAdFailed: _handleRewardedAdFailed,
+      onRewardResult: (success) {
+        if (success && mounted) {
+          widget.audio.playClick();
+          stagedCoins =
+              widget.progress.stageCurrentVaseMilestoneClaim(multiplier: 2);
+          if (stagedCoins > 0) {
+            AnalyticsService.logEarnResource(
+              level: _activeLevel.number,
+              type: 'currency',
+              name: 'coins',
+              amount: stagedCoins.toDouble(),
+              reason: 'flower_bloom_x2_ad',
+              balance: (widget.progress.coins + stagedCoins).toDouble(),
+            );
+          }
+        }
+      },
+    );
+    return stagedCoins;
   }
 
   Future<bool> _handleWinRewardX2Ad() async {
@@ -751,6 +806,12 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool get _isTimeFreezeUnlocked =>
       widget.progress.isTimeFreezeUnlockedForLevel(_activeLevel.number);
 
+  bool get _isShuffleUnlocked =>
+      widget.progress.isShuffleUnlockedForLevel(_activeLevel.number);
+
+  bool get _isHammerUnlocked =>
+      widget.progress.isHammerUnlockedForLevel(_activeLevel.number);
+
   void _showGameplayToast(String message, {bool blockedHaptic = true}) {
     if (blockedHaptic) {
       widget.audio.hapticBlocked();
@@ -810,15 +871,19 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
     _clearBoosterArrowHint(MechanicUnlockInfo.levelUpPowerUp.id);
     if (_game.isResolving) return;
+    _game.cancelHammerTargeting();
 
     final isFree = fromFtue ||
         widget.progress
             .isFreePowerUpPending(MechanicUnlockInfo.levelUpPowerUp.id);
     if (!isFree && widget.progress.levelUpCount <= 0) {
       widget.audio.playClick();
-      AnalyticsService.logPopupShow(name: 'buy_level_up', level: _activeLevel.number);
+      AnalyticsService.logPopupShow(
+        name: 'buy_level_up',
+        level: _activeLevel.number,
+      );
       setState(() {
-        _buyPopupIsLevelUp = true;
+        _buyPopupBooster = BoosterType.levelUp;
         _syncGamePauseState();
       });
       return;
@@ -861,15 +926,19 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
     _clearBoosterArrowHint(MechanicUnlockInfo.timeFreezePowerUp.id);
     if (_game.isResolving) return;
+    _game.cancelHammerTargeting();
 
     final isFree = fromFtue ||
         widget.progress
             .isFreePowerUpPending(MechanicUnlockInfo.timeFreezePowerUp.id);
     if (!isFree && widget.progress.timeFreezeCount <= 0) {
       widget.audio.playClick();
-      AnalyticsService.logPopupShow(name: 'buy_time_freeze', level: _activeLevel.number);
+      AnalyticsService.logPopupShow(
+        name: 'buy_time_freeze',
+        level: _activeLevel.number,
+      );
       setState(() {
-        _buyPopupIsLevelUp = false;
+        _buyPopupBooster = BoosterType.timeFreeze;
         _syncGamePauseState();
       });
       return;
@@ -897,6 +966,115 @@ class _GameplayScreenState extends State<GameplayScreen>
 
     widget.audio.playPowerUpSelect();
     _runTimeFreezeIntroAndEngage(allowBeforeTimerStarted: true);
+  }
+
+  /// Smart Shuffle booster (`pu_shuffle`):
+  /// Shuffles `number` values across unlocked numbered blocks (conserving exact multiset
+  /// with zero polyomino overlap / zero softlock!) to create fresh adjacent merges.
+  void _handleShuffleTap({bool fromFtue = false}) {
+    if (!_isShuffleUnlocked) {
+      _showLockedBoosterToast(PlayerProgressService.shuffleUnlockLevel);
+      return;
+    }
+    _clearBoosterArrowHint(MechanicUnlockInfo.shufflePowerUp.id);
+    if (_game.isResolving) return;
+    _game.cancelHammerTargeting();
+
+    final isFree = fromFtue ||
+        widget.progress
+            .isFreePowerUpPending(MechanicUnlockInfo.shufflePowerUp.id);
+    if (!isFree && widget.progress.shuffleCount <= 0) {
+      widget.audio.playClick();
+      AnalyticsService.logPopupShow(
+        name: 'buy_shuffle',
+        level: _activeLevel.number,
+      );
+      setState(() {
+        _buyPopupBooster = BoosterType.shuffle;
+        _syncGamePauseState();
+      });
+      return;
+    }
+
+    if (!_game.canShuffleNotifier.value) {
+      _showGameplayToast('Need at least 2 different unlocked blocks!');
+      return;
+    }
+
+    if (_game.triggerShufflePowerUp()) {
+      if (isFree) {
+        widget.progress
+            .consumeFreePowerUp(MechanicUnlockInfo.shufflePowerUp.id);
+      } else {
+        widget.progress.consumeShuffle();
+      }
+      AnalyticsService.logSpendResource(
+        level: _activeLevel.number,
+        type: 'booster',
+        name: 'shuffle',
+        amount: 1,
+        reason: 'gameplay',
+        balance: widget.progress.shuffleCount.toDouble(),
+      );
+    }
+  }
+
+  /// Obstacle Breaker Hammer booster (`pu_hammer`):
+  /// Enters targeting mode highlighting every smashable obstacle (`Ice`, `Dud`, `Pinned`, `Arrows`).
+  /// Only consumes the booster (or `FREE` turn) once the player taps a valid obstacle!
+  void _handleHammerTap({bool fromFtue = false}) {
+    if (!_isHammerUnlocked) {
+      _showLockedBoosterToast(PlayerProgressService.hammerUnlockLevel);
+      return;
+    }
+    _clearBoosterArrowHint(MechanicUnlockInfo.hammerPowerUp.id);
+    if (_game.isResolving) return;
+
+    if (_game.isHammerTargetingNotifier.value) {
+      widget.audio.playClick();
+      _game.cancelHammerTargeting();
+      return;
+    }
+
+    final isFree = fromFtue ||
+        widget.progress
+            .isFreePowerUpPending(MechanicUnlockInfo.hammerPowerUp.id);
+    if (!isFree && widget.progress.hammerCount <= 0) {
+      widget.audio.playClick();
+      AnalyticsService.logPopupShow(
+        name: 'buy_hammer',
+        level: _activeLevel.number,
+      );
+      setState(() {
+        _buyPopupBooster = BoosterType.hammer;
+        _syncGamePauseState();
+      });
+      return;
+    }
+
+    if (!_game.canHammerNotifier.value) {
+      _showGameplayToast('No blocks can be split right now!');
+      return;
+    }
+
+    _game.enterHammerTargeting(isFree: isFree);
+  }
+
+  void _handleHammerApplied(bool wasFree) {
+    if (!mounted) return;
+    if (wasFree) {
+      widget.progress.consumeFreePowerUp(MechanicUnlockInfo.hammerPowerUp.id);
+    } else {
+      widget.progress.consumeHammer();
+    }
+    AnalyticsService.logSpendResource(
+      level: _activeLevel.number,
+      type: 'booster',
+      name: 'hammer',
+      amount: 1,
+      reason: 'gameplay',
+      balance: widget.progress.hammerCount.toDouble(),
+    );
   }
 
   void _runTimeFreezeIntroAndEngage({required bool allowBeforeTimerStarted}) {
@@ -928,24 +1106,37 @@ class _GameplayScreenState extends State<GameplayScreen>
     });
   }
 
-  void _handleFeatureUnlockClaim({required int multiplier}) {
-    final modal = _activeMechanicModal;
-    if (modal == null || !modal.isPowerUp) return;
-    final reward = modal.unlockRewardCount * multiplier;
-    widget.audio.playCoinCollect();
-    widget.progress.grantPowerUpById(modal.id, count: reward);
-    AnalyticsService.logEarnResource(
-      level: _activeLevel.number,
-      type: 'booster',
-      name: modal.analyticsName,
-      amount: reward.toDouble(),
-      reason: multiplier > 1 ? 'feature_unlock_x2_ad' : 'feature_unlock_claim',
-      balance: widget.progress.powerUpCountById(modal.id).toDouble(),
-    );
+  void _handleActivatePowerUpFromUnlockOverlay(MechanicUnlockInfo modal) {
+    final type = modal.boosterType ??
+        (modal.isLevelUpPowerUp ? BoosterType.levelUp : BoosterType.timeFreeze);
     widget.progress.markMechanicSeen(modal.id);
     setState(() {
       _activeMechanicModal = null;
-      _activeBoosterArrowHint = modal;
+      _activeBoosterArrowHint = null;
+      _syncGamePauseState();
+    });
+    switch (type) {
+      case BoosterType.levelUp:
+        _handleLevelUpTap(fromFtue: true);
+      case BoosterType.timeFreeze:
+        _handleTimeFreezeTap(fromFtue: true);
+      case BoosterType.shuffle:
+        _handleShuffleTap(fromFtue: true);
+      case BoosterType.hammer:
+        _handleHammerTap(fromFtue: true);
+    }
+  }
+
+  void _dismissBoosterUnlockKeepFree() {
+    final modal = _activeMechanicModal;
+    if (modal == null || !modal.isPowerUp) return;
+    widget.audio.playClick();
+    // Keep the granted 1 FREE booster turn pending on the HUD if the user clicks outside.
+    widget.progress.setFreePowerUpPending(modal.id, true);
+    widget.progress.markMechanicSeen(modal.id);
+    setState(() {
+      _activeMechanicModal = null;
+      _activeBoosterArrowHint = null;
       _syncGamePauseState();
     });
   }
@@ -957,7 +1148,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     widget.progress.markMechanicSeen(modal.id);
     setState(() {
       _activeMechanicModal = null;
-      _activeBoosterArrowHint = modal.isPowerUp ? modal : null;
+      _activeBoosterArrowHint = null;
       _syncGamePauseState();
     });
   }
@@ -995,7 +1186,7 @@ class _GameplayScreenState extends State<GameplayScreen>
         !_activeLevel.isBonus && _activeLevel.number == 1;
     final hideBaseCoins = _showWinOverlay ||
         (_showLoseOverlay && !_loseInFailedStage) ||
-        _buyPopupIsLevelUp != null ||
+        _buyPopupBooster != null ||
         _showMoreLivesModal;
 
     return Scaffold(
@@ -1205,7 +1396,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                     alignment: Alignment.bottomCenter,
                     clipBehavior: Clip.none,
                     children: [
-                      // Left Power-Up (`LevelUp` at `X = -135` Unity px)
+                      // Power-Up 1 (`LevelUp`, HUD slot follows `RemoteConfigService.boosterUnlockOrder`)
                       Positioned(
                         bottom: safePadding.bottom +
                             ux(
@@ -1216,23 +1407,21 @@ class _GameplayScreenState extends State<GameplayScreen>
                           listenable: Listenable.merge([
                             widget.progress,
                             _game.canLevelUpNotifier,
+                            RemoteConfigService.boosterUnlockOrderNotifier,
                           ]),
                           builder: (context, _) {
                             final isFree =
                                 widget.progress.isFreePowerUpPending(
                               MechanicUnlockInfo.levelUpPowerUp.id,
                             );
+                            final offsetX = _boosterHudOffsetUnity(
+                              MechanicUnlockInfo.levelUpPowerUp.id,
+                            );
                             return Transform.translate(
-                              offset: Offset(
-                                -ux(
-                                  context,
-                                  UnityPowerUpHudButton
-                                      .horizontalOffsetUnity,
-                                ),
-                                0,
-                              ),
+                              offset: Offset(ux(context, offsetX), 0),
                               child: UnityPowerUpHudButton(
                                 key: const ValueKey('hud_level_up_btn'),
+                                boosterType: BoosterType.levelUp,
                                 isLevelUp: true,
                                 isUnlocked: _isLevelUpUnlocked,
                                 unlockLevel:
@@ -1250,7 +1439,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                         ),
                       ),
 
-                      // Right Power-Up (`TimeFreeze` at `X = +135` Unity px)
+                      // Power-Up 2 (`TimeFreeze`, HUD slot follows `RemoteConfigService.boosterUnlockOrder`)
                       Positioned(
                         bottom: safePadding.bottom +
                             ux(
@@ -1262,24 +1451,22 @@ class _GameplayScreenState extends State<GameplayScreen>
                             widget.progress,
                             _game.isTimeFrozenNotifier,
                             _game.isTimerStartedNotifier,
+                            RemoteConfigService.boosterUnlockOrderNotifier,
                           ]),
                           builder: (context, _) {
                             final isFree =
                                 widget.progress.isFreePowerUpPending(
                               MechanicUnlockInfo.timeFreezePowerUp.id,
                             );
+                            final offsetX = _boosterHudOffsetUnity(
+                              MechanicUnlockInfo.timeFreezePowerUp.id,
+                            );
                             return Transform.translate(
-                              offset: Offset(
-                                ux(
-                                  context,
-                                  UnityPowerUpHudButton
-                                      .horizontalOffsetUnity,
-                                ),
-                                0,
-                              ),
+                              offset: Offset(ux(context, offsetX), 0),
                               child: UnityPowerUpHudButton(
                                 key:
                                     const ValueKey('hud_time_freeze_btn'),
+                                boosterType: BoosterType.timeFreeze,
                                 isLevelUp: false,
                                 isUnlocked: _isTimeFreezeUnlocked,
                                 unlockLevel:
@@ -1296,11 +1483,100 @@ class _GameplayScreenState extends State<GameplayScreen>
                         ),
                       ),
 
+                      // Power-Up 3 (`Shuffle`, HUD slot follows `RemoteConfigService.boosterUnlockOrder`)
+                      Positioned(
+                        bottom: safePadding.bottom +
+                            ux(
+                              context,
+                              UnityPowerUpHudButton.bottomOffsetUnity,
+                            ),
+                        child: ListenableBuilder(
+                          listenable: Listenable.merge([
+                            widget.progress,
+                            _game.canShuffleNotifier,
+                            RemoteConfigService.boosterUnlockOrderNotifier,
+                          ]),
+                          builder: (context, _) {
+                            final isFree =
+                                widget.progress.isFreePowerUpPending(
+                              MechanicUnlockInfo.shufflePowerUp.id,
+                            );
+                            final offsetX = _boosterHudOffsetUnity(
+                              MechanicUnlockInfo.shufflePowerUp.id,
+                            );
+                            return Transform.translate(
+                              offset: Offset(ux(context, offsetX), 0),
+                              child: UnityPowerUpHudButton(
+                                key: const ValueKey('hud_shuffle_btn'),
+                                boosterType: BoosterType.shuffle,
+                                isLevelUp: false,
+                                isUnlocked: _isShuffleUnlocked,
+                                unlockLevel:
+                                    PlayerProgressService.shuffleUnlockLevel,
+                                isFree: isFree,
+                                count: widget.progress.shuffleCount,
+                                isActionable:
+                                    _game.canShuffleNotifier.value,
+                                isHighlighted: _activeBoosterArrowHint?.id ==
+                                    MechanicUnlockInfo.shufflePowerUp.id,
+                                onTap: _handleShuffleTap,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      // Power-Up 4 (`Hammer`, HUD slot follows `RemoteConfigService.boosterUnlockOrder`)
+                      Positioned(
+                        bottom: safePadding.bottom +
+                            ux(
+                              context,
+                              UnityPowerUpHudButton.bottomOffsetUnity,
+                            ),
+                        child: ListenableBuilder(
+                          listenable: Listenable.merge([
+                            widget.progress,
+                            _game.canHammerNotifier,
+                            _game.isHammerTargetingNotifier,
+                            RemoteConfigService.boosterUnlockOrderNotifier,
+                          ]),
+                          builder: (context, _) {
+                            final isFree =
+                                widget.progress.isFreePowerUpPending(
+                              MechanicUnlockInfo.hammerPowerUp.id,
+                            );
+                            final offsetX = _boosterHudOffsetUnity(
+                              MechanicUnlockInfo.hammerPowerUp.id,
+                            );
+                            return Transform.translate(
+                              offset: Offset(ux(context, offsetX), 0),
+                              child: UnityPowerUpHudButton(
+                                key: const ValueKey('hud_hammer_btn'),
+                                boosterType: BoosterType.hammer,
+                                isLevelUp: false,
+                                isUnlocked: _isHammerUnlocked,
+                                unlockLevel:
+                                    PlayerProgressService.hammerUnlockLevel,
+                                isFree: isFree,
+                                count: widget.progress.hammerCount,
+                                isActionable:
+                                    _game.canHammerNotifier.value,
+                                isHighlighted: _activeBoosterArrowHint?.id ==
+                                    MechanicUnlockInfo.hammerPowerUp.id,
+                                isActiveTargeting:
+                                    _game.isHammerTargetingNotifier.value,
+                                onTap: _handleHammerTap,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
                       if (_activeBoosterArrowHint != null &&
                           _activeMechanicModal == null &&
                           !_showWinOverlay &&
                           !_showLoseOverlay &&
-                          _buyPopupIsLevelUp == null &&
+                          _buyPopupBooster == null &&
                           !_settingsOpen &&
                           !_cheatOpen &&
                           !_showExitRestartPopup)
@@ -1314,8 +1590,9 @@ class _GameplayScreenState extends State<GameplayScreen>
                               ),
                           child: PowerUpHudArrowHint(
                             key: const ValueKey('booster_hud_arrow_hint'),
-                            horizontalOffsetUnity:
-                                _activeBoosterArrowHint!.hudHorizontalOffsetUnity,
+                            horizontalOffsetUnity: _boosterHudOffsetUnity(
+                              _activeBoosterArrowHint!.id,
+                            ),
                           ),
                         ),
 
@@ -1334,36 +1611,157 @@ class _GameplayScreenState extends State<GameplayScreen>
                           ),
                         ),
                       ),
-
-                      // Bottom-Left Cheat Button (ONLY rendered when `RemoteConfigService.cheatEnable == true`)
-                      ValueListenableBuilder<bool>(
-                        valueListenable: RemoteConfigService.cheatEnableNotifier,
-                        builder: (context, cheatEnabled, _) {
-                          if (!cheatEnabled || _hideCheatHudButton) {
-                            return const SizedBox.shrink();
-                          }
-                          return Positioned(
-                            left: ux(context, 42),
-                            bottom: safePadding.bottom + ux(context, 122),
-                            child: CheatHudButton(
-                              key: const ValueKey('hud_cheat_btn'),
-                              onTap: () {
-                                widget.audio.playClick();
-                                setState(() {
-                                  _cheatOpen = true;
-                                  _settingsOpen = false;
-                                  _syncGamePauseState();
-                                });
-                              },
-                            ),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ),
               ),
             ),
+
+          // 6a. Floating Developer Cheat Button (positioned cleanly above Slot 0 when `cheat_enable == true`)
+          if (!isTutorialLevel1)
+            ListenableBuilder(
+              listenable: Listenable.merge([
+                RemoteConfigService.cheatEnableNotifier,
+                _game.isHammerTargetingNotifier,
+              ]),
+              builder: (context, _) {
+                if (!RemoteConfigService.cheatEnable ||
+                    _hideCheatHudButton ||
+                    _game.isHammerTargetingNotifier.value) {
+                  return const SizedBox.shrink();
+                }
+                return Positioned(
+                  left: ux(context, 28),
+                  bottom: safePadding.bottom + ux(context, 256),
+                  child: CheatHudButton(
+                    key: const ValueKey('hud_cheat_btn'),
+                    onTap: () {
+                      widget.audio.playClick();
+                      setState(() {
+                        _cheatOpen = true;
+                        _settingsOpen = false;
+                        _syncGamePauseState();
+                      });
+                    },
+                  ),
+                );
+              },
+            ),
+
+          // 6c. Interactive `Hammer` Targeting Mode Banner (non-blocking so player taps any obstacle directly!)
+          ValueListenableBuilder<bool>(
+            valueListenable: _game.isHammerTargetingNotifier,
+            builder: (context, targeting, _) {
+              if (!targeting) return const SizedBox.shrink();
+              return Positioned(
+                left: ux(context, 48),
+                right: ux(context, 48),
+                bottom: safePadding.bottom + ux(context, 266),
+                child: Center(
+                  child: Container(
+                    key: const ValueKey('hammer_targeting_banner'),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ux(context, 28),
+                      vertical: ux(context, 16),
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0xF53B1D7A),
+                          Color(0xF51D1048),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(ux(context, 42)),
+                      border: Border.all(
+                        color: const Color(0xFFFFCA28),
+                        width: ux(context, 5),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.48),
+                          blurRadius: ux(context, 20),
+                          offset: Offset(0, ux(context, 8)),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        BoosterIconWidget(
+                          type: BoosterType.hammer,
+                          size: ux(context, 54),
+                        ),
+                        SizedBox(width: ux(context, 14)),
+                        Flexible(
+                          child: Text(
+                            'Tap a block to split in half!',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Baloo2',
+                              fontSize: ux(context, 38),
+                              fontWeight: FontWeight.w800,
+                              fontVariations: const [
+                                FontVariation('wght', 800),
+                              ],
+                              color: Colors.white,
+                              height: 1.05,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: ux(context, 18)),
+                        GestureDetector(
+                          key: const ValueKey('hammer_targeting_cancel_btn'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            widget.audio.playClick();
+                            _game.cancelHammerTargeting();
+                          },
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: ux(context, 22),
+                              vertical: ux(context, 10),
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Color(0xFFFF6B6B),
+                                  Color(0xFFD32F2F),
+                                ],
+                              ),
+                              borderRadius:
+                                  BorderRadius.circular(ux(context, 26)),
+                              border: Border.all(
+                                color: const Color(0xFFFFE082),
+                                width: ux(context, 3),
+                              ),
+                            ),
+                            child: Text(
+                              'Cancel',
+                              style: TextStyle(
+                                fontFamily: 'Baloo2',
+                                fontSize: ux(context, 32),
+                                fontWeight: FontWeight.w800,
+                                fontVariations: const [
+                                  FontVariation('wght', 800),
+                                ],
+                                color: Colors.white,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
 
           // 6b. Level 1 Step-by-Step Spotlight Tutorial Banner (`"Drag to move"`)
           ValueListenableBuilder<bool>(
@@ -1582,23 +1980,28 @@ class _GameplayScreenState extends State<GameplayScreen>
               },
             ),
 
-          // 10. `PowerUpBuyView.prefab` (`600` for LevelUp `x3`, `450` for TimeFreeze `x3`, `Watch` Ad for `x1`)
-          if (_buyPopupIsLevelUp != null)
+          // 10. `PowerUpBuyView.prefab` (`x3` Coin Pack / `Watch` Ad `x1` for all 4 boosters)
+          if (_buyPopupBooster != null)
             ListenableBuilder(
               listenable: widget.progress,
               builder: (context, _) {
-                final isLvUp = _buyPopupIsLevelUp!;
-                final packCost = isLvUp
-                    ? RemoteConfigService.boosterLevelUpPrice
-                    : RemoteConfigService.boosterTimeFreezePrice;
+                final type = _buyPopupBooster!;
+                final packCost = RemoteConfigService.priceForBooster(type);
+                final placementName = switch (type) {
+                  BoosterType.levelUp => 'booster_levelup',
+                  BoosterType.timeFreeze => 'booster_timefreeze',
+                  BoosterType.shuffle => 'booster_shuffle',
+                  BoosterType.hammer => 'booster_hammer',
+                };
                 return PowerUpBuyPopup(
-                  isLevelUp: isLvUp,
+                  boosterType: type,
+                  isLevelUp: type == BoosterType.levelUp,
                   playerCoins: widget.progress.coins,
                   packCost: packCost,
                   onInsufficientCoins: _handleInsufficientCoins,
                   onBuyPack: () {
                     if (widget.progress.buyPowerUpPack(
-                      isLevelUp: isLvUp,
+                      boosterType: type,
                       cost: packCost,
                       count: 3,
                     )) {
@@ -1614,16 +2017,13 @@ class _GameplayScreenState extends State<GameplayScreen>
                       AnalyticsService.logEarnResource(
                         level: _activeLevel.number,
                         type: 'booster',
-                        name: isLvUp ? 'level_up' : 'time_freeze',
+                        name: type.analyticsName,
                         amount: 3,
                         reason: 'buy_pack',
-                        balance: (isLvUp
-                                ? widget.progress.levelUpCount
-                                : widget.progress.timeFreezeCount)
-                            .toDouble(),
+                        balance: widget.progress.boosterCount(type).toDouble(),
                       );
                       setState(() {
-                        _buyPopupIsLevelUp = null;
+                        _buyPopupBooster = null;
                         _syncGamePauseState();
                       });
                     } else {
@@ -1632,29 +2032,27 @@ class _GameplayScreenState extends State<GameplayScreen>
                   },
                   onWatchAd: () {
                     AdsManager.showRewardedAd(
-                      placement: isLvUp ? 'booster_levelup' : 'booster_timefreeze',
+                      placement: placementName,
                       levelNumber: _activeLevel.number,
                       onAdFailed: _handleRewardedAdFailed,
                       onRewardResult: (success) {
                         if (success && mounted) {
                           widget.audio.playCoinCollect();
                           widget.progress.grantFreePowerUp(
-                            isLevelUp: isLvUp,
+                            boosterType: type,
                             count: 1,
                           );
                           AnalyticsService.logEarnResource(
                             level: _activeLevel.number,
                             type: 'booster',
-                            name: isLvUp ? 'level_up' : 'time_freeze',
+                            name: type.analyticsName,
                             amount: 1,
                             reason: 'rewarded_ad',
-                            balance: (isLvUp
-                                    ? widget.progress.levelUpCount
-                                    : widget.progress.timeFreezeCount)
-                                .toDouble(),
+                            balance:
+                                widget.progress.boosterCount(type).toDouble(),
                           );
                           setState(() {
-                            _buyPopupIsLevelUp = null;
+                            _buyPopupBooster = null;
                             _syncGamePauseState();
                           });
                         }
@@ -1664,7 +2062,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                   onClose: () {
                     widget.audio.playClick();
                     setState(() {
-                      _buyPopupIsLevelUp = null;
+                      _buyPopupBooster = null;
                       _syncGamePauseState();
                     });
                   },
@@ -1672,36 +2070,34 @@ class _GameplayScreenState extends State<GameplayScreen>
               },
             ),
 
-          // 11. Unified Unlock Popup:
-          //     - Boosters (`New Feature`): Green `Claim` (+1) & Yellow `Claim X2` (+2 Ads)
-          //     - Mechanics (`New Mechanic`): Single centered long green `Next Level`
+          // 11. Unlock Overlays:
+          //     - Boosters (`isPowerUp == true`): `PowerUpFreeUnlockOverlay` granting 1 FREE turn
+          //       (tap highlighted FREE booster to use immediately; tap outside to dismiss & keep FREE on HUD)
+          //     - Mechanics (`isPowerUp == false`): `MechanicUnlockDialog` (`New Mechanic` + `Next Level`)
           if (_activeMechanicModal != null)
-            MechanicUnlockDialog(
-              key: ValueKey('ftue_${_activeMechanicModal!.id}'),
-              info: _activeMechanicModal!,
-              onClaim: _activeMechanicModal!.isPowerUp
-                  ? () => _handleFeatureUnlockClaim(multiplier: 1)
-                  : _dismissMechanicUnlockModal,
-              onClaimX2: _activeMechanicModal!.isPowerUp
-                  ? () {
-                      AdsManager.showRewardedAd(
-                        placement: 'feature_unlock_x2',
-                        levelNumber: _activeLevel.number,
-                        onAdFailed: _handleRewardedAdFailed,
-                        onRewardResult: (success) {
-                          if (success &&
-                              mounted &&
-                              _activeMechanicModal != null) {
-                            _handleFeatureUnlockClaim(multiplier: 2);
-                          }
-                        },
-                      );
-                    }
-                  : null,
-              onNextLevel: _dismissMechanicUnlockModal,
-              onClose: _dismissMechanicUnlockModal,
-              onDismiss: _dismissMechanicUnlockModal,
-            ),
+            if (_activeMechanicModal!.isPowerUp)
+              PowerUpFreeUnlockOverlay(
+                key: ValueKey('ftue_${_activeMechanicModal!.id}'),
+                info: _activeMechanicModal!,
+                currentCount: widget.progress
+                    .powerUpCountById(_activeMechanicModal!.id),
+                hudHorizontalOffsetUnity:
+                    _boosterHudOffsetUnity(_activeMechanicModal!.id),
+                onUseFreePowerUp: () =>
+                    _handleActivatePowerUpFromUnlockOverlay(
+                      _activeMechanicModal!,
+                    ),
+                onDismissOutside: _dismissBoosterUnlockKeepFree,
+              )
+            else
+              MechanicUnlockDialog(
+                key: ValueKey('ftue_${_activeMechanicModal!.id}'),
+                info: _activeMechanicModal!,
+                onClaim: _dismissMechanicUnlockModal,
+                onNextLevel: _dismissMechanicUnlockModal,
+                onClose: _dismissMechanicUnlockModal,
+                onDismiss: _dismissMechanicUnlockModal,
+              ),
 
           // 12. Two-Stage `WinGameplayView.prefab` (`Level complete!` -> `AMAZING!` + Coin Flight or Garden Metagame)
           if (_showWinOverlay)
@@ -1724,7 +2120,25 @@ class _GameplayScreenState extends State<GameplayScreen>
               },
               onStageMilestoneClaim: () {
                 widget.audio.playClick();
-                return widget.progress.stageCurrentVaseMilestoneClaim();
+                final amount = widget.progress.stageCurrentVaseMilestoneClaim();
+                if (amount > 0) {
+                  AnalyticsService.logEarnResource(
+                    level: _activeLevel.number,
+                    type: 'currency',
+                    name: 'coins',
+                    amount: amount.toDouble(),
+                    reason: 'flower_bloom_reward',
+                    balance: (widget.progress.coins + amount).toDouble(),
+                  );
+                }
+                return amount;
+              },
+              onWatchMilestoneRewardX2: _handleMilestoneRewardX2Ad,
+              onBloomCongratsShown: () {
+                AnalyticsService.logPopupShow(
+                  name: 'flower_bloom_congrats',
+                  level: _activeLevel.number,
+                );
               },
               onMilestoneCoinChunkArrived: (chunk) {
                 widget.progress.collectPendingMilestoneCoinChunk(chunk);
@@ -2234,7 +2648,10 @@ class _GameplayScreenState extends State<GameplayScreen>
     final pad = MediaQuery.paddingOf(context);
     final start = Offset(
       screen.width * 0.5 +
-          ux(context, UnityPowerUpHudButton.horizontalOffsetUnity),
+          ux(
+            context,
+            _boosterHudOffsetUnity(MechanicUnlockInfo.timeFreezePowerUp.id),
+          ),
       screen.height -
           pad.bottom -
           ux(

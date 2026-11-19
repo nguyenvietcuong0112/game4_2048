@@ -553,7 +553,7 @@ class UnityTextMaterial {
     underlayYRatio: 0.095,
   );
 
-  /// Compact high-contrast white label inside `Powerup_Base_Locked.png` (`"Level 17"` / `"Level 27"` above padlock)
+  /// Compact high-contrast white label inside `Powerup_Base_Locked.png` (`"Lv.17"` / `"Lv.27"` below padlock)
   static const lockedBoosterLabel = UnityTextMaterial(
     faceTop: Color(0xFFFFFFFF),
     faceBottom: Color(0xFFF4F7FB),

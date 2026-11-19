@@ -34,6 +34,8 @@ class WinOverlay extends StatefulWidget {
   final AudioHapticsService? audio;
   final VoidCallback? onClaimMilestone;
   final int Function()? onStageMilestoneClaim;
+  final Future<int> Function()? onWatchMilestoneRewardX2;
+  final VoidCallback? onBloomCongratsShown;
   final ValueChanged<int>? onMilestoneCoinChunkArrived;
   final VoidCallback? onStage2Shown;
   final ValueChanged<int>? onCoinChunkArrived;
@@ -55,6 +57,8 @@ class WinOverlay extends StatefulWidget {
     this.audio,
     this.onClaimMilestone,
     this.onStageMilestoneClaim,
+    this.onWatchMilestoneRewardX2,
+    this.onBloomCongratsShown,
     this.onMilestoneCoinChunkArrived,
     this.onStage2Shown,
     this.onCoinChunkArrived,
@@ -83,6 +87,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   bool _completedViaRewardAd = false;
   int _coinMultiplier = 1;
   int _activeFlyCount = _defaultFlyingCoinCount;
+  int _activeMilestoneFlyCount = _milestoneFlyingCoinCount;
   int _milestoneCoinsTotal = 0;
   int _spawnSide = 0; // -1: left Next Level btn, 0: center legacy, 1: right Reward x2 btn
   final Set<int> _arrivedCoinIndices = {};
@@ -90,6 +95,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
 
   static const int _defaultFlyingCoinCount = 7;
   static const int _milestoneFlyingCoinCount = 10;
+  static const int _milestoneX2FlyingCoinCount = 16;
   static const int _rewardX2FlyingCoinCount = 12;
   static const String _line1Text = 'Level';
   static const String _line2Text = 'Complete!';
@@ -213,7 +219,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   void _handleMilestoneCoinFlightTick() {
     _tickFlightChunks(
       t: _milestoneCoinFlyCtrl.value,
-      flyCount: _milestoneFlyingCoinCount,
+      flyCount: _activeMilestoneFlyCount,
       totalCoins: _milestoneCoinsTotal,
       settleBeforeAdvance: false,
       arrivedIndices: _arrivedMilestoneIndices,
@@ -228,6 +234,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       if (amount > 0 && mounted) {
         setState(() {
           _collectingMilestone = true;
+          _activeMilestoneFlyCount = _milestoneFlyingCoinCount;
           _milestoneCoinsTotal = amount;
           _arrivedMilestoneIndices.clear();
         });
@@ -236,6 +243,28 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       return;
     }
     widget.onClaimMilestone?.call();
+  }
+
+  Future<bool> _handleGardenMilestoneClaimX2() async {
+    if (_collecting || _watchingRewardAd || _collectingMilestone) return false;
+    final watcher = widget.onWatchMilestoneRewardX2;
+    if (watcher == null) return false;
+    setState(() => _watchingRewardAd = true);
+    final amount = await watcher();
+    if (!mounted) return false;
+    if (amount <= 0) {
+      setState(() => _watchingRewardAd = false);
+      return false;
+    }
+    setState(() {
+      _watchingRewardAd = false;
+      _collectingMilestone = true;
+      _activeMilestoneFlyCount = _milestoneX2FlyingCoinCount;
+      _milestoneCoinsTotal = amount;
+      _arrivedMilestoneIndices.clear();
+    });
+    _milestoneCoinFlyCtrl.forward(from: 0.0);
+    return true;
   }
 
   void _startCoinCollection({
@@ -365,6 +394,11 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                         onRewardX2:
                             _isRewardX2Enabled ? _onTapGardenRewardX2 : null,
                         onClaimMilestone: _handleGardenMilestoneClaim,
+                        onClaimMilestoneX2:
+                            widget.onWatchMilestoneRewardX2 != null
+                                ? _handleGardenMilestoneClaimX2
+                                : null,
+                        onBloomCongratsShown: widget.onBloomCongratsShown,
                       ),
                     ),
                   ),
@@ -1030,9 +1064,9 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
       appendCoinArcSprites(
         startCenter: Offset(
           screen.width * 0.5,
-          screen.height - bottomPad - ux(context, 180),
+          screen.height * 0.52,
         ),
-        rawFlyCount: _milestoneFlyingCoinCount,
+        rawFlyCount: _activeMilestoneFlyCount,
         t: _milestoneCoinFlyCtrl.value,
         settleBeforeAdvance: false,
       );

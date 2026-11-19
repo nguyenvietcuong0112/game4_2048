@@ -1972,4 +1972,363 @@ class ComboPraiseCalloutVfx extends PositionComponent {
   }
 }
 
+/// Swirling cyan/gold sparkle burst spawned over every block transformed by the `Shuffle` booster.
+class ShuffleSparkVfx extends PositionComponent {
+  final Color accentColor;
+  final double cellSize;
+  final List<_VfxParticle> _particles = [];
+  double _elapsed = 0.0;
+  static const double _duration = 0.52;
+
+  ui.Image? _haloImg;
+  final ui.Paint _additivePaint = ui.Paint()..blendMode = BlendMode.plus;
+  final ui.Paint _ringPaint = ui.Paint()..style = PaintingStyle.stroke;
+
+  ShuffleSparkVfx({
+    required Vector2 centerPos,
+    required this.accentColor,
+    required this.cellSize,
+  }) : super(position: centerPos, priority: 212) {
+    _haloImg = _safeFlameImage('Explosion_Halo.png');
+    final rng = math.Random();
+    for (int i = 0; i < 10; i++) {
+      final angle = (i / 10.0) * math.pi * 2.0 + rng.nextDouble() * 0.4;
+      final speed = cellSize * (1.2 + rng.nextDouble() * 1.9);
+      _particles.add(
+        _VfxParticle(
+          pos: ui.Offset(
+            math.cos(angle) * cellSize * 0.16,
+            math.sin(angle) * cellSize * 0.16,
+          ),
+          vel: ui.Offset(math.cos(angle) * speed, math.sin(angle) * speed),
+          size: cellSize * (0.18 + rng.nextDouble() * 0.16),
+          maxLife: 0.30 + rng.nextDouble() * 0.20,
+          color: i % 3 == 0
+              ? Colors.white
+              : (i % 2 == 0 ? const Color(0xFF47F0FF) : accentColor),
+          angularVel: (rng.nextDouble() - 0.5) * 9.0,
+        ),
+      );
+    }
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _elapsed += dt;
+    final damp = math.pow(0.92, dt * 60.0).toDouble();
+    for (final p in _particles) {
+      p.life -= dt;
+      p.vel = p.vel * damp;
+      p.pos += p.vel * dt;
+      p.rotation += p.angularVel * dt;
+    }
+    if (_elapsed >= _duration) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(ui.Canvas canvas) {
+    final ringT = (_elapsed / 0.32).clamp(0.0, 1.0);
+    if (ringT < 1.0) {
+      final ease = 1.0 - math.pow(1.0 - ringT, 2.4).toDouble();
+      final r = cellSize * (0.30 + ease * 0.78);
+      final fade = (1.0 - ringT).clamp(0.0, 1.0);
+      if (_haloImg != null) {
+        _additivePaint.colorFilter = UnityChannelMaskFilters.redChannelTint(
+          accentColor,
+          opacity: fade * 0.72,
+        );
+        canvas.drawImageRect(
+          _haloImg!,
+          ui.Rect.fromLTWH(
+            0,
+            0,
+            _haloImg!.width.toDouble(),
+            _haloImg!.height.toDouble(),
+          ),
+          ui.Rect.fromCircle(center: ui.Offset.zero, radius: r),
+          _additivePaint,
+        );
+      }
+      _ringPaint
+        ..color = Colors.white.withValues(alpha: fade * 0.80)
+        ..strokeWidth = (cellSize * 0.05 * fade).clamp(1.2, 4.0);
+      canvas.drawCircle(ui.Offset.zero, r * 0.85, _ringPaint);
+    }
+
+    final starImg = SparkleAtlas.starImage;
+    if (starImg != null) {
+      final transforms = <ui.RSTransform>[];
+      final rects = <ui.Rect>[];
+      final colors = <Color>[];
+      const halfTile = SparkleAtlas.tileSize * 0.5;
+      for (final p in _particles) {
+        if (p.life <= 0) continue;
+        final t = (p.life / p.maxLife).clamp(0.0, 1.0);
+        final sz = p.size * (0.45 + 0.55 * t);
+        if (sz <= 0.3) continue;
+        transforms.add(
+          ui.RSTransform.fromComponents(
+            rotation: p.rotation,
+            scale: sz / SparkleAtlas.tileSize,
+            anchorX: halfTile,
+            anchorY: halfTile,
+            translateX: p.pos.dx,
+            translateY: p.pos.dy,
+          ),
+        );
+        rects.add(SparkleAtlas.tileRect);
+        colors.add(p.color.withValues(alpha: t * 0.92));
+      }
+      if (transforms.isNotEmpty) {
+        _additivePaint.colorFilter = null;
+        canvas.drawAtlas(
+          starImg,
+          transforms,
+          rects,
+          colors,
+          BlendMode.modulate,
+          null,
+          _additivePaint,
+        );
+      }
+    }
+  }
+}
+
+/// Animated 3D cartoon mallet swinging down and smashing an obstacle block (`Ice`, `Dud`, `Pinned`, `Arrows`),
+/// spawning radial shockwave + golden/stone impact debris right at strike time (`impactTime = 0.14s`).
+class HammerSwingSmashVfx extends PositionComponent {
+  final double cellSize;
+  final Color debrisPrimary;
+  final Color debrisSecondary;
+  final List<_VfxParticle> _debris = [];
+  double _elapsed = 0.0;
+  bool _impactSpawned = false;
+  static const double impactTime = 0.14;
+  static const double _duration = 0.64;
+
+  ui.Image? _haloImg;
+  final ui.Paint _additivePaint = ui.Paint()..blendMode = BlendMode.plus;
+
+  HammerSwingSmashVfx({
+    required Vector2 centerPos,
+    required this.cellSize,
+    this.debrisPrimary = const Color(0xFFFFCA3A),
+    this.debrisSecondary = const Color(0xFF8C9BCE),
+  }) : super(position: centerPos, priority: 225) {
+    _haloImg = _safeFlameImage('Explosion_Halo.png');
+  }
+
+  void _spawnImpactDebris() {
+    final rng = math.Random();
+    for (int i = 0; i < 18; i++) {
+      final angle = -math.pi * 0.92 + rng.nextDouble() * math.pi * 1.84;
+      final speed = cellSize * (1.8 + rng.nextDouble() * 3.4);
+      _debris.add(
+        _VfxParticle(
+          pos: ui.Offset(
+            (rng.nextDouble() - 0.5) * cellSize * 0.45,
+            (rng.nextDouble() - 0.5) * cellSize * 0.45,
+          ),
+          vel: ui.Offset(
+            math.cos(angle) * speed,
+            math.sin(angle) * speed - cellSize * 1.4,
+          ),
+          size: cellSize * (0.16 + rng.nextDouble() * 0.18),
+          maxLife: 0.34 + rng.nextDouble() * 0.18,
+          color: i % 3 == 0
+              ? Colors.white
+              : (i.isEven ? debrisPrimary : debrisSecondary),
+          gravity: cellSize * 9.5,
+          rotation: rng.nextDouble() * math.pi * 2.0,
+          angularVel: (rng.nextDouble() - 0.5) * 14.0,
+        ),
+      );
+    }
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _elapsed += dt;
+    if (!_impactSpawned && _elapsed >= impactTime) {
+      _impactSpawned = true;
+      _spawnImpactDebris();
+    }
+    if (_impactSpawned) {
+      final damp = math.pow(0.95, dt * 60.0).toDouble();
+      for (final d in _debris) {
+        d.life -= dt;
+        d.vel = ui.Offset(d.vel.dx * damp, d.vel.dy + d.gravity * dt);
+        d.pos += d.vel * dt;
+        d.rotation += d.angularVel * dt;
+      }
+    }
+    if (_elapsed >= _duration) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(ui.Canvas canvas) {
+    // 1. Shockwave halo & debris after impact
+    if (_elapsed >= impactTime) {
+      final postT = ((_elapsed - impactTime) / 0.28).clamp(0.0, 1.0);
+      if (postT < 1.0) {
+        final r = cellSize * (0.42 + postT * 1.35);
+        final fade = (1.0 - postT).clamp(0.0, 1.0);
+        if (_haloImg != null) {
+          _additivePaint.colorFilter = UnityChannelMaskFilters.redChannelTint(
+            debrisPrimary,
+            opacity: fade * 0.90,
+          );
+          canvas.drawImageRect(
+            _haloImg!,
+            ui.Rect.fromLTWH(
+              0,
+              0,
+              _haloImg!.width.toDouble(),
+              _haloImg!.height.toDouble(),
+            ),
+            ui.Rect.fromCircle(center: ui.Offset.zero, radius: r),
+            _additivePaint,
+          );
+        }
+        final ringPaint = ui.Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (cellSize * 0.075 * fade).clamp(1.5, 6.0)
+          ..color = Colors.white.withValues(alpha: fade * 0.88);
+        canvas.drawCircle(ui.Offset.zero, r * 0.78, ringPaint);
+      }
+
+      for (final d in _debris) {
+        if (d.life <= 0) continue;
+        final t = (d.life / d.maxLife).clamp(0.0, 1.0);
+        final r = d.size * (0.45 + 0.55 * t) * 0.5;
+        canvas.save();
+        canvas.translate(d.pos.dx, d.pos.dy);
+        canvas.rotate(d.rotation);
+        final rect = ui.RRect.fromRectAndRadius(
+          ui.Rect.fromCenter(center: ui.Offset.zero, width: r * 2.0, height: r * 1.45),
+          ui.Radius.circular(r * 0.3),
+        );
+        canvas.drawRRect(
+          rect,
+          ui.Paint()..color = d.color.withValues(alpha: t * 0.95),
+        );
+        canvas.restore();
+      }
+    }
+
+    // 2. Animated 3D Cartoon Mallet (wind-up -> rapid slam -> quick rebound & fade)
+    if (_elapsed <= 0.44) {
+      double angleRad;
+      double alpha = 1.0;
+      double scale = 1.0;
+      if (_elapsed < impactTime * 0.45) {
+        // Quick wind-up back
+        final u = (_elapsed / (impactTime * 0.45)).clamp(0.0, 1.0);
+        angleRad = ui.lerpDouble(0.45, 0.92, Curves.easeOut.transform(u))!;
+        scale = ui.lerpDouble(0.82, 1.08, u)!;
+      } else if (_elapsed < impactTime) {
+        // High-speed slam down onto target
+        final u = ((_elapsed - impactTime * 0.45) / (impactTime * 0.55))
+            .clamp(0.0, 1.0);
+        angleRad = ui.lerpDouble(0.92, -0.48, Curves.easeInCubic.transform(u))!;
+        scale = ui.lerpDouble(1.08, 1.15, u)!;
+      } else {
+        // Recoil bounce & smooth fade out
+        final u = ((_elapsed - impactTime) / (0.44 - impactTime)).clamp(0.0, 1.0);
+        angleRad = ui.lerpDouble(-0.48, 0.12, Curves.easeOutBack.transform(u))!;
+        scale = ui.lerpDouble(1.15, 0.90, u)!;
+        alpha = (1.0 - Curves.easeIn.transform(((u - 0.35) / 0.65).clamp(0.0, 1.0)))
+            .clamp(0.0, 1.0);
+      }
+
+      final pivot = ui.Offset(cellSize * 0.58, cellSize * 0.38);
+      canvas.save();
+      if (alpha < 0.99) {
+        canvas.saveLayer(
+          ui.Rect.fromCircle(center: ui.Offset.zero, radius: cellSize * 2.2),
+          ui.Paint()..color = Color.fromRGBO(255, 255, 255, alpha),
+        );
+      }
+      canvas.translate(pivot.dx, pivot.dy);
+      canvas.rotate(angleRad);
+      canvas.scale(scale, scale);
+
+      final s = cellSize * 0.96;
+      // Handle
+      final handleRect = ui.RRect.fromRectAndRadius(
+        ui.Rect.fromLTWH(-s * 0.11, -s * 0.85, s * 0.22, s * 0.98),
+        ui.Radius.circular(s * 0.10),
+      );
+      canvas.drawRRect(
+        handleRect,
+        ui.Paint()
+          ..shader = ui.Gradient.linear(
+            ui.Offset(-s * 0.11, 0),
+            ui.Offset(s * 0.11, 0),
+            const [Color(0xFF9C4F19), Color(0xFFE6943E), Color(0xFF7B380D)],
+            const [0.0, 0.45, 1.0],
+          ),
+      );
+      canvas.drawRRect(
+        handleRect,
+        ui.Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (s * 0.045).clamp(1.5, 4.0)
+          ..color = const Color(0xFF451E05),
+      );
+
+      // Metallic Crimson-Gold Mallet Head
+      final headRect = ui.RRect.fromRectAndRadius(
+        ui.Rect.fromCenter(
+          center: ui.Offset(-s * 0.05, -s * 0.90),
+          width: s * 0.86,
+          height: s * 0.46,
+        ),
+        ui.Radius.circular(s * 0.14),
+      );
+      canvas.drawRRect(
+        headRect,
+        ui.Paint()
+          ..shader = ui.Gradient.linear(
+            ui.Offset(0, -s * 1.13),
+            ui.Offset(0, -s * 0.67),
+            const [Color(0xFFFFE066), Color(0xFFFF8811), Color(0xFFD63218)],
+            const [0.0, 0.42, 1.0],
+          ),
+      );
+      // Specular gleam bar
+      canvas.drawRRect(
+        ui.RRect.fromRectAndRadius(
+          ui.Rect.fromCenter(
+            center: ui.Offset(-s * 0.05, -s * 1.02),
+            width: s * 0.62,
+            height: s * 0.10,
+          ),
+          ui.Radius.circular(s * 0.05),
+        ),
+        ui.Paint()..color = Colors.white.withValues(alpha: 0.62),
+      );
+      canvas.drawRRect(
+        headRect,
+        ui.Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (s * 0.05).clamp(1.8, 4.5)
+          ..color = const Color(0xFF5A1606),
+      );
+
+      if (alpha < 0.99) {
+        canvas.restore();
+      }
+      canvas.restore();
+    }
+  }
+}
+
 

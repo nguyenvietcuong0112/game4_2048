@@ -706,9 +706,14 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
             onTap: () => p.cheatSetLives(PlayerProgressService.maxLives),
           ),
           _CheatActionBtn(
-            label: '1 Life Left',
+            label: '1 Life Left (${p.formattedNextLifeCountdown()})',
             color: const Color(0xFF475569),
             onTap: () => p.cheatSetLives(1),
+          ),
+          _CheatActionBtn(
+            label: '0 Lives',
+            color: const Color(0xFFDC2626),
+            onTap: () => p.cheatSetLives(0),
           ),
         ],
       ),
@@ -733,7 +738,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
               ),
             ),
             subtitle: Text(
-              'When hidden, you can reopen the Cheat Panel via Settings -> tap v.1.0.6',
+              'When hidden, you can reopen the Cheat Panel via Settings -> tap v.1.0.0',
               style: TextStyle(
                 fontFamily: 'Baloo2',
                 fontSize: ux(context, 26),

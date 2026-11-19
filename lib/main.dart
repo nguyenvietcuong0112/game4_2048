@@ -11,6 +11,7 @@ import 'services/analytics_service.dart';
 import 'services/audio_haptics_service.dart';
 import 'services/player_progress_service.dart';
 import 'ui/gameplay_screen.dart';
+import 'ui/home_screen.dart';
 import 'ui/intro_splash_view.dart';
 import 'ui/unity_ui_kit.dart';
 import 'ui/water_garden_view.dart';
@@ -55,12 +56,11 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
   static const List<String> _criticalUiAssetImages = [
     'assets/images/Background_Core.png',
     'assets/images/BG.webp',
-    'assets/images/Logo.png',
+    'assets/images/Logo.webp',
     'assets/images/Loading_BG.png',
     'assets/images/Loading_Progress.png',
     'assets/images/Icon_Coin.png',
     'assets/images/Icon_Clock.png',
-    'assets/images/Icon_Settings.png',
     'assets/images/progress_combo_bg.png',
     'assets/images/progress_combo_fg.png',
     'assets/images/effect_outerglow.webp',
@@ -90,6 +90,10 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
     'assets/images/Icon_Ad.png',
     'assets/images/Reward_Coin.png',
     'assets/images/Icon_BrokenLife.png',
+    'assets/images/Icon_Life.png',
+    'assets/images/icon_heart.png',
+    'assets/images/icon_heart2.png',
+    'assets/images/Button_Blue.png',
     'assets/images/Snow.png',
     'assets/images/Ice_Top.png',
     'assets/images/Ice_Bottom.png',
@@ -99,6 +103,31 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
     'assets/images/Ice_Corner_BottomRight.png',
     'assets/images/Ice_Blurry_TopLeft.png',
     'assets/images/Ice_Blurry_BottomRight.png',
+    'assets/images/Level Complete/frame_feature_unlock.png',
+    'assets/images/Level Complete/bg_progress_unlock.png',
+    'assets/images/Level Complete/fg_progress_unlock.png',
+    'assets/images/Level Complete/Icon_Padlock_Silver.png',
+    'assets/images/Level Complete/Icon_coin_reward.png',
+    'assets/images/Icon_Mechanic_Ice.png',
+    'assets/images/Icon_Mechanic_Blocker.png',
+    'assets/images/Icon_Mechanic_SingleAxis.png',
+    'assets/images/Icon_Mechanic_Cage.png',
+    'assets/images/UI Home/Home/BG.webp',
+    'assets/images/UI Home/Home/frame_avatar.png',
+    'assets/images/UI Home/Home/asset_frame.png',
+    'assets/images/UI Home/Home/btn_green_play.png',
+    'assets/images/UI Home/Home/btn_setting.png',
+    'assets/images/UI Home/Home/frame_footer.png',
+    'assets/images/UI Home/Home/frame_menubar.png',
+    'assets/images/UI Home/Home/icon_ads.png',
+    'assets/images/UI Home/Home/icon_heart.png',
+    'assets/images/UI Home/Home/icon_home.png',
+    'assets/images/UI Home/Home/icon_lock.png',
+    'assets/images/UI Home/Home/icon_reward 1.png',
+    'assets/images/UI Home/Home/icon_shop.png',
+    'assets/images/UI Home/Home/notice.png',
+    'assets/images/UI Home/btn_green_setting 2.png',
+    'assets/images/UI Home/btn_red_setting.png',
   ];
 
   final AudioHapticsService _audio = AudioHapticsService();
@@ -107,6 +136,7 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
 
   _BootBundle? _bundle;
   Object? _bootError;
+  bool _inGameplay = false;
 
   @override
   void initState() {
@@ -129,7 +159,11 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      _progress.flushPendingWinCoins();
+      // Do NOT flush `_pendingWinCoins` / `_pendingMilestoneCoins` in memory here:
+      // full totals are already crash-safely persisted to SharedPreferences in
+      // `stageLevelWinReward` / `stageCurrentVaseMilestoneClaim`, and flushing on
+      // `inactive` (notifications, screen recorders, overlays) would prematurely
+      // zero `_pendingWinCoins` before the user taps `Next Level +25`.
       _audio.stopBgm();
     } else if (state == AppLifecycleState.resumed) {
       if (_audio.musicEnabled) {
@@ -314,7 +348,7 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
 
     final bundle = _bundle;
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 340),
+      duration: const Duration(milliseconds: 320),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
       child: bundle == null
@@ -323,14 +357,31 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
               valueListenable: _loadProgress,
               builder: (context, prog, _) => IntroSplashView(progress: prog),
             )
-          : GameplayScreen(
-              key: const ValueKey('gameplay_screen'),
-              repository: bundle.repository,
-              palette: bundle.palette,
-              visualSettings: bundle.visualSettings,
-              audio: _audio,
-              progress: _progress,
-            ),
+          : (!_inGameplay
+                ? HomeScreen(
+                    key: const ValueKey('home_screen'),
+                    repository: bundle.repository,
+                    audio: _audio,
+                    progress: _progress,
+                    onPlayLevel: () {
+                      if (mounted) {
+                        setState(() => _inGameplay = true);
+                      }
+                    },
+                  )
+                : GameplayScreen(
+                    key: const ValueKey('gameplay_screen'),
+                    repository: bundle.repository,
+                    palette: bundle.palette,
+                    visualSettings: bundle.visualSettings,
+                    audio: _audio,
+                    progress: _progress,
+                    onExitToHome: () {
+                      if (mounted) {
+                        setState(() => _inGameplay = false);
+                      }
+                    },
+                  )),
     );
   }
 }

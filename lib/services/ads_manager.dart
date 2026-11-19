@@ -41,15 +41,34 @@ class AdsManager {
   static bool _isAppOpenLoaded = false;
   static bool _isInterLoaded = false;
   static bool _hasShownFirstInter = false;
+  static bool _isBannerLoaded = false;
+  static bool _isBannerRequested = false;
   static Timer? _retryLoadTimer;
   static int _rewardedRetryAttempt = 0;
   static final List<StreamSubscription> _subscriptions = [];
+
+  /// Emits true only while a banner ad is actively requested and loaded.
+  /// Remains false when ads are disabled, removed, offline, or failed to load.
+  static final ValueNotifier<bool> bannerVisibleNotifier = ValueNotifier<bool>(false);
 
   static bool get isShowingAd => _isShowingAd;
   static bool get isRewardedLoaded => _isRewardedLoaded;
   static bool get isAppOpenLoaded => _isAppOpenLoaded;
   static bool get isInterLoaded => _isInterLoaded;
+  static bool get isBannerVisible => bannerVisibleNotifier.value;
   static DateTime? get lastInterOrResumeTime => _lastInterOrResumeTime;
+
+  @visibleForTesting
+  static void debugSetBannerVisible(bool visible) {
+    _isBannerRequested = visible;
+    _isBannerLoaded = visible;
+    bannerVisibleNotifier.value = visible;
+  }
+
+  static void _syncBannerVisibility() {
+    bannerVisibleNotifier.value =
+        enableAds && _isBannerRequested && _isBannerLoaded;
+  }
 
   /// Initializes AdsManager, listens to reward completions and remote config updates
   static void init() {
@@ -156,6 +175,23 @@ class AdsManager {
     _subscriptions.add(FGSDK.onInterstitialClosed.listen((info) {
       debugPrint('[AdsManager] 🚪 onInterstitialClosed: placement=${info.placement}');
       _isInterLoaded = false;
+    }));
+
+    // Track Banner loading / visibility lifecycle
+    _subscriptions.add(FGSDK.onBannerLoaded.listen((info) {
+      debugPrint('[AdsManager] ✅ onBannerLoaded: placement=${info.placement}, network=${info.networkName}');
+      _isBannerLoaded = true;
+      _syncBannerVisibility();
+    }));
+    _subscriptions.add(FGSDK.onBannerFailedToLoad.listen((info) {
+      debugPrint('[AdsManager] ❌ onBannerFailedToLoad: placement=${info.placement}, network=${info.networkName}');
+      _isBannerLoaded = false;
+      _syncBannerVisibility();
+    }));
+    _subscriptions.add(FGSDK.onBannerHidden.listen((info) {
+      debugPrint('[AdsManager] 🙈 onBannerHidden: placement=${info.placement}');
+      _isBannerRequested = false;
+      _syncBannerVisibility();
     }));
 
     // Preload rewarded ad
@@ -620,15 +656,23 @@ class AdsManager {
 
   // ── Banner Ads ─────────────────────────────────────────────────────────────
   static void showBanner(String placement, {int level = 1}) {
-    if (!enableAds) return;
+    if (!enableAds) {
+      _isBannerRequested = false;
+      _syncBannerVisibility();
+      return;
+    }
+    _isBannerRequested = true;
     try {
       FGSDK.showBanner(placement, 'classic', level);
     } catch (e) {
       debugPrint('[AdsManager] Error showing banner: $e');
     }
+    _syncBannerVisibility();
   }
 
   static void hideBanner() {
+    _isBannerRequested = false;
+    _syncBannerVisibility();
     if (!enableAds) return;
     try {
       FGSDK.hideBanner();

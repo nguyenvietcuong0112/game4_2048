@@ -299,7 +299,7 @@ class _UnityPowerUpHudButtonState extends State<UnityPowerUpHudButton> {
 /// Unified Unlock Popup (`884x1044` Unity px) supporting both feature categories:
 /// - **Boosters (`info.isPowerUp == true`) — `New Feature`**:
 ///   - Header ribbon: `"New Feature"`
-///   - Dual bottom actions (`top = 725`): Green `"Claim"` (+1) & Yellow `"Claim X2"` (+2 Ad)
+///   - Single centered green `"Claim"` (+1) button (`top = 725`, `520x221`)
 /// - **Mechanics (`info.isPowerUp == false`) — `New Mechanic`**:
 ///   - Header ribbon: `"New Mechanic"`
 ///   - Single centered long green `"Next Level"` button (`top = 725`, `560x221`)
@@ -345,7 +345,6 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
   }
 
   void _handleClaim() => (widget.onClaim ?? widget.onDismiss).call();
-  void _handleClaimX2() => (widget.onClaimX2 ?? widget.onDismiss).call();
   void _handleNextLevel() =>
       (widget.onNextLevel ?? widget.onClaim ?? widget.onDismiss).call();
   void _handleClose() => (widget.onClose ?? widget.onDismiss).call();
@@ -357,24 +356,29 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
     final headerTitle = isBooster ? 'New Feature' : 'New Mechanic';
     final ribbonWidthUnity = isBooster ? 558.0 : 576.0;
 
-    return ColoredBox(
-      color: const Color(0xCC060414),
-      child: SafeArea(
-        child: Center(
-          child: AnimatedBuilder(
-            animation: _entranceCtrl,
-            builder: (context, child) {
-              final t = Curves.easeOutBack.transform(_entranceCtrl.value);
-              return Transform.scale(
+    return AnimatedBuilder(
+      animation: _entranceCtrl,
+      builder: (context, cardChild) {
+        final raw = _entranceCtrl.value.clamp(0.0, 1.0);
+        final scrimAlpha = 0.80 * Curves.easeOut.transform(raw);
+        final t = Curves.easeOutBack.transform(raw);
+        return ColoredBox(
+          color: Color.fromRGBO(6, 4, 20, scrimAlpha),
+          child: SafeArea(
+            child: Center(
+              child: Transform.scale(
                 scale: 0.84 + 0.16 * t,
                 child: Opacity(
-                  opacity: _entranceCtrl.value.clamp(0.0, 1.0),
-                  child: child,
+                  opacity: raw,
+                  child: cardChild,
                 ),
-              );
-            },
-            child: SizedBox(
-              key: const ValueKey('new_feature_popup_card'),
+              ),
+            ),
+          ),
+        );
+      },
+      child: SizedBox(
+        key: const ValueKey('new_feature_popup_card'),
               width: ux(context, 884),
               height: ux(context, 1044),
               child: Stack(
@@ -478,59 +482,31 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
                     ),
                   ),
 
-                  // 3. Bottom Action Buttons:
-                  //    - Boosters (`New Feature`): Green "Claim" + Yellow "Claim X2" (Ads)
+                  // 3. Bottom Action Button:
+                  //    - Boosters (`New Feature`): Single centered green "Claim"
                   //    - Mechanics (`New Mechanic`): Single centered long green "Next Level"
-                  if (isBooster) ...[
+                  if (isBooster)
                     Positioned(
-                      left: ux(context, 51),
-                      top: ux(context, 727),
-                      width: ux(context, 393),
+                      left: ux(context, (884 - 520) * 0.5),
+                      top: ux(context, 725),
+                      width: ux(context, 520),
                       height: ux(context, 221),
                       child: _UnlockPillButton(
                         buttonKey: const ValueKey('mechanic_claim_btn'),
                         sprite: 'Button_Green.png',
+                        useNineSlice: true,
                         label: 'Claim',
                         unityFontSize: 64,
                         material: UnityTextMaterial.ctaGreen,
                         textPadding: EdgeInsets.only(
-                          left: ux(context, 32),
-                          right: ux(context, 32),
+                          left: ux(context, 44),
+                          right: ux(context, 44),
                           bottom: ux(context, 12),
                         ),
                         onTap: _handleClaim,
                       ),
-                    ),
-                    Positioned(
-                      right: ux(context, 45),
-                      top: ux(context, 725),
-                      width: ux(context, 386),
-                      height: ux(context, 221),
-                      child: _UnlockPillButton(
-                        buttonKey: const ValueKey('mechanic_claim_x2_btn'),
-                        sprite: 'Button_Yellow.png',
-                        label: 'Claim X2',
-                        unityFontSize: 58,
-                        material: UnityTextMaterial.ctaYellowButton,
-                        textPadding: EdgeInsets.only(
-                          left: ux(context, 36),
-                          right: ux(context, 28),
-                          bottom: ux(context, 10),
-                        ),
-                        badgeOverlay: Positioned(
-                          left: -ux(context, 8),
-                          top: -ux(context, 42),
-                          width: ux(context, 122),
-                          height: ux(context, 127),
-                          child: Image.asset(
-                            'assets/images/Icon_Ads.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        onTap: _handleClaimX2,
-                      ),
-                    ),
-                  ] else
+                    )
+                  else
                     Positioned(
                       left: ux(context, (884 - 560) * 0.5),
                       top: ux(context, 725),
@@ -595,10 +571,7 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
+          );
   }
 }
 
@@ -610,7 +583,6 @@ class _UnlockPillButton extends StatefulWidget {
   final double unityFontSize;
   final UnityTextMaterial material;
   final EdgeInsetsGeometry textPadding;
-  final Widget? badgeOverlay;
   final VoidCallback onTap;
 
   const _UnlockPillButton({
@@ -621,7 +593,6 @@ class _UnlockPillButton extends StatefulWidget {
     required this.unityFontSize,
     required this.material,
     required this.textPadding,
-    this.badgeOverlay,
     required this.onTap,
   });
 
@@ -673,7 +644,6 @@ class _UnlockPillButtonState extends State<_UnlockPillButton> {
                 ),
               ),
             ),
-            if (widget.badgeOverlay != null) widget.badgeOverlay!,
           ],
         ),
       ),

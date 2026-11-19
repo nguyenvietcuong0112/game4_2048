@@ -14,11 +14,13 @@ import 'unity_ui_kit.dart';
 ///   - `Footer`: `Button_CTA` (`585.20 x 217.44` local, `Button_Red.png`, `ppuMult = 0.82`,
 ///     `"Restart"`, `localFontSize = 116.6`, `Baloo2_ExtraBold_CTA_Red_Text`).
 class ExitGameplayPopup extends StatelessWidget {
+  final bool willLoseLife;
   final VoidCallback onConfirmRestart;
   final VoidCallback onCancel;
 
   const ExitGameplayPopup({
     super.key,
+    this.willLoseLife = true,
     required this.onConfirmRestart,
     required this.onCancel,
   });
@@ -38,8 +40,14 @@ class ExitGameplayPopup extends StatelessWidget {
     const double textH = 205.85;
     const double textCy = panelCy + 248.00; // 615.115
 
-    return ColoredBox(
-      color: const Color.fromRGBO(5, 0, 13, 0.949),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 190),
+      curve: Curves.easeOut,
+      builder: (context, t, child) => ColoredBox(
+        color: Color.fromRGBO(5, 0, 13, 0.949 * t),
+        child: child,
+      ),
       child: SafeArea(
         child: Center(
           child: UnityPopupCard(
@@ -49,34 +57,37 @@ class ExitGameplayPopup extends StatelessWidget {
             panelChild: Stack(
               clipBehavior: Clip.none,
               children: [
-                // 1. `LifeIcon` (`Icon_BrokenLife.png`, `415.91 x 441.98` local)
+                // 1. `LifeIcon` (`Icon_BrokenLife.png` if losing life, `Icon_Life.png` if untouched board)
                 Positioned(
                   left: ppx(context, panelCx - iconW * 0.5),
                   top: ppx(context, iconCy - iconH * 0.5),
                   width: ppx(context, iconW),
                   height: ppx(context, iconH),
                   child: Image.asset(
-                    'assets/images/Icon_BrokenLife.png',
+                    willLoseLife
+                        ? 'assets/images/icon_heart2.png'
+                        : 'assets/images/icon_heart.png',
                     fit: BoxFit.contain,
                   ),
                 ),
 
-                // 2. `LifeAmount` (`"-1"`, child of `LifeIcon` at `pos = (0, +4.50)`, `fontSize = 224.9`)
-                Positioned(
-                  left: ppx(context, panelCx - 160.0),
-                  top: ppx(context, (iconCy - 4.50) - 130.0),
-                  width: ppx(context, 320.0),
-                  height: ppx(context, 260.0),
-                  child: Center(
-                    child: UnitySdfText(
-                      '-1',
-                      unityFontSize: 224.9 * kUnityPopupScale,
-                      material: UnityTextMaterial.brownCounter,
+                // 2. `LifeAmount` (`"-1"` only shown if player already interacted with board)
+                if (willLoseLife)
+                  Positioned(
+                    left: ppx(context, panelCx - 160.0),
+                    top: ppx(context, (iconCy - 4.50) - 130.0),
+                    width: ppx(context, 320.0),
+                    height: ppx(context, 260.0),
+                    child: Center(
+                      child: UnitySdfText(
+                        '-1',
+                        unityFontSize: 224.9 * kUnityPopupScale,
+                        material: UnityTextMaterial.brownCounter,
+                      ),
                     ),
                   ),
-                ),
 
-                // 3. `RegularText` (`"You will lose a life!"`, `fontSize = 80.2`, `#07279A`)
+                // 3. `RegularText`
                 Positioned(
                   left: ppx(context, panelCx - textW * 0.5),
                   top: ppx(context, textCy - textH * 0.5),
@@ -84,7 +95,9 @@ class ExitGameplayPopup extends StatelessWidget {
                   height: ppx(context, textH),
                   child: Center(
                     child: Text(
-                      'You will lose a life!',
+                      willLoseLife
+                          ? 'You will lose a life!'
+                          : 'No life will be lost!',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontFamily: 'Baloo2',

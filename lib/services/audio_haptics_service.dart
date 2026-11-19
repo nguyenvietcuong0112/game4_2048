@@ -321,7 +321,7 @@ class AudioHapticsService extends ChangeNotifier {
     _hapticsEnabled = !_hapticsEnabled;
     _prefs?.setBool(_kHaptics, _hapticsEnabled);
     if (_hapticsEnabled) {
-      _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
     }
     playClick();
     notifyListeners();
@@ -338,10 +338,13 @@ class AudioHapticsService extends ChangeNotifier {
     if (!_hapticsEnabled) return;
     _recordDebugLog(debugHapticsLog, tag);
     final nowMs = _clock.elapsedMilliseconds;
-    final priority = tag == 'heavyImpact'
-        ? 3
-        : (tag == 'mediumImpact' ? 2 : 1);
-    if ((nowMs - _lastHapticMs) < 28 && priority <= _lastHapticPriority) {
+    final priority = switch (tag) {
+      'vibrate' => 4,
+      'heavyImpact' => 3,
+      'mediumImpact' => 2,
+      _ => 1,
+    };
+    if ((nowMs - _lastHapticMs) < 20 && priority <= _lastHapticPriority) {
       return;
     }
     _lastHapticMs = nowMs;
@@ -394,24 +397,24 @@ class AudioHapticsService extends ChangeNotifier {
 
   void playClick() {
     _playSfx('sfx_button_click.wav', volume: 1.0);
-    _triggerHaptic('selectionClick', HapticFeedback.selectionClick);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
   void playPowerUpSelect() {
     _playSfx('sfx_pu_select.wav', volume: 1.0);
-    _triggerHaptic('selectionClick', HapticFeedback.selectionClick);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
   /// Exact `GameplayState::OnMovementStarted`: `PlaySfx("block_grab", vol: 1.0)` + `TriggerPiecePickUp`.
   void playGrab() {
     _playSfx('sfx_block_grab.wav', volume: 1.0);
-    _triggerHaptic('selectionClick', HapticFeedback.selectionClick);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
   /// Exact `GameplayState::OnMovementEnded` (`TriggerPieceDrop`) + `OnMovementCompleted` (`PlaySfx("block_put", vol: 1.0)`).
   void playPut() {
     _playSfx('sfx_block_put.wav', volume: 1.0);
-    _triggerHaptic('lightImpact', HapticFeedback.lightImpact);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
   /// Exact `BoardView::SetMergeCandidate` (`BoardView.cs:1193`): `PlaySfx("block_attract", vol: 1.0)` with NO haptic.
@@ -427,13 +430,13 @@ class AudioHapticsService extends ChangeNotifier {
 
   /// Exact `HapticService::TriggerPieceDrop` when dropping a lifted block back onto its start cell.
   void hapticDrop() {
-    _triggerHaptic('lightImpact', HapticFeedback.lightImpact);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
   /// Exact `HapticService::TriggerMerge` (`BoardView.cs:494`) fired when `RemovePiecesAsync`
   /// triggers `PlayMergeSplash` & survivor bounce right after `SyncPiecePositionAsync`.
   void hapticMergeImpact() {
-    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
   }
 
   /// Progressive audio punch for high-value merges (`mergedNumber >= 32`).
@@ -447,13 +450,13 @@ class AudioHapticsService extends ChangeNotifier {
     }
     final boostVol = (0.30 + 0.10 * tier).clamp(0.35, 0.95);
     _playSfx('sfx_levelup_merge.wav', volume: boostVol);
-    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
   }
 
   /// Progressive multi-pulse haptic aftershock for `mergedNumber >= 32` driven by game `update(dt)`.
   void hapticHighTierAftershock(int mergedNumber) {
     if (mergedNumber < 32) return;
-    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
   }
 
   /// Ascending combo chime (`new_1.mp3 .. new_13.mp3`) for consecutive merge combos (`1x..13x+`).
@@ -462,9 +465,9 @@ class AudioHapticsService extends ChangeNotifier {
     final comboVol = (0.86 + 0.012 * (idx - 1)).clamp(0.86, 1.0);
     _playSfx('new_$idx.mp3', volume: comboVol);
     if (comboCount >= 4) {
-      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+      _triggerHaptic('vibrate', HapticFeedback.vibrate);
     } else if (comboCount >= 2) {
-      _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+      _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
     }
   }
 
@@ -477,7 +480,7 @@ class AudioHapticsService extends ChangeNotifier {
   /// `PlaySfx("ice_whole_break", vol: 1.0)` + `TriggerIceBreak`.
   void playIceBreak() {
     _playSfx('sfx_ice_break_whole.wav', volume: 1.0);
-    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
   }
 
   void playLevelUpArrow() {
@@ -486,17 +489,17 @@ class AudioHapticsService extends ChangeNotifier {
 
   void playLevelUpFly() {
     _playSfx('sfx_levelup_fly.wav', volume: 1.0);
-    _triggerHaptic('lightImpact', HapticFeedback.lightImpact);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
   void playLevelUpMerge() {
     _playSfx('sfx_levelup_merge.wav', volume: 1.0);
-    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
   }
 
   void playTimeFreeze() {
     _playSfx('sfx_time_freeze.wav', volume: 1.0);
-    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
   }
 
   /// Sound of continuous rushing/flowing water when the winning block merges and
@@ -508,31 +511,61 @@ class AudioHapticsService extends ChangeNotifier {
   /// Stage 1 Win (`LevelCompleteView` golden wave text).
   void playWinComplete() {
     _playSfx('sfx_win_complete.wav', volume: 1.0);
-    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
   }
 
   /// Stage 2 Win (`WinContent` `AMAZING!` gold ribbon + reward coin reveal).
   void playWinAmazing() {
     _playSfx('sfx_win_amazing.wav', volume: 1.0);
-    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
   }
 
   /// Flying coin landing on top-left `CoinsWidget`.
   void playCoinCollect() {
     _playSfx('sfx_target_collect.wav', volume: 1.0);
-    _triggerHaptic('selectionClick', HapticFeedback.selectionClick);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
+  }
+
+  /// Water Garden pouring potion into crystal vase.
+  void playGardenPour() {
+    _playSfx('sfx_water_stream.wav', volume: 0.92);
+  }
+
+  /// Soft botanical growth chime + tactile pop as the flower swells or evolves a stage.
+  void playGardenFlowerGrow({bool majorStage = false}) {
+    _playSfx(
+      majorStage ? 'new_8.mp3' : 'new_5.mp3',
+      volume: majorStage ? 0.88 : 0.72,
+    );
+    _triggerHaptic(
+      majorStage ? 'mediumImpact' : 'lightImpact',
+      majorStage ? HapticFeedback.mediumImpact : HapticFeedback.lightImpact,
+    );
+  }
+
+  /// Celebratory layered bloom fanfare when the vase hits 100% and the bouquet bursts open.
+  void playGardenFullBloom() {
+    _playSfx('sfx_win_complete.wav', volume: 0.92);
+    _playSfx('new_11.mp3', volume: 0.84);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
+  }
+
+  /// Bright chime when claiming a milestone chest and unveiling the next crystal vase.
+  void playGardenNewVaseReveal() {
+    _playSfx('new_9.mp3', volume: 0.85);
+    _triggerHaptic('mediumImpact', HapticFeedback.mediumImpact);
   }
 
   /// Stage 1 Lose (`PlayOnPopupView` `OUT OF TIME`).
   void playOutOfTime() {
     _playSfx('sfx_lose_timeout.wav', volume: 1.0);
-    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
   }
 
   /// Stage 2 Lose (`LoseGameplayView` `Level X failed` + `-1` broken heart).
   void playLevelFailed() {
     _playSfx('sfx_lose_failed.wav', volume: 1.0);
-    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
+    _triggerHaptic('vibrate', HapticFeedback.vibrate);
   }
 
   void playWin() => playWinComplete();
@@ -540,7 +573,7 @@ class AudioHapticsService extends ChangeNotifier {
   void playLose() => playOutOfTime();
 
   void hapticBlocked() {
-    _triggerHaptic('lightImpact', HapticFeedback.lightImpact);
+    _triggerHaptic('heavyImpact', HapticFeedback.heavyImpact);
   }
 
   @override

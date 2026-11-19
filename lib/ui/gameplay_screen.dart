@@ -16,6 +16,7 @@ import 'cheat_panel_overlay.dart';
 import 'exit_gameplay_popup.dart';
 import 'lose_overlay.dart';
 import 'mechanic_unlock_dialog.dart';
+import 'more_lives_dialog.dart';
 import 'powerup_buy_popup.dart';
 import 'unity_ui_kit.dart';
 import 'win_overlay.dart';
@@ -26,6 +27,7 @@ class GameplayScreen extends StatefulWidget {
   final PieceVisualSettings visualSettings;
   final AudioHapticsService audio;
   final PlayerProgressService progress;
+  final VoidCallback? onExitToHome;
 
   const GameplayScreen({
     super.key,
@@ -34,6 +36,7 @@ class GameplayScreen extends StatefulWidget {
     required this.visualSettings,
     required this.audio,
     required this.progress,
+    this.onExitToHome,
   });
 
   @override
@@ -49,6 +52,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   late final AnimationController _freezeFlyCtrl;
   late final AnimationController _lowTimerPulseCtrl;
   late final Animation<double> _lowTimerVignetteOpacity;
+  late final AnimationController _levelTransitionCtrl;
 
   bool _showWinOverlay = false;
   bool _showLoseOverlay = false;
@@ -56,6 +60,9 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool _losePeekingBoard = false;
   int _playOnsUsedInAttempt = 0;
   bool _showExitRestartPopup = false;
+  bool _showMoreLivesModal = false;
+  bool _moreLivesPendingRetry = false;
+  bool _heartSpentForCurrentAttempt = false;
   bool? _buyPopupIsLevelUp; // null = closed, true = Level Up, false = Time Freeze
   bool _settingsOpen = false;
   bool _cheatOpen = false;
@@ -66,6 +73,7 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   String? _lockedToastMessage;
   Timer? _lockedToastTimer;
+  Timer? _lifeRegenTimer;
   double _lockedToastOpacity = 0.0;
   int _lastLoggedTutMergeStep = 0;
   VaseStepAdvanceResult? _activeVaseAdvanceResult;
@@ -73,13 +81,19 @@ class _GameplayScreenState extends State<GameplayScreen>
   bool _shouldTrackFtueForLevel(LevelDefinition level) =>
       !level.isBonus && level.number == 1 && !widget.progress.isFtueCompleted;
 
-  /// Exact shipped `game_end_flow.play_on` pricing (`price_coins = 450`, `price_increment = 150`).
-  int get _currentPlayOnCost => 450 + 150 * _playOnsUsedInAttempt;
+  /// Configurable `game_end_flow.play_on` pricing (defaults: `450` + `150` per extra revive).
+  int get _currentPlayOnCost =>
+      RemoteConfigService.playOnBasePrice +
+      RemoteConfigService.playOnIncrementPrice * _playOnsUsedInAttempt;
+
+  /// Configurable win-level coin reward (`RemoteConfigService.keyWinLevelCoinReward`, default `25`).
+  int get _currentWinCoinReward => RemoteConfigService.winLevelCoinReward;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.progress.syncLivesRegen();
     _activeLevel =
         widget.repository.getCampaignLevel(widget.progress.currentLevel);
 
@@ -107,11 +121,18 @@ class _GameplayScreenState extends State<GameplayScreen>
       ),
     );
 
+    _levelTransitionCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+      value: 0.0,
+    );
+
     _game = BlockOrderGame(
       initialLevel: _activeLevel,
       palette: widget.palette,
       visualSettings: widget.visualSettings,
       audio: widget.audio,
+      onFirstAction: _handleFirstActionInAttempt,
       onLevelWon: _handleLevelWon,
       onTimeExpired: _handleTimeExpired,
       onTutorialMergeStep: (step) {
@@ -128,9 +149,21 @@ class _GameplayScreenState extends State<GameplayScreen>
 
     _game.remainingSecondsNotifier.addListener(_syncLowTimerPulseTicker);
     _game.isTimeFrozenNotifier.addListener(_syncLowTimerPulseTicker);
+    widget.progress.addListener(_syncLifeRegenTicker);
     _syncLowTimerPulseTicker();
+    _syncLifeRegenTicker();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.progress.syncLivesRegen();
+      if (!widget.progress.canPlay()) {
+        setState(() {
+          _showMoreLivesModal = true;
+          _moreLivesPendingRetry = true;
+          _syncGamePauseState();
+        });
+        return;
+      }
       _checkNewMechanicOrPowerUpUnlock(_activeLevel);
     });
 
@@ -141,21 +174,71 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
   }
 
+  /// Mirrors `HeartService.StartInteractiveLevel()`:
+  /// Spends 1 heart immediately upon first board touch or booster activation so force-closing
+  /// mid-level cannot bypass heart loss. Skips deduction when Infinity Hearts are active.
+  void _handleFirstActionInAttempt() {
+    if (!mounted || _heartSpentForCurrentAttempt) return;
+    if (!widget.progress.isInfinityLives() &&
+        widget.progress.trySpendHeart(amount: 1)) {
+      _heartSpentForCurrentAttempt = true;
+      _syncLifeRegenTicker();
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _lockedToastTimer?.cancel();
+    _lifeRegenTimer?.cancel();
+    widget.progress.removeListener(_syncLifeRegenTicker);
     _game.remainingSecondsNotifier.removeListener(_syncLowTimerPulseTicker);
     _game.isTimeFrozenNotifier.removeListener(_syncLowTimerPulseTicker);
     _coinBounceCtrl.dispose();
     _freezeFlyCtrl.dispose();
     _lowTimerPulseCtrl.dispose();
+    _levelTransitionCtrl.dispose();
     super.dispose();
+  }
+
+  void _syncLifeRegenTicker() {
+    final needsRegen = widget.progress.isInfinityLives() ||
+        widget.progress.lives < widget.progress.currentMaxLives;
+    if (needsRegen && _lifeRegenTimer == null) {
+      _lifeRegenTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        final gained = widget.progress.syncLivesRegen();
+        if (gained > 0 &&
+            _showMoreLivesModal &&
+            _moreLivesPendingRetry &&
+            widget.progress.canPlay()) {
+          _completePendingMoreLivesRetry();
+        }
+      });
+    } else if (!needsRegen && _lifeRegenTimer != null) {
+      _lifeRegenTimer?.cancel();
+      _lifeRegenTimer = null;
+    }
+  }
+
+  void _playLevelRevealTransition() {
+    if (!mounted) return;
+    _levelTransitionCtrl.value = 1.0;
+    _levelTransitionCtrl.animateTo(
+      0.0,
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      widget.progress.syncLivesRegen();
+      if (_showMoreLivesModal &&
+          _moreLivesPendingRetry &&
+          widget.progress.canPlay()) {
+        _completePendingMoreLivesRetry();
+      }
       if (!_showWinOverlay && !_showLoseOverlay) {
         final totalPieces = _activeLevel.initialPieces.length;
         final currentPieces = _game.activePiecesCount;
@@ -189,6 +272,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     final modalPaused = _showWinOverlay ||
         _showLoseOverlay ||
         _showExitRestartPopup ||
+        _showMoreLivesModal ||
         _buyPopupIsLevelUp != null ||
         _settingsOpen ||
         _cheatOpen ||
@@ -196,6 +280,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     final canSuspendBoard = _showWinOverlay ||
         (_showLoseOverlay && !_losePeekingBoard) ||
         _showExitRestartPopup ||
+        _showMoreLivesModal ||
         _buyPopupIsLevelUp != null ||
         _settingsOpen ||
         _cheatOpen;
@@ -259,6 +344,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _losePeekingBoard = false;
       _playOnsUsedInAttempt = 0;
       _showExitRestartPopup = false;
+      _heartSpentForCurrentAttempt = false;
       _buyPopupIsLevelUp = null;
       _settingsOpen = false;
       _cheatOpen = false;
@@ -266,6 +352,7 @@ class _GameplayScreenState extends State<GameplayScreen>
       _activeBoosterArrowHint = null;
       _syncGamePauseState();
     });
+    _playLevelRevealTransition();
     _game.loadLevel(level);
     _checkNewMechanicOrPowerUpUnlock(level);
     AnalyticsService.logLevelStart(level: level.number);
@@ -282,6 +369,11 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   void _handleLevelWon() {
     if (!mounted) return;
+    if (_heartSpentForCurrentAttempt) {
+      widget.progress.refundAttemptHeart();
+      _heartSpentForCurrentAttempt = false;
+      _syncLifeRegenTicker();
+    }
     if (_shouldTrackFtueForLevel(_activeLevel)) {
       AnalyticsService.logTutorial(
         name: 'tut_finish',
@@ -296,17 +388,18 @@ class _GameplayScreenState extends State<GameplayScreen>
       reason: 'win',
     );
     AnalyticsService.logAfLevelAchieved(level: _activeLevel.number);
+    final winCoins = _currentWinCoinReward;
     AnalyticsService.logEarnResource(
       level: _activeLevel.number,
       type: 'currency',
       name: 'coins',
-      amount: _activeLevel.coinReward.toDouble(),
+      amount: winCoins.toDouble(),
       reason: 'win_level',
-      balance: (widget.progress.coins + _activeLevel.coinReward).toDouble(),
+      balance: (widget.progress.coins + winCoins).toDouble(),
     );
     AnalyticsService.logPopupShow(name: 'win', level: _activeLevel.number);
     widget.progress.stageLevelWinReward(
-      rewardCoins: _activeLevel.coinReward,
+      rewardCoins: winCoins,
       isBonus: _activeLevel.isBonus,
     );
     final vaseAdvance = !_activeLevel.isBonus
@@ -383,7 +476,7 @@ class _GameplayScreenState extends State<GameplayScreen>
         rewarded = success;
         if (success && mounted) {
           widget.audio.playClick();
-          final extraCoins = _activeLevel.coinReward;
+          final extraCoins = _currentWinCoinReward;
           widget.progress.doublePendingWinCoins(extraCoins);
           AnalyticsService.logEarnResource(
             level: _activeLevel.number,
@@ -447,7 +540,12 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   void _handleEnterFailedStage() {
     widget.audio.playLevelFailed();
-    widget.progress.loseLife();
+    if (!_heartSpentForCurrentAttempt &&
+        !widget.progress.isInfinityLives() &&
+        widget.progress.trySpendHeart(amount: 1)) {
+      _heartSpentForCurrentAttempt = true;
+    }
+    _syncLifeRegenTicker();
     if (mounted) {
       setState(() {
         _loseInFailedStage = true;
@@ -457,34 +555,129 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
   }
 
+  void _executeRestartLevelNow() {
+    if (!mounted) return;
+    final currentLv = _activeLevel.number;
+    widget.audio.playClick();
+    _freezeFlyCtrl.stop();
+    _freezeFlyCtrl.value = 0.0;
+    setState(() {
+      _showLoseOverlay = false;
+      _loseInFailedStage = false;
+      _losePeekingBoard = false;
+      _playOnsUsedInAttempt = 0;
+      _activeVaseAdvanceResult = null;
+      _showWinOverlay = false;
+      _showExitRestartPopup = false;
+      _heartSpentForCurrentAttempt = false;
+      _settingsOpen = false;
+      _showMoreLivesModal = false;
+      _moreLivesPendingRetry = false;
+      _syncGamePauseState();
+    });
+    _syncLifeRegenTicker();
+    _playLevelRevealTransition();
+    _game.restartLevel();
+    AnalyticsService.logLevelStart(level: currentLv);
+    if (_shouldTrackFtueForLevel(_activeLevel)) {
+      _lastLoggedTutMergeStep = 0;
+    }
+  }
+
+  void _completePendingMoreLivesRetry() {
+    if (!mounted || !widget.progress.canPlay()) return;
+    final shouldRestart = _moreLivesPendingRetry;
+    setState(() {
+      _showMoreLivesModal = false;
+      _moreLivesPendingRetry = false;
+      _syncGamePauseState();
+    });
+    _syncLifeRegenTicker();
+    if (shouldRestart) {
+      _executeRestartLevelNow();
+    }
+  }
+
+  void _handleMoreLivesWatchAd() {
+    widget.audio.playClick();
+    AdsManager.showRewardedAd(
+      placement: 'more_lives_add_one',
+      levelNumber: _activeLevel.number,
+      onAdFailed: _handleRewardedAdFailed,
+      onRewardResult: (success) {
+        if (success && mounted) {
+          widget.progress.addOneLife();
+          _showGameplayToast('+1 Life!');
+          _completePendingMoreLivesRetry();
+        }
+      },
+    );
+  }
+
+  void _handleMoreLivesRefillCoins() {
+    widget.audio.playClick();
+    if (widget.progress.lives >= widget.progress.currentMaxLives) {
+      _completePendingMoreLivesRetry();
+      return;
+    }
+    if (widget.progress.refillLivesWithCoins()) {
+      _showGameplayToast('Lives Refilled!');
+      _completePendingMoreLivesRetry();
+    } else {
+      _handleInsufficientCoins();
+    }
+  }
+
+  void _handleCloseMoreLives() {
+    widget.audio.playClick();
+    widget.progress.syncLivesRegen();
+    if (widget.progress.canPlay()) {
+      _completePendingMoreLivesRetry();
+      return;
+    }
+    // Cannot enter/play a level when Hearts == 0; return to Failed overlay or Home.
+    if (_showLoseOverlay) {
+      setState(() {
+        _showMoreLivesModal = false;
+        _moreLivesPendingRetry = false;
+        _syncGamePauseState();
+      });
+    } else if (widget.onExitToHome != null) {
+      setState(() {
+        _showMoreLivesModal = false;
+        _moreLivesPendingRetry = false;
+        _syncGamePauseState();
+      });
+      widget.onExitToHome!();
+    } else {
+      _showGameplayToast('No lives left! Watch an ad or refill!');
+    }
+  }
+
   void _handleRetryLevel() {
+    widget.progress.syncLivesRegen();
+    _syncLifeRegenTicker();
+    if (!widget.progress.canPlay()) {
+      widget.audio.playClick();
+      AnalyticsService.logPopupShow(
+        name: 'more_lives',
+        level: _activeLevel.number,
+      );
+      setState(() {
+        _showExitRestartPopup = false;
+        _settingsOpen = false;
+        _showMoreLivesModal = true;
+        _moreLivesPendingRetry = true;
+        _syncGamePauseState();
+      });
+      return;
+    }
+
     final currentLv = _activeLevel.number;
     AnalyticsService.logLevelRetry(level: currentLv);
     AdsManager.showInterEndgame(
       levelNumber: currentLv,
-      onCompleted: () {
-        if (!mounted) return;
-        widget.audio.playClick();
-        widget.progress.ensureAtLeastOneLife();
-        _freezeFlyCtrl.stop();
-        _freezeFlyCtrl.value = 0.0;
-        setState(() {
-          _showLoseOverlay = false;
-          _loseInFailedStage = false;
-          _losePeekingBoard = false;
-          _playOnsUsedInAttempt = 0;
-          _activeVaseAdvanceResult = null;
-          _showWinOverlay = false;
-          _showExitRestartPopup = false;
-          _settingsOpen = false;
-          _syncGamePauseState();
-        });
-        _game.restartLevel();
-        AnalyticsService.logLevelStart(level: currentLv);
-        if (_shouldTrackFtueForLevel(_activeLevel)) {
-          _lastLoggedTutMergeStep = 0;
-        }
-      },
+      onCompleted: _executeRestartLevelNow,
     );
   }
 
@@ -504,8 +697,52 @@ class _GameplayScreenState extends State<GameplayScreen>
       playDuration: _game.elapsedGameTime,
       reason: 'exit_restart',
     );
-    widget.progress.loseLife();
+    // Note: Khi user chưa thao tác gì lên board -> retry ko mất tim.
+    if (_game.hasPlayerInteracted &&
+        !_heartSpentForCurrentAttempt &&
+        !widget.progress.isInfinityLives() &&
+        widget.progress.trySpendHeart(amount: 1)) {
+      _heartSpentForCurrentAttempt = true;
+    }
+    _syncLifeRegenTicker();
     _handleRetryLevel();
+  }
+
+  void _handleQuitFromSettings() {
+    widget.audio.playClick();
+    AnalyticsService.logLevelExit(
+      level: _activeLevel.number,
+      playDuration: _game.elapsedGameTime,
+      reason: 'settings_quit',
+    );
+    // User quit giữa chừng -> đảm bảo trừ 1 tim (nếu chưa trừ lúc chạm) và hiển thị popup Level Failed (-1).
+    if (!_showWinOverlay && !_showLoseOverlay) {
+      widget.audio.playLevelFailed();
+      if (!_heartSpentForCurrentAttempt &&
+          !widget.progress.isInfinityLives() &&
+          widget.progress.trySpendHeart(amount: 1)) {
+        _heartSpentForCurrentAttempt = true;
+      }
+      _syncLifeRegenTicker();
+    }
+    setState(() {
+      _settingsOpen = false;
+      _showExitRestartPopup = false;
+      _showLoseOverlay = true;
+      _loseInFailedStage = true;
+      _losePeekingBoard = false;
+      _syncGamePauseState();
+    });
+  }
+
+  void _handleCloseLoseFailedToHome() {
+    widget.audio.playClick();
+    final onExitToHome = widget.onExitToHome;
+    if (onExitToHome != null) {
+      onExitToHome();
+    } else {
+      _handleRetryLevel();
+    }
   }
 
   bool get _isLevelUpUnlocked =>
@@ -758,7 +995,8 @@ class _GameplayScreenState extends State<GameplayScreen>
         !_activeLevel.isBonus && _activeLevel.number == 1;
     final hideBaseCoins = _showWinOverlay ||
         (_showLoseOverlay && !_loseInFailedStage) ||
-        _buyPopupIsLevelUp != null;
+        _buyPopupIsLevelUp != null ||
+        _showMoreLivesModal;
 
     return Scaffold(
       backgroundColor: const Color(0xFF47279B),
@@ -886,45 +1124,47 @@ class _GameplayScreenState extends State<GameplayScreen>
                           alignment: Alignment.topCenter,
                           clipBehavior: Clip.none,
                           children: [
-                            // Top-Left `CoinsWidget` (hidden here when elevated above `WinOverlay`, `PlayOnPopupView`, or `PowerUpBuyPopup`)
-                            Positioned(
-                              left: ux(context, UnityCoinsWidget.hudLeftUnity),
-                              top: ux(context, UnityCoinsWidget.hudTopUnity),
-                              child: Opacity(
-                                opacity: hideBaseCoins ? 0.0 : 1.0,
-                                child: IgnorePointer(
-                                  ignoring: hideBaseCoins,
-                                  child: _buildCoinsWidget(context),
+                            // Top-Left `CoinsWidget` (hidden on Tutorial Level 1 and when elevated above `WinOverlay`, `PlayOnPopupView`, `PowerUpBuyPopup`, or `MoreLivesDialog`)
+                            if (!isTutorialLevel1)
+                              Positioned(
+                                left: ux(context, UnityCoinsWidget.hudLeftUnity),
+                                top: ux(context, UnityCoinsWidget.hudTopUnity),
+                                child: Opacity(
+                                  opacity: hideBaseCoins ? 0.0 : 1.0,
+                                  child: IgnorePointer(
+                                    ignoring: hideBaseCoins,
+                                    child: _buildCoinsWidget(context),
+                                  ),
                                 ),
                               ),
-                            ),
 
-                            // Top-Center `Frame_Level.png` (`Level 15`)
-                            Positioned(
-                              top: ux(context, 10),
-                              child: IgnorePointer(
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    minWidth: ux(context, 287),
-                                  ),
-                                  child: UnityNineSlice(
-                                    sprite: 'Frame_Level.png',
-                                    height: ux(context, 125),
-                                    padding: EdgeInsets.fromLTRB(
-                                      ux(context, 34),
-                                      ux(context, 6),
-                                      ux(context, 34),
-                                      ux(context, 12),
+                            // Top-Center `Frame_Level.png` (hidden on Tutorial Level 1)
+                            if (!isTutorialLevel1)
+                              Positioned(
+                                top: ux(context, 10),
+                                child: IgnorePointer(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minWidth: ux(context, 287),
                                     ),
-                                    child: UnitySdfText(
-                                      _activeLevel.title,
-                                      unityFontSize: 52,
-                                      material: UnityTextMaterial.levelCounter,
+                                    child: UnityNineSlice(
+                                      sprite: 'Frame_Level.png',
+                                      height: ux(context, 125),
+                                      padding: EdgeInsets.fromLTRB(
+                                        ux(context, 34),
+                                        ux(context, 6),
+                                        ux(context, 34),
+                                        ux(context, 12),
+                                      ),
+                                      child: UnitySdfText(
+                                        _activeLevel.title,
+                                        unityFontSize: 52,
+                                        material: UnityTextMaterial.levelCounter,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
 
                             // Top-Right `TimerGameplayView` (`Icon_Clock.png` + `WidgetBase.png` matching `Play_Scene.png`)
                             if (!_activeLevel.timerDisabled)
@@ -1079,33 +1319,18 @@ class _GameplayScreenState extends State<GameplayScreen>
                           ),
                         ),
 
-                      // Bottom-Right Settings Circle Button (`Play_Scene.png`: `137x137`, `right = 58`, straddling golden footer trim)
+                      // Bottom-Right Settings Circle Button (`btn_setting.png`: `137x137`, `right = 58`, straddling golden footer trim)
                       Positioned(
                         right: ux(context, 58),
                         bottom: safePadding.bottom + ux(context, 91.5),
                         child: UnitySpriteButton(
                           key: const ValueKey('hud_settings_btn'),
                           onTap: _toggleSettingsPopup,
-                          child: SizedBox(
+                          child: Image.asset(
+                            'assets/images/UI Home/Home/btn_setting.png',
                             width: ux(context, 137),
                             height: ux(context, 137),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Image.asset(
-                                  'assets/images/Button_Circle_Blue.png',
-                                  width: ux(context, 137),
-                                  height: ux(context, 137),
-                                  fit: BoxFit.contain,
-                                ),
-                                Image.asset(
-                                  'assets/images/Icon_Settings.png',
-                                  width: ux(context, 79),
-                                  height: ux(context, 79),
-                                  fit: BoxFit.contain,
-                                ),
-                              ],
-                            ),
+                            fit: BoxFit.contain,
                           ),
                         ),
                       ),
@@ -1345,6 +1570,8 @@ class _GameplayScreenState extends State<GameplayScreen>
           // 9. `ExitGameplayView.prefab` (`Restart level?` -> `You will lose a life!`)
           if (_showExitRestartPopup)
             ExitGameplayPopup(
+              willLoseLife: _game.hasPlayerInteracted &&
+                  !widget.progress.isInfinityLives(),
               onConfirmRestart: _handleConfirmExitRestart,
               onCancel: () {
                 widget.audio.playClick();
@@ -1362,8 +1589,8 @@ class _GameplayScreenState extends State<GameplayScreen>
               builder: (context, _) {
                 final isLvUp = _buyPopupIsLevelUp!;
                 final packCost = isLvUp
-                    ? PlayerProgressService.levelUpPackCost
-                    : PlayerProgressService.timeFreezePackCost;
+                    ? RemoteConfigService.boosterLevelUpPrice
+                    : RemoteConfigService.boosterTimeFreezePrice;
                 return PowerUpBuyPopup(
                   isLevelUp: isLvUp,
                   playerCoins: widget.progress.coins,
@@ -1481,7 +1708,7 @@ class _GameplayScreenState extends State<GameplayScreen>
             WinOverlay(
               levelNumber: _activeLevel.number,
               levelLabel: _activeLevel.title,
-              rewardCoins: _activeLevel.coinReward,
+              rewardCoins: _currentWinCoinReward,
               showRewardX2: widget.progress
                   .isWinRewardX2UnlockedForLevel(_activeLevel.number),
               timeFormatted: _game.elapsedTimeFormatted,
@@ -1489,8 +1716,18 @@ class _GameplayScreenState extends State<GameplayScreen>
               comboCount: _game.highestCombo,
               gardenResult: _activeVaseAdvanceResult,
               finalBlockNumber: _activeLevel.targetWinNumber,
+              audio: widget.audio,
               onClaimMilestone: () {
                 widget.progress.claimCurrentVaseMilestone();
+                widget.audio.playCoinCollect();
+                _coinBounceCtrl.forward(from: 0.0);
+              },
+              onStageMilestoneClaim: () {
+                widget.audio.playClick();
+                return widget.progress.stageCurrentVaseMilestoneClaim();
+              },
+              onMilestoneCoinChunkArrived: (chunk) {
+                widget.progress.collectPendingMilestoneCoinChunk(chunk);
                 widget.audio.playCoinCollect();
                 _coinBounceCtrl.forward(from: 0.0);
               },
@@ -1546,10 +1783,12 @@ class _GameplayScreenState extends State<GameplayScreen>
                   remainingLives: widget.progress.lives,
                   playOnCost: _currentPlayOnCost,
                   extraSeconds: 30,
+                  startInFailedStage: _loseInFailedStage,
                   onPlayOnCoins: _handlePlayOnCoins,
                   onInsufficientCoins: _handleInsufficientCoins,
                   onPlayOnAd: _handlePlayOnAd,
                   onEnterFailedStage: _handleEnterFailedStage,
+                  onCloseToHome: _handleCloseLoseFailedToHome,
                   onPeekingChanged: (peeking) {
                     if (mounted && _losePeekingBoard != peeking) {
                       setState(() {
@@ -1563,8 +1802,19 @@ class _GameplayScreenState extends State<GameplayScreen>
               },
             ),
 
-          // 14. Elevated Top-Left `CoinsWidget` (`overrideSorting: true` during `WinGameplayView` & `PlayOnPopupView`)
-          if (_showWinOverlay || (_showLoseOverlay && !_loseInFailedStage))
+          // 13b. `More Lives?` Popup when Heart == 0
+          if (_showMoreLivesModal)
+            MoreLivesDialog(
+              progress: widget.progress,
+              onWatchAdForOneLife: _handleMoreLivesWatchAd,
+              onRefillWithCoins: _handleMoreLivesRefillCoins,
+              onInsufficientCoins: _handleInsufficientCoins,
+              onLifeRecovered: _completePendingMoreLivesRetry,
+              onClose: _handleCloseMoreLives,
+            ),
+
+          // 14. Elevated Top-Left `CoinsWidget` (`overrideSorting: true` during `WinGameplayView`, `LoseOverlay`, & `MoreLivesDialog`)
+          if (_showWinOverlay || _showLoseOverlay || _showMoreLivesModal)
             SafeArea(
               child: Align(
                 alignment: Alignment.topLeft,
@@ -1585,6 +1835,25 @@ class _GameplayScreenState extends State<GameplayScreen>
                 ),
               ),
             ),
+
+          // 14b. Smooth non-blocking crossfade veil bridging Win/Lose/Retry into new board settle
+          AnimatedBuilder(
+            animation: _levelTransitionCtrl,
+            builder: (context, _) {
+              final v = _levelTransitionCtrl.value;
+              if (v <= 0.005) return const SizedBox.shrink();
+              final alpha =
+                  (Curves.easeOutCubic.transform(v) * 0.90).clamp(0.0, 1.0);
+              return Positioned.fill(
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    key: const ValueKey('level_transition_veil'),
+                    color: Color.fromRGBO(12, 8, 34, alpha),
+                  ),
+                ),
+              );
+            },
+          ),
 
           // 15. Floating Gameplay Toast Banner (locked boosters, insufficient coins, offline / no ads)
           if (_lockedToastMessage != null)
@@ -2044,7 +2313,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   /// - `Background_Popup.png` (`884x931`) + `Frame_Popup_Title.png` (`558x143`, `"Setting"`)
   /// - Top-right `Button_Close.png` (`139x139`)
   /// - `Panel_Popup.png` (`784x676`) with 3 circle toggles (`Sound`, `Music`, `Vibration`),
-  ///   `"Restart"` `Button_CTA.png` (`499x221`), and `'v.1.0.6'` version label.
+  ///   `"Restart"` `Button_CTA.png` (`499x221`), and `'v.1.0.0'` version label.
   Widget _buildSettingsPopupOverlay(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -2147,20 +2416,41 @@ class _GameplayScreenState extends State<GameplayScreen>
                                         ),
                                       ),
 
-                                      // Centered `"Restart"` Pill Button (`Button_CTA.png`, `499x221`)
+                                      // Action CTAs: Left Red `Quit` + Right Green `Restart`
                                       Positioned(
-                                        top: ux(context, 332),
-                                        child: UnityCtaButton(
-                                          label: 'Restart',
-                                          unityWidth: 499,
-                                          unityHeight: 221,
-                                          unityFontSize: 68,
-                                          onTap:
-                                              _handleRequestReplayFromSettings,
+                                        top: ux(context, 344),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            _SettingsAssetActionButton(
+                                              key: const ValueKey(
+                                                'settings_quit_btn',
+                                              ),
+                                              assetPath:
+                                                  'assets/images/UI Home/btn_red_setting.png',
+                                              label: 'Quit',
+                                              textMaterial:
+                                                  UnityTextMaterial.ctaRed,
+                                              onTap: _handleQuitFromSettings,
+                                            ),
+                                            SizedBox(width: ux(context, 24)),
+                                            _SettingsAssetActionButton(
+                                              key: const ValueKey(
+                                                'settings_restart_btn',
+                                              ),
+                                              assetPath:
+                                                  'assets/images/UI Home/btn_green_setting 2.png',
+                                              label: 'Restart',
+                                              textMaterial:
+                                                  UnityTextMaterial.ctaGreen,
+                                              onTap:
+                                                  _handleRequestReplayFromSettings,
+                                            ),
+                                          ],
                                         ),
                                       ),
 
-                                      // Bottom Version Text (`v.1.0.6` — also acts as secret Cheat Panel trigger when `cheat_enable == true`)
+                                      // Bottom Version Text (`v.1.0.0` — also acts as secret Cheat Panel trigger when `cheat_enable == true`)
                                       Positioned(
                                         bottom: ux(context, 28),
                                         child: ValueListenableBuilder<bool>(
@@ -2565,3 +2855,79 @@ class _SettingsCircleToggleButtonState
     );
   }
 }
+
+class _SettingsAssetActionButton extends StatefulWidget {
+  final String assetPath;
+  final String label;
+  final UnityTextMaterial textMaterial;
+  final VoidCallback onTap;
+
+  const _SettingsAssetActionButton({
+    super.key,
+    required this.assetPath,
+    required this.label,
+    required this.textMaterial,
+    required this.onTap,
+  });
+
+  @override
+  State<_SettingsAssetActionButton> createState() =>
+      _SettingsAssetActionButtonState();
+}
+
+class _SettingsAssetActionButtonState
+    extends State<_SettingsAssetActionButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = ux(context, 312);
+    final h = ux(context, 175);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.935 : 1.0,
+        duration: const Duration(milliseconds: 85),
+        curve: Curves.easeOutCubic,
+        child: SizedBox(
+          width: w,
+          height: h,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Image.asset(
+                widget.assetPath,
+                width: w,
+                height: h,
+                fit: BoxFit.contain,
+              ),
+              Padding(
+                padding: EdgeInsets.only(
+                  left: ux(context, 24),
+                  right: ux(context, 24),
+                  bottom: ux(context, 10),
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: UnitySdfText(
+                    widget.label,
+                    unityFontSize: 60,
+                    material: widget.textMaterial,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

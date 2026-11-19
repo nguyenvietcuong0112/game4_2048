@@ -81,7 +81,7 @@ class IntroSplashView extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: ux(context, 96)),
                   child: Image.asset(
-                    'assets/images/Logo.png',
+                    'assets/images/Logo.webp',
                     width: ux(context, 808),
                     fit: BoxFit.contain,
                   ),

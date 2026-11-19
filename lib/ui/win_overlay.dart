@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../services/audio_haptics_service.dart';
 import '../services/player_progress_service.dart';
 import 'unity_ui_kit.dart';
 import 'water_garden_view.dart';
@@ -30,7 +31,10 @@ class WinOverlay extends StatefulWidget {
   final int comboCount;
   final VaseStepAdvanceResult? gardenResult;
   final int finalBlockNumber;
+  final AudioHapticsService? audio;
   final VoidCallback? onClaimMilestone;
+  final int Function()? onStageMilestoneClaim;
+  final ValueChanged<int>? onMilestoneCoinChunkArrived;
   final VoidCallback? onStage2Shown;
   final ValueChanged<int>? onCoinChunkArrived;
   final Future<bool> Function()? onWatchRewardX2;
@@ -48,7 +52,10 @@ class WinOverlay extends StatefulWidget {
     this.comboCount = 0,
     this.gardenResult,
     this.finalBlockNumber = 2048,
+    this.audio,
     this.onClaimMilestone,
+    this.onStageMilestoneClaim,
+    this.onMilestoneCoinChunkArrived,
     this.onStage2Shown,
     this.onCoinChunkArrived,
     this.onWatchRewardX2,
@@ -65,19 +72,24 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
   late final AnimationController _sequenceCtrl;
   late final AnimationController _confettiCtrl;
   late final AnimationController _coinFlyCtrl;
+  late final AnimationController _milestoneCoinFlyCtrl;
 
   bool _confettiStarted = false;
   bool _confettiFinished = false;
   bool _stage2Notified = false;
   bool _collecting = false;
+  bool _collectingMilestone = false;
   bool _watchingRewardAd = false;
   bool _completedViaRewardAd = false;
   int _coinMultiplier = 1;
   int _activeFlyCount = _defaultFlyingCoinCount;
+  int _milestoneCoinsTotal = 0;
   int _spawnSide = 0; // -1: left Next Level btn, 0: center legacy, 1: right Reward x2 btn
   final Set<int> _arrivedCoinIndices = {};
+  final Set<int> _arrivedMilestoneIndices = {};
 
   static const int _defaultFlyingCoinCount = 7;
+  static const int _milestoneFlyingCoinCount = 10;
   static const int _rewardX2FlyingCoinCount = 12;
   static const String _line1Text = 'Level';
   static const String _line2Text = 'Complete!';
@@ -108,7 +120,7 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
 
     _coinFlyCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 680),
+      duration: const Duration(milliseconds: 860),
     )
       ..addListener(_handleCoinFlightTick)
       ..addStatusListener((status) {
@@ -119,6 +131,17 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
           } else {
             widget.onNextLevel();
           }
+        }
+      });
+
+    _milestoneCoinFlyCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 620),
+    )
+      ..addListener(_handleMilestoneCoinFlightTick)
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() => _collectingMilestone = false);
         }
       });
   }
@@ -137,22 +160,82 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
     }
   }
 
-  void _handleCoinFlightTick() {
-    final t = _coinFlyCtrl.value;
-    final flyCount = math.max(2, _activeFlyCount);
-    final totalCoins = widget.rewardCoins * _coinMultiplier;
-    final baseChunk = totalCoins ~/ flyCount;
-    final remainder = totalCoins % flyCount;
+  (double start, double end) _coinFlightWindow(
+    int index,
+    int totalCount, {
+    required bool settleBeforeAdvance,
+  }) {
+    final norm = totalCount <= 1 ? 0.0 : index / (totalCount - 1);
+    if (settleBeforeAdvance) {
+      // Land all coins by t=0.65 (~559ms), leaving ~301ms for full 220ms wallet bounce & balance settle.
+      return (norm * 0.25, 0.40 + norm * 0.25);
+    }
+    return (norm * 0.34, 0.56 + norm * 0.38);
+  }
 
-    for (int i = 0; i < flyCount; i++) {
-      final coinEnd = 0.58 + (i / (flyCount - 1)) * 0.40;
-      if (t >= coinEnd && _arrivedCoinIndices.add(i)) {
+  void _tickFlightChunks({
+    required double t,
+    required int flyCount,
+    required int totalCoins,
+    required bool settleBeforeAdvance,
+    required Set<int> arrivedIndices,
+    required ValueChanged<int>? onChunk,
+  }) {
+    final count = math.max(2, flyCount);
+    final baseChunk = totalCoins ~/ count;
+    final remainder = totalCoins % count;
+    for (int i = 0; i < count; i++) {
+      final (_, coinEnd) = _coinFlightWindow(
+        i,
+        count,
+        settleBeforeAdvance: settleBeforeAdvance,
+      );
+      if (t >= coinEnd && arrivedIndices.add(i)) {
         final chunk = baseChunk + (i < remainder ? 1 : 0);
         if (chunk > 0) {
-          widget.onCoinChunkArrived?.call(chunk);
+          onChunk?.call(chunk);
         }
       }
     }
+  }
+
+  void _handleCoinFlightTick() {
+    _tickFlightChunks(
+      t: _coinFlyCtrl.value,
+      flyCount: _activeFlyCount,
+      totalCoins: widget.rewardCoins * _coinMultiplier,
+      settleBeforeAdvance: true,
+      arrivedIndices: _arrivedCoinIndices,
+      onChunk: widget.onCoinChunkArrived,
+    );
+  }
+
+  void _handleMilestoneCoinFlightTick() {
+    _tickFlightChunks(
+      t: _milestoneCoinFlyCtrl.value,
+      flyCount: _milestoneFlyingCoinCount,
+      totalCoins: _milestoneCoinsTotal,
+      settleBeforeAdvance: false,
+      arrivedIndices: _arrivedMilestoneIndices,
+      onChunk: widget.onMilestoneCoinChunkArrived,
+    );
+  }
+
+  void _handleGardenMilestoneClaim() {
+    if (widget.onStageMilestoneClaim != null &&
+        widget.onMilestoneCoinChunkArrived != null) {
+      final amount = widget.onStageMilestoneClaim!();
+      if (amount > 0 && mounted) {
+        setState(() {
+          _collectingMilestone = true;
+          _milestoneCoinsTotal = amount;
+          _arrivedMilestoneIndices.clear();
+        });
+        _milestoneCoinFlyCtrl.forward(from: 0.0);
+      }
+      return;
+    }
+    widget.onClaimMilestone?.call();
   }
 
   void _startCoinCollection({
@@ -233,16 +316,30 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
     _sequenceCtrl.dispose();
     _confettiCtrl.dispose();
     _coinFlyCtrl.dispose();
+    _milestoneCoinFlyCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([_sequenceCtrl, _coinFlyCtrl]),
+      animation: Listenable.merge([
+        _sequenceCtrl,
+        _coinFlyCtrl,
+        _milestoneCoinFlyCtrl,
+      ]),
       builder: (context, _) {
         final seq = _sequenceCtrl.value;
         final bgAlpha = (seq / 0.16).clamp(0.0, 1.0) * 0.90;
+        final gardenEnter =
+            Curves.easeOutCubic.transform((seq / 0.22).clamp(0.0, 1.0));
+        final contentOutAlpha = _collecting
+            ? (1.0 -
+                    Curves.easeInCubic.transform(
+                      ((_coinFlyCtrl.value - 0.74) / 0.26).clamp(0.0, 1.0),
+                    ))
+                .clamp(0.0, 1.0)
+            : 1.0;
 
         return ColoredBox(
           color: Color.fromRGBO(10, 8, 28, bgAlpha),
@@ -250,25 +347,33 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
             fit: StackFit.expand,
             children: [
               if (widget.gardenResult != null)
-                SafeArea(
-                  child: WaterGardenView(
-                    advanceResult: widget.gardenResult!,
-                    finalBlockNumber: widget.finalBlockNumber,
-                    rewardCoins: widget.rewardCoins,
-                    levelNumber: widget.levelNumber,
-                    showRewardX2: _isRewardX2Enabled,
-                    showGardenBackdrop: false,
-                    isActionBusy: _collecting || _watchingRewardAd,
-                    onNextLevel: _onTapGardenNextLevel,
-                    onRewardX2:
-                        _isRewardX2Enabled ? _onTapGardenRewardX2 : null,
-                    onClaimMilestone: () {
-                      widget.onClaimMilestone?.call();
-                    },
+                Opacity(
+                  opacity: (gardenEnter * contentOutAlpha).clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: 0.965 + 0.035 * gardenEnter,
+                    child: SafeArea(
+                      child: WaterGardenView(
+                        advanceResult: widget.gardenResult!,
+                        finalBlockNumber: widget.finalBlockNumber,
+                        rewardCoins: widget.rewardCoins,
+                        levelNumber: widget.levelNumber,
+                        audio: widget.audio,
+                        showRewardX2: _isRewardX2Enabled,
+                        showGardenBackdrop: false,
+                        isActionBusy: _collecting || _watchingRewardAd,
+                        onNextLevel: _onTapGardenNextLevel,
+                        onRewardX2:
+                            _isRewardX2Enabled ? _onTapGardenRewardX2 : null,
+                        onClaimMilestone: _handleGardenMilestoneClaim,
+                      ),
+                    ),
                   ),
                 )
               else
-                _buildWinSequenceBody(context, seq),
+                Opacity(
+                  opacity: contentOutAlpha,
+                  child: _buildWinSequenceBody(context, seq),
+                ),
 
               // One-shot Celebratory Confetti FX: flies in from top-left & top-right downward, then unmounts
               if (_confettiStarted && !_confettiFinished)
@@ -284,7 +389,8 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
                   ),
                 ),
 
-              if (_collecting) _buildFlyingCoinsLayer(context),
+              if (_collecting || _collectingMilestone)
+                _buildFlyingCoinsLayer(context),
             ],
           ),
         );
@@ -864,73 +970,102 @@ class _WinOverlayState extends State<WinOverlay> with TickerProviderStateMixin {
     final topPad = pad.top;
     final bottomPad = pad.bottom;
 
-    final Offset startCenter;
-    if (_spawnSide < 0) {
-      startCenter = Offset(
-        screen.width * 0.28,
-        screen.height - bottomPad - 44.0,
-      );
-    } else if (_spawnSide > 0) {
-      startCenter = Offset(
-        screen.width * 0.72,
-        screen.height - bottomPad - 44.0,
-      );
-    } else if (widget.gardenResult != null) {
-      startCenter = Offset(
-        screen.width * 0.5,
-        screen.height - bottomPad - 44.0,
-      );
-    } else {
-      startCenter = Offset(
-        screen.width * 0.5,
-        screen.height * 0.5 - ux(context, 42),
-      );
-    }
-
     final targetCoinIcon = Offset(
       ux(context, UnityCoinsWidget.coinCenterXUnity),
       topPad + ux(context, UnityCoinsWidget.coinCenterYUnity),
     );
 
-    final flyCount = math.max(2, _activeFlyCount);
-    final t = _coinFlyCtrl.value;
     final children = <Widget>[];
 
-    for (int i = 0; i < flyCount; i++) {
-      final coinStart = (i / (flyCount - 1)) * 0.34;
-      final coinEnd = 0.58 + (i / (flyCount - 1)) * 0.40;
-      if (t < coinStart || t >= coinEnd) continue;
+    void appendCoinArcSprites({
+      required Offset startCenter,
+      required int rawFlyCount,
+      required double t,
+      required bool settleBeforeAdvance,
+    }) {
+      final flyCount = math.max(2, rawFlyCount);
+      for (int i = 0; i < flyCount; i++) {
+        final (coinStart, coinEnd) = _coinFlightWindow(
+          i,
+          flyCount,
+          settleBeforeAdvance: settleBeforeAdvance,
+        );
+        if (t < coinStart || t >= coinEnd) continue;
 
-      final localT = ((t - coinStart) / (coinEnd - coinStart)).clamp(0.0, 1.0);
-      final eased = Curves.easeInOutCubic.transform(localT);
+        final localT = ((t - coinStart) / (coinEnd - coinStart)).clamp(0.0, 1.0);
+        final eased = Curves.easeInOutCubic.transform(localT);
 
-      final spreadX = (i - (flyCount - 1) * 0.5) * ux(context, 38);
-      final ctrl = Offset(
-        startCenter.dx + spreadX - ux(context, 120),
-        (startCenter.dy + targetCoinIcon.dy) * 0.46 + spreadX * 0.22,
-      );
+        final spreadX = (i - (flyCount - 1) * 0.5) * ux(context, 38);
+        final ctrl = Offset(
+          startCenter.dx + spreadX - ux(context, 120),
+          (startCenter.dy + targetCoinIcon.dy) * 0.46 + spreadX * 0.22,
+        );
 
-      final oneMinus = 1.0 - eased;
-      final px = oneMinus * oneMinus * startCenter.dx +
-          2 * oneMinus * eased * ctrl.dx +
-          eased * eased * targetCoinIcon.dx;
-      final py = oneMinus * oneMinus * startCenter.dy +
-          2 * oneMinus * eased * ctrl.dy +
-          eased * eased * targetCoinIcon.dy;
+        final oneMinus = 1.0 - eased;
+        final px = oneMinus * oneMinus * startCenter.dx +
+            2 * oneMinus * eased * ctrl.dx +
+            eased * eased * targetCoinIcon.dx;
+        final py = oneMinus * oneMinus * startCenter.dy +
+            2 * oneMinus * eased * ctrl.dy +
+            eased * eased * targetCoinIcon.dy;
 
-      final coinSz = ux(context, 96) * (1.05 - 0.18 * eased);
-      children.add(
-        Positioned(
-          left: px - coinSz * 0.5,
-          top: py - coinSz * 0.5,
-          child: IgnorePointer(
-            child: Image.asset(
-              'assets/images/Icon_Coin.png',
-              width: coinSz,
-              height: coinSz,
+        final coinSz = ux(context, 96) * (1.05 - 0.18 * eased);
+        children.add(
+          Positioned(
+            left: px - coinSz * 0.5,
+            top: py - coinSz * 0.5,
+            child: IgnorePointer(
+              child: Image.asset(
+                'assets/images/Icon_Coin.png',
+                width: coinSz,
+                height: coinSz,
+              ),
             ),
           ),
+        );
+      }
+    }
+
+    if (_collectingMilestone) {
+      appendCoinArcSprites(
+        startCenter: Offset(
+          screen.width * 0.5,
+          screen.height - bottomPad - ux(context, 180),
         ),
+        rawFlyCount: _milestoneFlyingCoinCount,
+        t: _milestoneCoinFlyCtrl.value,
+        settleBeforeAdvance: false,
+      );
+    }
+
+    if (_collecting) {
+      final Offset winStartCenter;
+      if (_spawnSide < 0) {
+        winStartCenter = Offset(
+          screen.width * 0.28,
+          screen.height - bottomPad - 44.0,
+        );
+      } else if (_spawnSide > 0) {
+        winStartCenter = Offset(
+          screen.width * 0.72,
+          screen.height - bottomPad - 44.0,
+        );
+      } else if (widget.gardenResult != null) {
+        winStartCenter = Offset(
+          screen.width * 0.5,
+          screen.height - bottomPad - 44.0,
+        );
+      } else {
+        winStartCenter = Offset(
+          screen.width * 0.5,
+          screen.height * 0.5 - ux(context, 42),
+        );
+      }
+      appendCoinArcSprites(
+        startCenter: winStartCenter,
+        rawFlyCount: _activeFlyCount,
+        t: _coinFlyCtrl.value,
+        settleBeforeAdvance: true,
       );
     }
 

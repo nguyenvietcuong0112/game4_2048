@@ -14,12 +14,33 @@ class RemoteConfigService {
   static const String keyAdsResume = 'Ads_resume';
   static const String keyCheatEnable = 'cheat_enable';
 
+  // Economy / Coin Price & Reward Remote Config keys
+  static const String keyBoosterLevelUpPrice = 'booster_level_up_price';
+  static const String keyBoosterTimeFreezePrice = 'booster_time_freeze_price';
+  static const String keyLiveHeartRefillPrice = 'live_heart_refill_price';
+  static const String keyPlayOnBasePrice = 'play_on_base_price';
+  static const String keyPlayOnIncrementPrice = 'play_on_increment_price';
+  static const String keyWinLevelCoinReward = 'win_level_coin_reward';
+
+  static const int defaultBoosterLevelUpPrice = 600;
+  static const int defaultBoosterTimeFreezePrice = 450;
+  static const int defaultLiveHeartRefillPrice = 900;
+  static const int defaultPlayOnBasePrice = 450;
+  static const int defaultPlayOnIncrementPrice = 150;
+  static const int defaultWinLevelCoinReward = 25;
+
   // Cached values with defaults (`cheat_enable` defaults to `false` for store safety!)
   static int _interLevelX = 2; // Show inter from Level 2 onwards
   static int _adsInterval = 25; // 25s cooldown between interstitials
   static bool _aoaFormat = false; // false = AdMob, true = MAX
   static bool _adsReplay = false; // false = Inter, true = Native full screen
   static bool _adsResume = false; // false = AOA, true = Inter
+  static int _boosterLevelUpPrice = defaultBoosterLevelUpPrice;
+  static int _boosterTimeFreezePrice = defaultBoosterTimeFreezePrice;
+  static int _liveHeartRefillPrice = defaultLiveHeartRefillPrice;
+  static int _playOnBasePrice = defaultPlayOnBasePrice;
+  static int _playOnIncrementPrice = defaultPlayOnIncrementPrice;
+  static int _winLevelCoinReward = defaultWinLevelCoinReward;
   static bool _isListening = false;
   static final ValueNotifier<bool> cheatEnableNotifier =
       ValueNotifier<bool>(false);
@@ -30,6 +51,12 @@ class RemoteConfigService {
   static bool get adsReplay => _adsReplay;
   static bool get adsResume => _adsResume;
   static bool get cheatEnable => cheatEnableNotifier.value;
+  static int get boosterLevelUpPrice => _boosterLevelUpPrice;
+  static int get boosterTimeFreezePrice => _boosterTimeFreezePrice;
+  static int get liveHeartRefillPrice => _liveHeartRefillPrice;
+  static int get playOnBasePrice => _playOnBasePrice;
+  static int get playOnIncrementPrice => _playOnIncrementPrice;
+  static int get winLevelCoinReward => _winLevelCoinReward;
 
   /// Initializes RemoteConfigService and fetches remote configs immediately.
   /// Safe to call regardless of whether `AdsManager.enableAds` is true or false.
@@ -49,6 +76,30 @@ class RemoteConfigService {
       _aoaFormat = await _fetchBool(keyAoaFormat, false);
       _adsReplay = await _fetchBool(keyAdsReplay, false);
       _adsResume = await _fetchBool(keyAdsResume, false);
+      _boosterLevelUpPrice = await _fetchNonNegativeInt(
+        keyBoosterLevelUpPrice,
+        defaultBoosterLevelUpPrice,
+      );
+      _boosterTimeFreezePrice = await _fetchNonNegativeInt(
+        keyBoosterTimeFreezePrice,
+        defaultBoosterTimeFreezePrice,
+      );
+      _liveHeartRefillPrice = await _fetchNonNegativeInt(
+        keyLiveHeartRefillPrice,
+        defaultLiveHeartRefillPrice,
+      );
+      _playOnBasePrice = await _fetchNonNegativeInt(
+        keyPlayOnBasePrice,
+        defaultPlayOnBasePrice,
+      );
+      _playOnIncrementPrice = await _fetchNonNegativeInt(
+        keyPlayOnIncrementPrice,
+        defaultPlayOnIncrementPrice,
+      );
+      _winLevelCoinReward = await _fetchNonNegativeInt(
+        keyWinLevelCoinReward,
+        defaultWinLevelCoinReward,
+      );
       final fetchedCheat = await _fetchBool(
         keyCheatEnable,
         await _fetchBool('Cheat_enable', false),
@@ -64,6 +115,12 @@ class RemoteConfigService {
         'aoaFormat: $_aoaFormat, '
         'adsReplay: $_adsReplay, '
         'adsResume: $_adsResume, '
+        'boosterLevelUpPrice: $_boosterLevelUpPrice, '
+        'boosterTimeFreezePrice: $_boosterTimeFreezePrice, '
+        'liveHeartRefillPrice: $_liveHeartRefillPrice, '
+        'playOnBasePrice: $_playOnBasePrice, '
+        'playOnIncrementPrice: $_playOnIncrementPrice, '
+        'winLevelCoinReward: $_winLevelCoinReward, '
         'cheat_enable: ${cheatEnableNotifier.value}',
       );
     } catch (e) {
@@ -93,6 +150,12 @@ class RemoteConfigService {
     bool? adsReplay,
     bool? adsResume,
     bool? cheatEnable,
+    int? boosterLevelUpPrice,
+    int? boosterTimeFreezePrice,
+    int? liveHeartRefillPrice,
+    int? playOnBasePrice,
+    int? playOnIncrementPrice,
+    int? winLevelCoinReward,
   }) {
     if (interLevelX != null) _interLevelX = interLevelX;
     if (adsInterval != null) _adsInterval = adsInterval;
@@ -100,6 +163,40 @@ class RemoteConfigService {
     if (adsReplay != null) _adsReplay = adsReplay;
     if (adsResume != null) _adsResume = adsResume;
     if (cheatEnable != null) cheatEnableNotifier.value = cheatEnable;
+    if (boosterLevelUpPrice != null && boosterLevelUpPrice >= 0) {
+      _boosterLevelUpPrice = boosterLevelUpPrice;
+    }
+    if (boosterTimeFreezePrice != null && boosterTimeFreezePrice >= 0) {
+      _boosterTimeFreezePrice = boosterTimeFreezePrice;
+    }
+    if (liveHeartRefillPrice != null && liveHeartRefillPrice >= 0) {
+      _liveHeartRefillPrice = liveHeartRefillPrice;
+    }
+    if (playOnBasePrice != null && playOnBasePrice >= 0) {
+      _playOnBasePrice = playOnBasePrice;
+    }
+    if (playOnIncrementPrice != null && playOnIncrementPrice >= 0) {
+      _playOnIncrementPrice = playOnIncrementPrice;
+    }
+    if (winLevelCoinReward != null && winLevelCoinReward >= 0) {
+      _winLevelCoinReward = winLevelCoinReward;
+    }
+  }
+
+  @visibleForTesting
+  static void resetDefaultsForTest() {
+    _interLevelX = 2;
+    _adsInterval = 25;
+    _aoaFormat = false;
+    _adsReplay = false;
+    _adsResume = false;
+    _boosterLevelUpPrice = defaultBoosterLevelUpPrice;
+    _boosterTimeFreezePrice = defaultBoosterTimeFreezePrice;
+    _liveHeartRefillPrice = defaultLiveHeartRefillPrice;
+    _playOnBasePrice = defaultPlayOnBasePrice;
+    _playOnIncrementPrice = defaultPlayOnIncrementPrice;
+    _winLevelCoinReward = defaultWinLevelCoinReward;
+    cheatEnableNotifier.value = false;
   }
 
   static Future<bool> _fetchBool(String key, bool defaultValue) async {
@@ -124,5 +221,10 @@ class RemoteConfigService {
     } catch (_) {
       return defaultValue;
     }
+  }
+
+  static Future<int> _fetchNonNegativeInt(String key, int defaultValue) async {
+    final value = await _fetchInt(key, defaultValue);
+    return value >= 0 ? value : defaultValue;
   }
 }

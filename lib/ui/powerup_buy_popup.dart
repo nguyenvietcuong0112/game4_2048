@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/player_progress_service.dart';
+import '../services/remote_config_service.dart';
 import 'unity_ui_kit.dart';
 
 /// Exact 1:1 replica of Unity `PowerUpBuyView.prefab`:
@@ -38,8 +38,8 @@ class PowerUpBuyPopup extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolvedCost = packCost ??
         (isLevelUp
-            ? PlayerProgressService.levelUpPackCost
-            : PlayerProgressService.timeFreezePackCost);
+            ? RemoteConfigService.boosterLevelUpPrice
+            : RemoteConfigService.boosterTimeFreezePrice);
     final title = isLevelUp ? 'LEVEL UP' : 'TIME FREEZE';
     final description = isLevelUp
         ? 'Merge a matching pair instantly, wherever they are!'
@@ -49,8 +49,14 @@ class PowerUpBuyPopup extends StatelessWidget {
         : 'assets/images/PowerUp_TimeFreeze.png';
     final canAfford = playerCoins >= resolvedCost;
 
-    return Container(
-      color: const Color(0xFA0F204A),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      builder: (context, t, child) => Container(
+        color: Color.fromRGBO(15, 32, 74, 0.98 * t),
+        child: child,
+      ),
       child: SafeArea(
         child: Stack(
           fit: StackFit.expand,

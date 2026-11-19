@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import '../services/audio_haptics_service.dart';
 import '../services/player_progress_service.dart';
 import 'unity_ui_kit.dart';
 
@@ -152,6 +153,7 @@ class WaterGardenView extends StatefulWidget {
   final VoidCallback onClaimMilestone;
   final bool showGardenBackdrop;
   final bool playEntranceAnim;
+  final AudioHapticsService? audio;
 
   const WaterGardenView({
     super.key,
@@ -166,6 +168,7 @@ class WaterGardenView extends StatefulWidget {
     required this.onClaimMilestone,
     this.showGardenBackdrop = true,
     this.playEntranceAnim = true,
+    this.audio,
   });
 
   @override
@@ -191,6 +194,9 @@ class _WaterGardenViewState extends State<WaterGardenView>
   bool _isSkipped = false;
   bool _showClaimModal = false;
   bool _showingNextVase = false;
+  bool _sfxPourTriggered = false;
+  bool _sfxGrowTriggered = false;
+  bool _sfxBloomTriggered = false;
 
   void _preloadActiveAndNextFlowers() {
     final cache = _GardenFlowerSpriteCache.instance;
@@ -220,7 +226,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
     _seqCtrl = AnimationController(
       vsync: this,
       duration: Duration(milliseconds: totalDurationMs),
-    );
+    )..addListener(_handleSequenceAudioTick);
 
     _ambientCtrl = AnimationController(
       vsync: this,
@@ -256,11 +262,11 @@ class _WaterGardenViewState extends State<WaterGardenView>
       );
       _bloomAnim = CurvedAnimation(
         parent: _seqCtrl,
-        curve: const Interval(0.50, 0.93, curve: Curves.easeOutCubic),
+        curve: const Interval(0.48, 0.94, curve: Curves.easeOutCubic),
       );
       _raysAnim = CurvedAnimation(
         parent: _seqCtrl,
-        curve: const Interval(0.48, 0.92, curve: Curves.easeOutCubic),
+        curve: const Interval(0.46, 0.94, curve: Curves.easeOutCubic),
       );
     } else {
       _jarEnterAnim = CurvedAnimation(
@@ -303,6 +309,33 @@ class _WaterGardenViewState extends State<WaterGardenView>
     });
   }
 
+  void _handleSequenceAudioTick() {
+    if (!mounted || _isSkipped) return;
+    final audio = widget.audio;
+    if (audio == null) return;
+
+    if (!_sfxPourTriggered && _pourAnim.value >= 0.04) {
+      _sfxPourTriggered = true;
+      audio.playGardenPour();
+    }
+
+    final is100 = widget.advanceResult.didReach100Percent;
+    final oldP = widget.advanceResult.oldProgress;
+    final newP = widget.advanceResult.newProgress;
+    final crossedTier =
+        (oldP < 0.26 && newP >= 0.26) || (oldP < 0.56 && newP >= 0.56);
+
+    if (!_sfxGrowTriggered && _waterRiseAnim.value >= (is100 ? 0.78 : 0.62)) {
+      _sfxGrowTriggered = true;
+      audio.playGardenFlowerGrow(majorStage: is100 || crossedTier);
+    }
+
+    if (is100 && !_sfxBloomTriggered && _bloomAnim.value >= 0.24) {
+      _sfxBloomTriggered = true;
+      audio.playGardenFullBloom();
+    }
+  }
+
   @override
   void didUpdateWidget(covariant WaterGardenView oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -314,6 +347,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
   @override
   void dispose() {
     _claimDelayTimer?.cancel();
+    _seqCtrl.removeListener(_handleSequenceAudioTick);
     _entranceCtrl.dispose();
     _seqCtrl.dispose();
     _ambientCtrl.dispose();
@@ -351,6 +385,7 @@ class _WaterGardenViewState extends State<WaterGardenView>
   void _handleClaimTapped() {
     if (widget.isActionBusy) return;
     _fastForwardSequenceIfRunning();
+    widget.audio?.playGardenNewVaseReveal();
     widget.onClaimMilestone();
     if (!mounted) return;
     setState(() {
@@ -401,22 +436,26 @@ class _WaterGardenViewState extends State<WaterGardenView>
           context,
           UnityCoinsWidget.hudTopUnity + UnityCoinsWidget.heightUnity + 14.0,
         );
-        final ribbonTop = math.max(coinsBottomSafeY - 10.0, safeH * 0.038);
-        final ribbonH = (safeH * 0.130).clamp(88.0, 120.0);
+        final ribbonTop = math.max(coinsBottomSafeY - 10.0, safeH * 0.036);
+        final ribbonH = (safeH * 0.128).clamp(86.0, 118.0);
         final ribbonW = math.min(safeW - 12.0, 412.0);
 
-        final bottomPad = math.max(12.0, safeH * 0.020);
-        final bottomControlsEstimatedH = 104.0 + ux(context, 224.0);
+        final frameToButtonGap = (safeH * 0.044).clamp(28.0, 44.0);
+        final cardWEst = math.min(safeW - 28.0, ux(context, 780.0));
+        final cardHEst = cardWEst * (243.0 / 757.0);
+        final bottomPad = math.max(52.0, safeH * 0.065);
+        final bottomControlsEstimatedH =
+            cardHEst + frameToButtonGap + ux(context, 221.0);
         final stageTop = ribbonTop + ribbonH + 2.0;
         final maxControlsTop = math.max(
           stageTop + 176.0,
           safeH - bottomPad - bottomControlsEstimatedH,
         );
-        final idealStageH = (safeH * 0.375).clamp(176.0, 320.0);
+        final idealStageH = (safeH * 0.365).clamp(182.0, 316.0);
         final stageAvailH = math
-            .min(maxControlsTop - stageTop + 4.0, idealStageH)
-            .clamp(176.0, 320.0);
-        final controlsTop = (stageTop + stageAvailH + 4.0).clamp(
+            .min(maxControlsTop - stageTop - 10.0, idealStageH)
+            .clamp(176.0, 316.0);
+        final controlsTop = (stageTop + stageAvailH + 12.0).clamp(
           stageTop + 176.0,
           maxControlsTop,
         );
@@ -434,17 +473,28 @@ class _WaterGardenViewState extends State<WaterGardenView>
                   child: IgnorePointer(
                     child: RepaintBoundary(
                       child: AnimatedBuilder(
-                        animation: _ambientCtrl,
+                        animation: Listenable.merge([
+                          _ambientCtrl,
+                          _entranceCtrl,
+                        ]),
                         builder: (context, _) {
-                          return SizedBox.expand(
-                            child: CustomPaint(
-                              painter: _OldThemeStageBackdropPainter(
-                                drawSolidScrim: widget.showGardenBackdrop,
-                                ambientPhase:
-                                    _ambientCtrl.value * math.pi * 2.0,
-                                stageCenterYFraction:
-                                    ((stageTop + stageAvailH * 0.50) / safeH)
-                                        .clamp(0.32, 0.62),
+                          final enterOpacity = widget.playEntranceAnim
+                              ? Curves.easeOutCubic.transform(
+                                  _entranceCtrl.value.clamp(0.0, 1.0),
+                                )
+                              : 1.0;
+                          return Opacity(
+                            opacity: enterOpacity,
+                            child: SizedBox.expand(
+                              child: CustomPaint(
+                                painter: _OldThemeStageBackdropPainter(
+                                  drawSolidScrim: widget.showGardenBackdrop,
+                                  ambientPhase:
+                                      _ambientCtrl.value * math.pi * 2.0,
+                                  stageCenterYFraction:
+                                      ((stageTop + stageAvailH * 0.43) / safeH)
+                                          .clamp(0.28, 0.58),
+                                ),
                               ),
                             ),
                           );
@@ -504,6 +554,9 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                         is100Percent: false,
                                         isNewVaseReveal: true,
                                         newVaseSparkleT: rawNext,
+                                        stepIndex: 0,
+                                        totalSteps: activeCfg.totalSteps,
+                                        didAdvanceStep: false,
                                         spriteVersion: _GardenFlowerSpriteCache
                                             .instance.version.value,
                                       ),
@@ -541,6 +594,12 @@ class _WaterGardenViewState extends State<WaterGardenView>
                                       is100Percent: is100,
                                       isNewVaseReveal: false,
                                       newVaseSparkleT: 0.0,
+                                      stepIndex: widget.advanceResult.newStep,
+                                      totalSteps:
+                                          widget.advanceResult.totalSteps,
+                                      didAdvanceStep:
+                                          widget.advanceResult.newStep >
+                                              widget.advanceResult.oldStep,
                                       spriteVersion: _GardenFlowerSpriteCache
                                           .instance.version.value,
                                     ),
@@ -620,36 +679,74 @@ class _WaterGardenViewState extends State<WaterGardenView>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               RepaintBoundary(
-                                child: AnimatedBuilder(
-                                  animation: Listenable.merge([
-                                    _waterRiseAnim,
-                                    _nextVaseCtrl,
-                                  ]),
-                                  builder: (context, _) {
-                                    final double currentProgress;
-                                    if (_showingNextVase) {
-                                      currentProgress = 0.0;
-                                    } else {
-                                      currentProgress = ui.lerpDouble(
-                                        widget.advanceResult.oldProgress,
-                                        widget.advanceResult.newProgress,
-                                        _waterRiseAnim.value,
-                                      )!;
-                                    }
-                                    final isCompleteNow = !_showingNextVase &&
-                                        is100 &&
-                                        currentProgress >= 0.999;
+                                child: Builder(
+                                  builder: (context) {
+                                    final mechanicProg =
+                                        widget.advanceResult.mechanicProgress ??
+                                            (widget.levelNumber != null &&
+                                                    widget.levelNumber! < 1000
+                                                ? PlayerProgressService
+                                                    .computeMechanicAdvance(
+                                                    widget.levelNumber!,
+                                                  )
+                                                : null);
+                                    final usingMechanicBar =
+                                        mechanicProg != null;
 
-                                    return _buildOldThemeProgressCard(
-                                      cfg: activeCfg,
-                                      progress: currentProgress,
-                                      isComplete: isCompleteNow,
-                                      isNewVaseMystery: _showingNextVase,
+                                    return AnimatedBuilder(
+                                      animation: Listenable.merge([
+                                        _waterRiseAnim,
+                                        _nextVaseCtrl,
+                                      ]),
+                                      builder: (context, _) {
+                                        final double currentProgress;
+                                        if (!usingMechanicBar &&
+                                            _showingNextVase) {
+                                          currentProgress = 0.0;
+                                        } else {
+                                          currentProgress = ui.lerpDouble(
+                                            usingMechanicBar
+                                                ? mechanicProg.oldProgress
+                                                : widget
+                                                    .advanceResult.oldProgress,
+                                            usingMechanicBar
+                                                ? mechanicProg.newProgress
+                                                : widget
+                                                    .advanceResult.newProgress,
+                                            _waterRiseAnim.value,
+                                          )!;
+                                        }
+                                        final isCompleteNow = usingMechanicBar
+                                            ? (mechanicProg.didUnlockNext &&
+                                                currentProgress >= 0.999)
+                                            : (!_showingNextVase &&
+                                                is100 &&
+                                                currentProgress >= 0.999);
+
+                                        return _buildOldThemeProgressCard(
+                                          cfg: activeCfg,
+                                          cardWidth: cardWEst,
+                                          progress: currentProgress,
+                                          isComplete: isCompleteNow,
+                                          isNewVaseMystery:
+                                              !usingMechanicBar &&
+                                                  _showingNextVase,
+                                          mechanicId: usingMechanicBar
+                                              ? mechanicProg
+                                                  .milestone.mechanicId
+                                              : null,
+                                          completedMechanicTitle: isCompleteNow &&
+                                                  usingMechanicBar
+                                              ? mechanicProg.milestone.title
+                                              : null,
+                                          usingMechanicBar: usingMechanicBar,
+                                        );
+                                      },
                                     );
                                   },
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              SizedBox(height: frameToButtonGap),
                               if (is100 && !_showingNextVase)
                                 UnityCtaButton(
                                   key: const ValueKey('garden_claim_btn'),
@@ -748,60 +845,79 @@ class _WaterGardenViewState extends State<WaterGardenView>
     );
   }
 
-  /// Gold-Rimmed Royal-Indigo Unlock Progress Card matching `WidgetBase.png` & `WinOverlay` stats pill!
+  /// Next-Feature Unlock Card using `assets/images/Level Complete/frame_feature_unlock.png`,
+  /// `bg_progress_unlock.png`, `fg_progress_unlock.png`, and `Icon_Padlock_Silver.png`.
   Widget _buildOldThemeProgressCard({
     required VaseMilestoneConfig cfg,
+    required double cardWidth,
     required double progress,
     required bool isComplete,
     required bool isNewVaseMystery,
+    String? mechanicId,
+    String? completedMechanicTitle,
+    bool usingMechanicBar = false,
   }) {
     final clampedP = progress.clamp(0.0, 1.0);
     final pctInt = (clampedP * 100).round();
-    final remainingPercent = (100 - pctInt).clamp(0, 100);
+    final s = cardWidth / 757.0;
+    final cardHeight = cardWidth * (243.0 / 757.0);
 
     final statusLabel = isComplete
-        ? '100%'
-        : (remainingPercent > 0 ? '$remainingPercent% to unlock' : '100%');
+        ? (completedMechanicTitle != null
+              ? '$completedMechanicTitle Unlocked!'
+              : '100%')
+        : (usingMechanicBar ? 'Next feature' : 'Bonus chest');
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 12, 12),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xEE1D1454),
-            Color(0xF4100B33),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: const Color(0xFFFFB915),
-          width: 2.3,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0xFF9E5A00),
-            offset: Offset(0, 3.5),
-            blurRadius: 0,
-          ),
-          BoxShadow(
-            color: Color(0x6602010D),
-            offset: Offset(0, 9),
-            blurRadius: 14,
-          ),
-        ],
-      ),
-      child: Row(
+    final String? featureAsset = switch (mechanicId) {
+      'ice' => 'assets/images/Icon_Mechanic_Ice.png',
+      'dud' => 'assets/images/Icon_Mechanic_Blocker.png',
+      'pu_level_up' => 'assets/images/PowerUp_LevelUp.png',
+      'arrows' => 'assets/images/Icon_Mechanic_SingleAxis.png',
+      'pu_time_freeze' => 'assets/images/PowerUp_TimeFreeze.png',
+      'pinned' => 'assets/images/Icon_Mechanic_Cage.png',
+      _ => isNewVaseMystery
+          ? null
+          : 'assets/images/Level Complete/Icon_coin_reward.png',
+    };
+
+    const percentBarMaterial = UnityTextMaterial(
+      faceTop: Colors.white,
+      faceBottom: Colors.white,
+      strokeColor: Color(0xFF005404),
+      strokeRatio: 0.23,
+      underlayColor: Color(0x00005404),
+      underlayYRatio: 0.0,
+      fontFamily: 'PoetsenOne',
+      fontWeight: FontWeight.w400,
+      letterSpacing: 0.4,
+    );
+
+    return SizedBox(
+      key: const ValueKey('feature_unlock_frame_card'),
+      width: cardWidth,
+      height: cardHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          // Left: Crisp White/Gold `Baloo2` Title + Recessed Navy Socket with Glowing Cyan Fill
-          Expanded(
+          // 1. Frame backdrop (`757 x 243` -> left cream pill + right circular medallion)
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/Level Complete/frame_feature_unlock.png',
+              fit: BoxFit.fill,
+            ),
+          ),
+
+          // 2. Left Pill Content: Title ("Next feature") + Green Bar ("50%")
+          Positioned(
+            left: 34.0 * s,
+            right: 254.0 * s,
+            top: 48.0 * s,
+            bottom: 34.0 * s,
             child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 SizedBox(
-                  height: 23,
+                  height: 52.0 * s,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
@@ -810,163 +926,159 @@ class _WaterGardenViewState extends State<WaterGardenView>
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontFamily: 'Baloo2',
-                        fontSize: isComplete ? 20.5 : 18.5,
-                        fontWeight: FontWeight.w900,
-                        height: 1.08,
+                        fontSize: isComplete ? 37.0 * s : 38.0 * s,
+                        fontWeight: FontWeight.w800,
+                        fontVariations: const [FontVariation('wght', 800)],
+                        height: 1.05,
                         color: isComplete
-                            ? const Color(0xFFFFE082)
-                            : Colors.white,
-                        shadows: const [
-                          Shadow(
-                            color: Color(0xCC06031C),
-                            offset: Offset(0, 1.8),
-                            blurRadius: 2.5,
-                          ),
-                        ],
+                            ? const Color(0xFF157A29)
+                            : const Color(0xFF5A270B),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 6),
-                Container(
-                  height: 22,
-                  padding: const EdgeInsets.all(2.4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF08051F),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0x526573C3),
-                      width: 1.2,
-                    ),
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: clampedP > 0.005
-                        ? FractionallySizedBox(
-                            widthFactor: clampedP.clamp(0.07, 1.0),
-                            heightFactor: 1.0,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(9.5),
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xFF7AFBFF),
-                                    Color(0xFF21D2EF),
-                                    Color(0xFF0B95D6),
-                                  ],
-                                  stops: [0.0, 0.54, 1.0],
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x6623D2EB),
-                                    blurRadius: 6,
-                                    offset: Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: Align(
-                                alignment: Alignment.topCenter,
-                                child: Container(
-                                  height: 4.5,
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
+                SizedBox(height: 10.0 * s),
+                SizedBox(
+                  width: 416.0 * s,
+                  height: 40.5 * s,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20.25 * s),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Positioned.fill(
+                          child: Image.asset(
+                            'assets/images/Level Complete/bg_progress_unlock.png',
+                            fit: BoxFit.fill,
+                          ),
+                        ),
+                        if (clampedP > 0.005)
+                          Positioned.fill(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: FractionallySizedBox(
+                                widthFactor: clampedP.clamp(0.08, 1.0),
+                                heightFactor: 1.0,
+                                child: DecoratedBox(
                                   decoration: BoxDecoration(
-                                    color: const Color(0x88FFFFFF),
-                                    borderRadius: BorderRadius.circular(3),
+                                    borderRadius: BorderRadius.circular(
+                                      20.25 * s,
+                                    ),
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xFF5FFF4E),
+                                        Color(0xFF54F645),
+                                        Color(0xFF2FCE28),
+                                        Color(0xFF04AF08),
+                                      ],
+                                      stops: [0.0, 0.14, 0.50, 0.78],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          )
-                        : const SizedBox.shrink(),
+                          ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(vertical: 2.0 * s),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: UnitySdfText(
+                              '$pctInt%',
+                              unityFontSize:
+                                  32.0 * s / math.max(uxScale(context), 0.1),
+                              material: percentBarMaterial,
+                              singleTextNode: false,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
 
-          // Right: Gold-Rimmed Royal-Blue / Emerald 3D Square Badge (Padlock / Checkmark / ?)
-          _buildStatusSquareBadge(
-            isComplete: isComplete,
-            isMystery: isNewVaseMystery,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusSquareBadge({
-    required bool isComplete,
-    required bool isMystery,
-  }) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: isComplete
-              ? const [Color(0xFF43EE68), Color(0xFF0E9F2E)]
-              : const [Color(0xFF429BFF), Color(0xFF0B4EC4)],
-        ),
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(
-          color: const Color(0xFFFFCA28),
-          width: 2.1,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0xFF965200),
-            offset: Offset(0, 3.0),
-            blurRadius: 0,
-          ),
-          BoxShadow(
-            color: Color(0x5500041E),
-            offset: Offset(0, 6),
-            blurRadius: 6,
-          ),
-        ],
-      ),
-      child: (!isComplete && isMystery)
-          ? const Center(
-              child: Text(
-                '?',
-                style: TextStyle(
-                  fontFamily: 'Baloo2',
-                  fontSize: 27,
-                  fontWeight: FontWeight.w900,
-                  height: 1.0,
-                  color: Color(0xFFFFF59D),
-                  shadows: [
-                    Shadow(
-                      color: Color(0xCC041B5E),
-                      offset: Offset(0, 1.8),
-                      blurRadius: 2,
+          // 3. Right Circular Medallion Icon (`center = (635, 121)` in 757x243)
+          Positioned(
+            left: (635.0 - 74.0) * s,
+            top: (121.0 - 74.0) * s,
+            width: 148.0 * s,
+            height: 148.0 * s,
+            child: Center(
+              child: featureAsset != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(20.0 * s),
+                      child: Image.asset(
+                        featureAsset,
+                        width: 132.0 * s,
+                        height: 132.0 * s,
+                        fit: BoxFit.contain,
+                      ),
+                    )
+                  : Text(
+                      '?',
+                      style: TextStyle(
+                        fontFamily: 'Baloo2',
+                        fontSize: 82.0 * s,
+                        fontWeight: FontWeight.w900,
+                        height: 1.0,
+                        color: const Color(0xFF5A270B),
+                      ),
                     ),
-                  ],
+            ),
+          ),
+
+          // 4. Bottom-Right Padlock (`Icon_Padlock_Silver.png`) or Emerald Checkmark on 100%
+          if (!isComplete && !isNewVaseMystery)
+            Positioned(
+              right: 2.0 * s,
+              bottom: 0.0,
+              width: 62.0 * s,
+              height: 84.0 * s,
+              child: Image.asset(
+                'assets/images/Level Complete/Icon_Padlock_Silver.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const CustomPaint(
+                  painter: _BadgeGlyphPainter(mode: _BadgeGlyphMode.lock),
                 ),
               ),
             )
-          : (isComplete
-              ? const CustomPaint(
-                  painter: _BadgeGlyphPainter(mode: _BadgeGlyphMode.check),
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(7.5),
-                  child: Image.asset(
-                    'assets/images/Icon_Padlock_Silver.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const CustomPaint(
-                      painter: _BadgeGlyphPainter(mode: _BadgeGlyphMode.lock),
-                    ),
+          else if (isComplete)
+            Positioned(
+              right: 2.0 * s,
+              bottom: 4.0 * s,
+              width: 62.0 * s,
+              height: 62.0 * s,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF43EE68), Color(0xFF0E9F2E)],
                   ),
-                )),
+                  border: Border.all(
+                    color: const Color(0xFFFFCA28),
+                    width: 2.2,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x66000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const CustomPaint(
+                  painter: _BadgeGlyphPainter(mode: _BadgeGlyphMode.check),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1023,9 +1135,9 @@ class _WaterGardenViewState extends State<WaterGardenView>
                   pixelMultiplier: 1.0,
                   padding: EdgeInsets.fromLTRB(
                     ux(context, 34),
-                    ux(context, 16),
+                    ux(context, 20),
                     ux(context, 34),
-                    ux(context, 22),
+                    ux(context, 26),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1035,22 +1147,27 @@ class _WaterGardenViewState extends State<WaterGardenView>
                           alignment: Alignment.center,
                           clipBehavior: Clip.none,
                           children: [
-                            AnimatedBuilder(
-                              animation: _ambientCtrl,
-                              builder: (context, _) {
-                                return _RewardShowcaseGraphic(
-                                  mechanicId: config.unlockMechanicId,
-                                  ambientPhase:
-                                      _ambientCtrl.value * math.pi * 2.0,
-                                );
-                              },
+                            Positioned.fill(
+                              child: FittedBox(
+                                fit: BoxFit.contain,
+                                child: AnimatedBuilder(
+                                  animation: _ambientCtrl,
+                                  builder: (context, _) {
+                                    return _RewardShowcaseGraphic(
+                                      mechanicId: config.unlockMechanicId,
+                                      ambientPhase:
+                                          _ambientCtrl.value * math.pi * 2.0,
+                                    );
+                                  },
+                                ),
+                              ),
                             ),
                             Positioned(
-                              right: ux(context, 16),
-                              bottom: ux(context, 6),
+                              right: ux(context, 34),
+                              bottom: ux(context, 10),
                               child: UnitySdfText(
                                 '+${config.rewardCoins}',
-                                unityFontSize: 54,
+                                unityFontSize: 48,
                                 material: UnityTextMaterial.winCoinAmount,
                                 singleTextNode: true,
                               ),
@@ -1058,18 +1175,21 @@ class _WaterGardenViewState extends State<WaterGardenView>
                           ],
                         ),
                       ),
-                      SizedBox(height: ux(context, 6)),
-                      Text(
-                        config.rewardTitle,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontFamily: 'Baloo2',
-                          fontSize: ux(context, 62),
-                          fontWeight: FontWeight.w800,
-                          fontVariations: const [FontVariation('wght', 800)],
-                          height: 1.06,
-                          color: const Color(0xFF5A270B),
+                      SizedBox(height: ux(context, 8)),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          config.rewardTitle,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontFamily: 'Baloo2',
+                            fontSize: ux(context, 56),
+                            fontWeight: FontWeight.w800,
+                            fontVariations: const [FontVariation('wght', 800)],
+                            height: 1.05,
+                            color: const Color(0xFF5A270B),
+                          ),
                         ),
                       ),
                     ],
@@ -1831,47 +1951,58 @@ class _RewardShowcasePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width * 0.5;
-    final cy = size.height * 0.54;
+    final cy = size.height * 0.50;
+    final fxCenter = drawCoinTreasureOnly ? Offset(cx - 1, cy + 10) : Offset(cx, cy);
+    final glowRadius = drawCoinTreasureOnly ? 50.0 : 62.0;
     final paint = Paint()..isAntiAlias = true;
 
-    // 1. Soft sky-gold radial glow behind the reward
+    // 1. Soft sky-gold radial glow tightly cradling the reward coins
     paint
       ..color = Colors.white
       ..shader = ui.Gradient.radial(
-        Offset(cx, cy),
-        66,
+        fxCenter,
+        glowRadius,
         const [
-          Color(0x88FFF8E1),
-          Color(0x44B3E5FC),
-          Color(0x00B3E5FC),
+          Color(0x99FFF8E1),
+          Color(0x44FFE082),
+          Color(0x00FFE082),
         ],
         const [0.0, 0.58, 1.0],
       );
-    canvas.drawCircle(Offset(cx, cy), 66, paint);
+    canvas.drawCircle(fxCenter, glowRadius, paint);
     paint.shader = null;
 
-    // 2. Golden Comic Celebration Ticks (Left & Right arcs like Panel 5!)
-    final pulse = 1.0 + 0.07 * math.sin(ambientPhase * 2.0);
+    // 2. Golden Comic Celebration Ticks radiating closely around the coins
+    final pulse = 1.0 + 0.06 * math.sin(ambientPhase * 2.0);
     paint
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.8
+      ..strokeWidth = 3.4
       ..strokeCap = StrokeCap.round
       ..color = const Color(0xFFFFCA28);
 
     const rayAngles = <double>[
-      -2.62,
-      -2.25,
-      -1.88,
-      -1.26,
-      -0.89,
-      -0.52,
+      -2.68,
+      -2.26,
+      -1.86,
+      -1.28,
+      -0.88,
+      -0.46,
     ];
+    final baseR1 = drawCoinTreasureOnly ? 37.0 : 48.0;
+    final baseR2 = drawCoinTreasureOnly ? 47.0 : 60.0;
+    final yScale = drawCoinTreasureOnly ? 0.68 : 0.80;
     for (final a in rayAngles) {
-      final r1 = 55.0 * pulse;
-      final r2 = 69.0 * pulse;
+      final r1 = baseR1 * pulse;
+      final r2 = baseR2 * pulse;
       canvas.drawLine(
-        Offset(cx + r1 * math.cos(a), cy - 4 + r1 * math.sin(a) * 0.82),
-        Offset(cx + r2 * math.cos(a), cy - 4 + r2 * math.sin(a) * 0.82),
+        Offset(
+          fxCenter.dx + r1 * math.cos(a),
+          fxCenter.dy + r1 * math.sin(a) * yScale,
+        ),
+        Offset(
+          fxCenter.dx + r2 * math.cos(a),
+          fxCenter.dy + r2 * math.sin(a) * yScale,
+        ),
         paint,
       );
     }
@@ -1881,7 +2012,7 @@ class _RewardShowcasePainter extends CustomPainter {
       ..style = PaintingStyle.fill
       ..color = const Color(0x241B2B65);
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, cy + 40), width: 136, height: 18),
+      Rect.fromCenter(center: Offset(cx, cy + 36), width: 126, height: 16),
       paint,
     );
 
@@ -1892,12 +2023,12 @@ class _RewardShowcasePainter extends CustomPainter {
 
     // 4. Gleaming 3D Stacked Gold Coins beside the mechanic (or center treasure pile)
     if (drawCoinTreasureOnly) {
-      _drawCoinStack(canvas, Offset(cx - 22, cy + 20), count: 3, radius: 17);
-      _drawCoinStack(canvas, Offset(cx + 18, cy + 16), count: 4, radius: 18);
-      _drawCoinStack(canvas, Offset(cx - 2, cy + 28), count: 2, radius: 17);
+      _drawCoinStack(canvas, Offset(cx - 22, cy + 18), count: 3, radius: 17);
+      _drawCoinStack(canvas, Offset(cx + 18, cy + 14), count: 4, radius: 18);
+      _drawCoinStack(canvas, Offset(cx - 2, cy + 26), count: 2, radius: 17);
     } else {
-      _drawCoinStack(canvas, Offset(cx + 40, cy + 18), count: 3, radius: 16.0);
-      _drawCoinStack(canvas, Offset(cx + 17, cy + 28), count: 2, radius: 15.5);
+      _drawCoinStack(canvas, Offset(cx + 40, cy + 16), count: 3, radius: 16.0);
+      _drawCoinStack(canvas, Offset(cx + 17, cy + 26), count: 2, radius: 15.5);
     }
   }
 
@@ -2092,71 +2223,72 @@ class _VaseMetrics {
   double get innerBaseY => baseY - baseCushionH;
 
   static _VaseMetrics forShape(VaseShapeType type, double centerY) {
+    const k = 0.72;
     return switch (type) {
       // Plump spherical blown-glass fishbowl orb
       VaseShapeType.fishbowl => _VaseMetrics(
-          topRimY: centerY - 76,
-          neckY: centerY - 52,
-          baseY: centerY + 112,
-          mouthHalfW: 64,
-          neckHalfW: 54,
-          bellyHalfW: 112,
-          baseHalfW: 60,
+          topRimY: centerY - 76 * k,
+          neckY: centerY - 52 * k,
+          baseY: centerY + 112 * k,
+          mouthHalfW: 64 * k,
+          neckHalfW: 54 * k,
+          bellyHalfW: 112 * k,
+          baseHalfW: 60 * k,
           bellyYFrac: 0.50,
-          wallThickness: 5.8,
-          baseCushionH: 13.5,
+          wallThickness: 5.8 * k,
+          baseCushionH: 13.5 * k,
         ),
       // Graceful pearl-azure translucent teardrop amphora-urn
       VaseShapeType.ovalCeramic => _VaseMetrics(
-          topRimY: centerY - 74,
-          neckY: centerY - 48,
-          baseY: centerY + 116,
-          mouthHalfW: 54,
-          neckHalfW: 41,
-          bellyHalfW: 98,
-          baseHalfW: 53,
+          topRimY: centerY - 74 * k,
+          neckY: centerY - 48 * k,
+          baseY: centerY + 116 * k,
+          mouthHalfW: 54 * k,
+          neckHalfW: 41 * k,
+          bellyHalfW: 98 * k,
+          baseHalfW: 53 * k,
           bellyYFrac: 0.54,
-          wallThickness: 6.0,
-          baseCushionH: 15.0,
+          wallThickness: 6.0 * k,
+          baseCushionH: 15.0 * k,
         ),
       // Baroque melon-ribbed fluted crystal carafe
       VaseShapeType.flutedCrystal => _VaseMetrics(
-          topRimY: centerY - 78,
-          neckY: centerY - 50,
-          baseY: centerY + 116,
-          mouthHalfW: 58,
-          neckHalfW: 43,
-          bellyHalfW: 108,
-          baseHalfW: 56,
+          topRimY: centerY - 78 * k,
+          neckY: centerY - 50 * k,
+          baseY: centerY + 116 * k,
+          mouthHalfW: 58 * k,
+          neckHalfW: 43 * k,
+          bellyHalfW: 108 * k,
+          baseHalfW: 56 * k,
           bellyYFrac: 0.50,
-          wallThickness: 5.8,
-          baseCushionH: 14.5,
+          wallThickness: 5.8 * k,
+          baseCushionH: 14.5 * k,
         ),
       // Regal high-shouldered slender amphora with flared base foot
       VaseShapeType.royalTall => _VaseMetrics(
-          topRimY: centerY - 92,
-          neckY: centerY - 62,
-          baseY: centerY + 118,
-          mouthHalfW: 49,
-          neckHalfW: 31,
-          bellyHalfW: 86,
-          baseHalfW: 48,
+          topRimY: centerY - 92 * k,
+          neckY: centerY - 62 * k,
+          baseY: centerY + 118 * k,
+          mouthHalfW: 49 * k,
+          neckHalfW: 31 * k,
+          bellyHalfW: 86 * k,
+          baseHalfW: 48 * k,
           bellyYFrac: 0.28,
-          wallThickness: 6.0,
-          baseCushionH: 17.0,
+          wallThickness: 6.0 * k,
+          baseCushionH: 17.0 * k,
         ),
       // Geometric faceted lotus-cut crystal chalice
       VaseShapeType.prismLotus => _VaseMetrics(
-          topRimY: centerY - 75,
-          neckY: centerY - 49,
-          baseY: centerY + 116,
-          mouthHalfW: 58,
-          neckHalfW: 41,
-          bellyHalfW: 104,
-          baseHalfW: 52,
+          topRimY: centerY - 75 * k,
+          neckY: centerY - 49 * k,
+          baseY: centerY + 116 * k,
+          mouthHalfW: 58 * k,
+          neckHalfW: 41 * k,
+          bellyHalfW: 104 * k,
+          baseHalfW: 52 * k,
           bellyYFrac: 0.44,
-          wallThickness: 6.5,
-          baseCushionH: 16.0,
+          wallThickness: 6.5 * k,
+          baseCushionH: 16.0 * k,
         ),
     };
   }
@@ -2245,18 +2377,18 @@ class _VaseMetrics {
 
     if (type == VaseShapeType.royalTall && t > 0.86) {
       final footT = ((t - 0.86) / 0.14).clamp(0.0, 1.0);
-      return rawW + 5.5 * Curves.easeOutCubic.transform(footT);
+      return rawW + 4.0 * Curves.easeOutCubic.transform(footT);
     }
     return rawW;
   }
 
   /// Half-width of the interior chamber at height `y`, matching the exact wall thickness.
   double innerHalfWidthAt(double y, VaseShapeType type) {
-    return math.max(15.0, outerHalfWidthAt(y, type) - wallThickness);
+    return math.max(11.0, outerHalfWidthAt(y, type) - wallThickness);
   }
 
   /// Perspective vertical radius (semi-minor axis) for horizontal 3D ellipses inside the vase.
-  double ellipseHalfHeight(double halfW) => (halfW * 0.23).clamp(8.5, 25.0);
+  double ellipseHalfHeight(double halfW) => (halfW * 0.23).clamp(6.0, 18.5);
 }
 
 class _GlassPalette {
@@ -2278,6 +2410,7 @@ class _GlassPalette {
 
   static _GlassPalette forShape(VaseShapeType type) {
     return switch (type) {
+      // Vase 1: Pure sunlit aqua blown crystal
       VaseShapeType.fishbowl => const _GlassPalette(
           edgeDark: Color(0xCC0D5A88),
           edgeMid: Color(0x883CC4EC),
@@ -2286,37 +2419,41 @@ class _GlassPalette {
           rimHighlight: Color(0xEEECFEFF),
           accentTint: Color(0xFF80EEFF),
         ),
+      // Vase 2: Jade-emerald celadon glass with warm champagne rim
       VaseShapeType.ovalCeramic => const _GlassPalette(
-          edgeDark: Color(0xDE0B6478),
-          edgeMid: Color(0xA63ED4CA),
-          coreTint: Color(0x3CDDFDFB),
-          innerTint: Color(0x7AA6F9EE),
-          rimHighlight: Color(0xF0FFF8E6),
-          accentTint: Color(0xFF7AF2DD),
+          edgeDark: Color(0xE0075E58),
+          edgeMid: Color(0xA62AD6A8),
+          coreTint: Color(0x38D8FFF5),
+          innerTint: Color(0x7CA0FCE3),
+          rimHighlight: Color(0xF2FFF4D2),
+          accentTint: Color(0xFFFFE58F),
         ),
+      // Vase 3: Deep royal sapphire crystal with ice-blue & gold refractions
       VaseShapeType.flutedCrystal => const _GlassPalette(
-          edgeDark: Color(0xCC284B9E),
-          edgeMid: Color(0x8E56B4F9),
-          coreTint: Color(0x2CEEF8FF),
-          innerTint: Color(0x6CBBE8FF),
-          rimHighlight: Color(0xF2F4FBFF),
-          accentTint: Color(0xFF9ED5FF),
+          edgeDark: Color(0xD81B3898),
+          edgeMid: Color(0x984E9DFB),
+          coreTint: Color(0x32E6F4FF),
+          innerTint: Color(0x74AEDDFF),
+          rimHighlight: Color(0xF4F5FAFF),
+          accentTint: Color(0xFF7BE8FF),
         ),
+      // Vase 4: Imperial amethyst & warm gold royal amphora
       VaseShapeType.royalTall => const _GlassPalette(
-          edgeDark: Color(0xCC13548E),
-          edgeMid: Color(0x8C42C8E8),
-          coreTint: Color(0x2CFFF9E8),
-          innerTint: Color(0x6CA4EFFF),
-          rimHighlight: Color(0xF4FFF2CE),
-          accentTint: Color(0xFFFFE08A),
+          edgeDark: Color(0xDA4B248E),
+          edgeMid: Color(0x949D66F4),
+          coreTint: Color(0x30FFF2FA),
+          innerTint: Color(0x72E4C2FF),
+          rimHighlight: Color(0xF6FFE6A8),
+          accentTint: Color(0xFFFFD86B),
         ),
+      // Vase 5+: Celestial rose-quartz & auroral lavender prism chalice
       VaseShapeType.prismLotus => const _GlassPalette(
-          edgeDark: Color(0xCC3B3B98),
-          edgeMid: Color(0x9050D6FF),
-          coreTint: Color(0x2CF0ECFF),
-          innerTint: Color(0x6AC6D8FF),
-          rimHighlight: Color(0xF2F7F0FF),
-          accentTint: Color(0xFFD0A8FF),
+          edgeDark: Color(0xDA6B268F),
+          edgeMid: Color(0x98DF6AF4),
+          coreTint: Color(0x34FFEFFF),
+          innerTint: Color(0x74FFCCF8),
+          rimHighlight: Color(0xF6FFF7D8),
+          accentTint: Color(0xFFFF9EE2),
         ),
     };
   }
@@ -2338,6 +2475,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
   final bool is100Percent;
   final bool isNewVaseReveal;
   final double newVaseSparkleT;
+  final int stepIndex;
+  final int totalSteps;
+  final bool didAdvanceStep;
   final int spriteVersion;
 
   static final Path _vaseOuterPath = Path();
@@ -2371,6 +2511,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required this.is100Percent,
     required this.isNewVaseReveal,
     required this.newVaseSparkleT,
+    this.stepIndex = 0,
+    this.totalSteps = 1,
+    this.didAdvanceStep = false,
     required this.spriteVersion,
   });
 
@@ -2392,25 +2535,26 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final cx = size.width * 0.5;
-    final cy = size.height * 0.630;
+    final cy = size.height * 0.725;
     final metrics = _VaseMetrics.forShape(config.shapeType, cy);
 
-    // 0. Celebration Sunburst God-Rays & Shockwave behind the vase
+    // 0. Celebration Sunburst God-Rays & Shockwave behind the blooming flower crown
     if (raysProgress > 0.01) {
       _drawCelebrationSunburst(
         canvas,
-        Offset(cx, metrics.topRimY - 34),
+        Offset(cx, metrics.topRimY - 96),
         raysProgress,
       );
     }
 
-    // 1. Multi-Tier 3D Cream-Marble & Gold Plinth + Refracted Cyan Water Caustics
+    // 1. Multi-Tier 3D Marble & Gold Plinth (progressively ornate per vase) + Water Caustics
     _drawPedestal(
       canvas,
       cx: cx,
       topSurfaceY: metrics.baseY + 2,
       baseHalfW: metrics.baseHalfW,
       causticIntensity: waterProgress.clamp(0.0, 1.0),
+      shapeType: config.shapeType,
     );
 
     // Build synchronized outer & inner 3D sculpted vase contours
@@ -2431,8 +2575,8 @@ class _WaterGardenMasterPainter extends CustomPainter {
 
     // Compute live rising water surface Y inside the inner chamber
     final clampedFill = waterProgress.clamp(0.0, 1.0);
-    final maxFillTopY = metrics.neckY + 11.0;
-    final minFillBottomY = metrics.innerBaseY - 4.0;
+    final maxFillTopY = metrics.neckY + 8.5;
+    final minFillBottomY = metrics.innerBaseY - 3.5;
     final waterTopY =
         ui.lerpDouble(minFillBottomY, maxFillTopY, clampedFill)!;
 
@@ -2468,7 +2612,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       pourT: pourProgress,
     );
 
-    // 5. Above-Water Botanical Stems, Curled Two-Tone Leaves & 3D Buds / Blossoms
+    // 5. Above-Water Botanical Stems, Curled Two-Tone Leaves & Hero Growing Flower / Bouquet
     _drawAboveWaterBotanicals(
       canvas: canvas,
       cx: cx,
@@ -2476,25 +2620,27 @@ class _WaterGardenMasterPainter extends CustomPainter {
       waterTopY: waterTopY,
       hasWater: clampedFill > 0.02,
       waterFraction: clampedFill,
+      pourProgress: pourProgress,
       bloomFraction: bloomProgress,
       flowerType: config.flowerType,
     );
 
     // 6. Parabolic Trajectory of 3D Mini Potion Jar & Progressive Waterfall Stream
+    const jarScale = 0.82;
     final enterT = jarEnterProgress.clamp(0.0, 1.0);
     final exitT = jarExitProgress.clamp(0.0, 1.0);
     final jarVisibility = (enterT * (1.0 - exitT)).clamp(0.0, 1.0);
 
-    final targetJarPos = Offset(cx - 93, metrics.topRimY - 47);
-    final startJarPos = Offset(cx - 156, metrics.topRimY - 94);
-    final enterArcLift = -22.0 * math.sin(enterT * math.pi);
-    final hoverBob = 2.4 * math.sin(ambientPhase * 2.0);
+    final targetJarPos = Offset(cx - 76, metrics.topRimY - 38);
+    final startJarPos = Offset(cx - 130, metrics.topRimY - 76);
+    final enterArcLift = -18.0 * math.sin(enterT * math.pi);
+    final hoverBob = 2.0 * math.sin(ambientPhase * 2.0);
     final baseJarPos = Offset(
-      ui.lerpDouble(startJarPos.dx, targetJarPos.dx, enterT)! - exitT * 42.0,
+      ui.lerpDouble(startJarPos.dx, targetJarPos.dx, enterT)! - exitT * 36.0,
       ui.lerpDouble(startJarPos.dy, targetJarPos.dy, enterT)! +
           enterArcLift +
           hoverBob -
-          exitT * 34.0,
+          exitT * 28.0,
     );
 
     final pourTiltWeight =
@@ -2508,10 +2654,11 @@ class _WaterGardenMasterPainter extends CustomPainter {
         canvas: canvas,
         jarCenter: baseJarPos,
         jarTiltRad: jarTiltRad,
-        vaseMouthCenter: Offset(cx - 4, metrics.topRimY + 3),
+        jarScale: jarScale,
+        vaseMouthCenter: Offset(cx - 2, metrics.topRimY + 2),
         waterImpactPt: Offset(
-          cx + 2,
-          clampedFill > 0.03 ? waterTopY : (metrics.innerBaseY - 8),
+          cx + 1.5,
+          clampedFill > 0.03 ? waterTopY : (metrics.innerBaseY - 6),
         ),
         headT: streamHeadT,
         tailT: streamTailT,
@@ -2534,20 +2681,36 @@ class _WaterGardenMasterPainter extends CustomPainter {
         canvas: canvas,
         jarCenter: baseJarPos,
         tiltRad: jarTiltRad,
-        visibility: jarVisibility,
+        visibility: jarVisibility * jarScale,
         pourT: pourProgress,
         enterT: enterT,
         numberText: '$finalBlockNumber',
       );
     }
 
+    // 8b. Step-level hydration aura, expanding growth shockwave & glowing motes per completed level
+    if (!isNewVaseReveal &&
+        (didAdvanceStep || clampedFill > 0.02) &&
+        (!is100Percent || bloomProgress < 0.30)) {
+      _drawHydrationGrowthFx(
+        canvas: canvas,
+        cx: cx,
+        rimY: metrics.topRimY,
+        waterFraction: clampedFill,
+        pourT: pourProgress,
+        stepIndex: stepIndex,
+        totalSteps: totalSteps,
+        flowerType: config.flowerType,
+      );
+    }
+
     // 9. Magic Bloom Burst FX, Tumbling Real Petals, Butterflies & Starlight Sparkles
-    if (bloomProgress > 0.14) {
+    if (bloomProgress > 0.12) {
       _drawFloatingPetalsAndSparkles(
         canvas: canvas,
         cx: cx,
-        topY: metrics.topRimY - 24,
-        intensity: ((bloomProgress - 0.14) / 0.86).clamp(0.0, 1.0),
+        topY: metrics.topRimY - 22,
+        intensity: ((bloomProgress - 0.12) / 0.88).clamp(0.0, 1.0),
         bloomProgress: bloomProgress,
         flowerType: config.flowerType,
       );
@@ -2555,7 +2718,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       _drawNewVaseRevealSparkles(
         canvas: canvas,
         cx: cx,
-        cy: cy,
+        cy: cy - 18,
         t: newVaseSparkleT,
       );
     }
@@ -2567,7 +2730,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     double progress,
   ) {
     final p = progress.clamp(0.0, 1.0);
-    const maxR = 205.0;
+    const maxR = 232.0;
     final raysImg = _GardenFlowerSpriteCache.instance.bloomRays;
 
     _fxPaint
@@ -2577,25 +2740,25 @@ class _WaterGardenMasterPainter extends CustomPainter {
         center,
         maxR,
         [
-          const Color(0xFFFFF8C4).withValues(alpha: 0.44 * p),
-          const Color(0xFFFFD86B).withValues(alpha: 0.18 * p),
-          const Color(0xFF4FF6FF).withValues(alpha: 0.08 * p),
+          const Color(0xFFFFFCE0).withValues(alpha: 0.56 * p),
+          const Color(0xFFFFD86B).withValues(alpha: 0.24 * p),
+          const Color(0xFF4FF6FF).withValues(alpha: 0.10 * p),
           const Color(0x004FF6FF),
         ],
-        const [0.0, 0.36, 0.72, 1.0],
+        const [0.0, 0.34, 0.70, 1.0],
       );
     canvas.drawCircle(center, maxR, _fxPaint);
 
     if (raysImg != null) {
-      final pulse = 0.96 + 0.06 * math.sin(ambientPhase * 1.5);
-      final dstHalf = 195.0 * Curves.easeOutCubic.transform(p) * pulse;
+      final pulse = 0.96 + 0.065 * math.sin(ambientPhase * 1.5);
+      final dstHalf = 216.0 * Curves.easeOutCubic.transform(p) * pulse;
       _fxPaint
         ..shader = null
-        ..color = Colors.white.withValues(alpha: (0.82 * p).clamp(0.0, 1.0))
+        ..color = Colors.white.withValues(alpha: (0.90 * p).clamp(0.0, 1.0))
         ..blendMode = BlendMode.plus;
       canvas.save();
       canvas.translate(center.dx, center.dy);
-      canvas.rotate(ambientPhase * 0.20);
+      canvas.rotate(ambientPhase * 0.22);
       canvas.drawImageRect(
         raysImg,
         Rect.fromLTWH(0, 0, raysImg.width.toDouble(), raysImg.height.toDouble()),
@@ -2634,7 +2797,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
           rayR,
           [
             (isMajor ? const Color(0xFFFFF8D2) : const Color(0xFF9DF8FF))
-                .withValues(alpha: (isMajor ? 0.34 : 0.22) * p),
+                .withValues(alpha: (isMajor ? 0.36 : 0.24) * p),
             const Color(0x00FFFDE7),
           ],
         );
@@ -2642,21 +2805,34 @@ class _WaterGardenMasterPainter extends CustomPainter {
       }
     }
 
-    if (p > 0.05 && p < 0.88) {
-      final ringT = Curves.easeOutCubic.transform((p / 0.88).clamp(0.0, 1.0));
-      final ringR = ui.lerpDouble(42.0, 188.0, ringT)!;
-      final baseRingAlpha = (0.48 * (1.0 - ringT)).clamp(0.0, 1.0);
+    if (p > 0.05 && p < 0.90) {
+      final ringT = Curves.easeOutCubic.transform((p / 0.90).clamp(0.0, 1.0));
+      final ringR = ui.lerpDouble(38.0, 212.0, ringT)!;
+      final baseRingAlpha = (0.54 * (1.0 - ringT)).clamp(0.0, 1.0);
       _fxPaint
         ..style = PaintingStyle.stroke
         ..shader = null
         ..maskFilter = null
-        ..strokeWidth = 9.0 * (1.0 - ringT)
-        ..color = const Color(0xFFFFF4B8).withValues(alpha: baseRingAlpha * 0.38);
+        ..strokeWidth = 10.5 * (1.0 - ringT)
+        ..color = const Color(0xFFFFF4B8).withValues(alpha: baseRingAlpha * 0.42);
       canvas.drawCircle(center, ringR, _fxPaint);
       _fxPaint
-        ..strokeWidth = 4.5 * (1.0 - ringT)
+        ..strokeWidth = 4.6 * (1.0 - ringT)
         ..color = const Color(0xFFFFF4B8).withValues(alpha: baseRingAlpha);
       canvas.drawCircle(center, ringR, _fxPaint);
+
+      // Secondary delayed crystalline shockwave halo
+      if (p > 0.18) {
+        final ring2T = Curves.easeOutCubic.transform(
+          ((p - 0.18) / 0.72).clamp(0.0, 1.0),
+        );
+        final ring2R = ui.lerpDouble(32.0, 182.0, ring2T)!;
+        final ring2Alpha = (0.44 * (1.0 - ring2T)).clamp(0.0, 1.0);
+        _fxPaint
+          ..strokeWidth = 3.2 * (1.0 - ring2T)
+          ..color = const Color(0xFFA6FFFF).withValues(alpha: ring2Alpha);
+        canvas.drawCircle(center, ring2R, _fxPaint);
+      }
     }
 
     _fxPaint
@@ -2672,14 +2848,59 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required double topSurfaceY,
     required double baseHalfW,
     required double causticIntensity,
+    required VaseShapeType shapeType,
   }) {
-    const deckW = 224.0;
-    const deckH = 36.0;
-    const upperWallH = 11.0;
-    const goldBandH = 4.5;
-    const footW = 248.0;
-    const footH = 40.0;
-    const footWallH = 9.0;
+    const deckW = 162.0;
+    const deckH = 26.0;
+    const upperWallH = 8.0;
+    const goldBandH = 3.2;
+    const footW = 180.0;
+    const footH = 29.0;
+    const footWallH = 6.5;
+
+    final (stoneDark, stoneLight, stoneMid, deckTopHi, deckTopMid, deckTopLo) =
+        switch (shapeType) {
+          VaseShapeType.ovalCeramic => (
+              const Color(0xFF6E8B82),
+              const Color(0xFFE3F5EE),
+              const Color(0xFFBED8CF),
+              const Color(0xFFF9FFFD),
+              const Color(0xFFE3F4ED),
+              const Color(0xFFBBD7CC),
+            ),
+          VaseShapeType.flutedCrystal => (
+              const Color(0xFF4D6692),
+              const Color(0xFFE4ECFA),
+              const Color(0xFFB7C9E6),
+              const Color(0xFFFBFCFF),
+              const Color(0xFFE4ECFA),
+              const Color(0xFFB3C7E6),
+            ),
+          VaseShapeType.royalTall => (
+              const Color(0xFF563B7E),
+              const Color(0xFFEBDDFB),
+              const Color(0xFFC2A7E6),
+              const Color(0xFFFFFBFF),
+              const Color(0xFFEDE0FC),
+              const Color(0xFFC3A6E6),
+            ),
+          VaseShapeType.prismLotus => (
+              const Color(0xFF7B3D74),
+              const Color(0xFFFBE2F4),
+              const Color(0xFFE1B1D7),
+              const Color(0xFFFFFAFE),
+              const Color(0xFFF9DFF2),
+              const Color(0xFFDFABD2),
+            ),
+          VaseShapeType.fishbowl => (
+              const Color(0xFF9A866A),
+              const Color(0xFFF6EFE0),
+              const Color(0xFFE0D4BD),
+              const Color(0xFFFFFEFA),
+              const Color(0xFFF5EAD6),
+              const Color(0xFFE3D3B7),
+            ),
+        };
 
     final deckTopY = topSurfaceY;
     final goldTopY = deckTopY + upperWallH;
@@ -2733,12 +2954,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..shader = ui.Gradient.linear(
         Offset(cx - footW * 0.5, footTopY),
         Offset(cx + footW * 0.5, footTopY),
-        const [
-          Color(0xFF9A866A),
-          Color(0xFFE7DBC5),
-          Color(0xFFD0C0A4),
-          Color(0xFF7D694D),
-        ],
+        [stoneDark, stoneLight, stoneMid, stoneDark],
         const [0.0, 0.30, 0.68, 1.0],
       );
     canvas.drawOval(footBottomRect, _paint);
@@ -2783,7 +2999,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.drawRect(goldSideRect, _paint);
     _paint.shader = null;
 
-    // 4. Upper Sunlit Ivory-Marble Drum & Top Deck
+    // 4. Upper Sunlit Marble Drum & Top Deck
     final deckBottomRect = Rect.fromCenter(
       center: Offset(cx, goldTopY),
       width: deckW,
@@ -2801,12 +3017,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..shader = ui.Gradient.linear(
         Offset(cx - deckW * 0.5, deckTopY),
         Offset(cx + deckW * 0.5, deckTopY),
-        const [
-          Color(0xFFBBA98E),
-          Color(0xFFF6EFE0),
-          Color(0xFFE0D4BD),
-          Color(0xFF9F8B6D),
-        ],
+        [stoneDark, stoneLight, stoneMid, stoneDark],
         const [0.0, 0.30, 0.68, 1.0],
       );
     canvas.drawOval(deckBottomRect, _paint);
@@ -2820,11 +3031,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     _paint.shader = ui.Gradient.radial(
       Offset(cx - 22, deckTopY - 4),
       deckW * 0.62,
-      const [
-        Color(0xFFFFFEFA),
-        Color(0xFFF5EAD6),
-        Color(0xFFE3D3B7),
-      ],
+      [deckTopHi, deckTopMid, deckTopLo],
       const [0.0, 0.60, 1.0],
     );
     canvas.drawOval(topRect, _paint);
@@ -2837,15 +3044,50 @@ class _WaterGardenMasterPainter extends CustomPainter {
       ..shader = ui.Gradient.linear(
         Offset(cx - deckW * 0.45, deckTopY - deckH * 0.4),
         Offset(cx + deckW * 0.45, deckTopY + deckH * 0.4),
-        const [
-          Color(0xEEFFFFFF),
-          Color(0xAAFFF5DD),
-          Color(0x55B89E7C),
+        [
+          const Color(0xEEFFFFFF),
+          shapeType == VaseShapeType.fishbowl
+              ? const Color(0xAAFFF5DD)
+              : const Color(0xEEFFE082),
+          const Color(0x55B89E7C),
         ],
         const [0.0, 0.55, 1.0],
       );
     canvas.drawOval(topRect.deflate(1.2), _paint);
     _paint.shader = null;
+
+    // 4b. Escalating gold trim & jewel cabochons along the front pedestal arc (Vase 2..5+)
+    if (shapeType != VaseShapeType.fishbowl) {
+      final gemColor = switch (shapeType) {
+        VaseShapeType.ovalCeramic => const Color(0xFF42F5C8),
+        VaseShapeType.flutedCrystal => const Color(0xFF56C2FF),
+        VaseShapeType.royalTall => const Color(0xFFFFB74D),
+        VaseShapeType.prismLotus => const Color(0xFFFF72D2),
+        VaseShapeType.fishbowl => Colors.white,
+      };
+      final studCount = shapeType == VaseShapeType.ovalCeramic
+          ? 1
+          : shapeType == VaseShapeType.flutedCrystal
+              ? 3
+              : 5;
+      for (int s = 0; s < studCount; s++) {
+        final offsetFrac = studCount == 1
+            ? 0.0
+            : (s - (studCount - 1) * 0.5) / ((studCount - 1) * 0.5);
+        final angle = math.pi * 0.5 + offsetFrac * 0.56;
+        final gx = cx + math.cos(angle) * (deckW * 0.49);
+        final gy = goldTopY + 1.5 + math.sin(angle) * (deckH * 0.49);
+        _paint
+          ..style = PaintingStyle.fill
+          ..shader = null
+          ..color = const Color(0xFFD99826);
+        canvas.drawCircle(Offset(gx, gy), 3.3, _paint);
+        _paint.color = gemColor;
+        canvas.drawCircle(Offset(gx, gy - 0.3), 2.1, _paint);
+        _paint.color = Colors.white.withValues(alpha: 0.85);
+        canvas.drawCircle(Offset(gx - 0.6, gy - 0.8), 0.7, _paint);
+      }
+    }
 
     // 5. Soft Vase Contact AO + Dual-Lobe Refracted Cyan Caustic Glow
     final footBaseW = baseHalfW * 2.15;
@@ -3537,6 +3779,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required double waterTopY,
     required bool hasWater,
     required double waterFraction,
+    required double pourProgress,
     required double bloomFraction,
     required FlowerType flowerType,
   }) {
@@ -3548,6 +3791,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
         waterTopY: waterTopY,
         hasWater: hasWater,
         waterFraction: waterFraction,
+        pourProgress: pourProgress,
         bloomFraction: bloomFraction,
         flowerType: flowerType,
       );
@@ -3555,27 +3799,32 @@ class _WaterGardenMasterPainter extends CustomPainter {
     }
 
     final sway = 0.032 * math.sin(ambientPhase);
-    final upperClipTop = -160.0;
-    final upperClipBottom = hasWater ? waterTopY : (metrics.topRimY + 10);
-    final stemBaseY = math.min(upperClipBottom + 2, metrics.topRimY + 10);
+    final upperClipTop = -220.0;
+    final upperClipBottom = hasWater ? waterTopY : (metrics.topRimY + 9);
+    final stemBaseY = math.min(upperClipBottom + 2, metrics.topRimY + 9);
 
+    final wf = waterFraction.clamp(0.0, 1.0);
     final tB = bloomFraction.clamp(0.0, 1.0);
     final centerMorph = Curves.easeOutCubic.transform(tB);
+    final pourNourish =
+        (pourProgress > 0.35 && pourProgress < 0.99)
+            ? 1.0 + 0.06 * math.sin(((pourProgress - 0.35) / 0.65) * math.pi)
+            : 1.0;
 
-    final growthLift = 12.0 * waterFraction.clamp(0.0, 1.0);
+    final growthLift = 30.0 * wf;
     final preBloomBudPos = Offset(
-      cx + 26.0 + 4.0 * math.sin(ambientPhase),
-      metrics.topRimY - 46.0 - growthLift,
+      cx + 18.0 + 4.0 * math.sin(ambientPhase),
+      metrics.topRimY - 48.0 - growthLift,
     );
     final fullBloomCenterPos = Offset(
       cx + 1.0 + 3.2 * math.sin(ambientPhase),
-      metrics.topRimY - 82.0,
+      metrics.topRimY - 108.0,
     );
     final centerPos = Offset.lerp(preBloomBudPos, fullBloomCenterPos, centerMorph)!;
-    final primaryBaseX = ui.lerpDouble(cx + 11.0, cx + 1.0, centerMorph)!;
+    final primaryBaseX = ui.lerpDouble(cx + 8.0, cx + 1.0, centerMorph)!;
     final primaryCtrl = Offset.lerp(
-      Offset(cx + 15.0, metrics.topRimY - 18.0),
-      Offset(cx - 3.0, metrics.topRimY - 42.0),
+      Offset(cx + 12.0, metrics.topRimY - 18.0),
+      Offset(cx - 3.0, metrics.topRimY - 54.0),
       centerMorph,
     )!;
 
@@ -3583,37 +3832,37 @@ class _WaterGardenMasterPainter extends CustomPainter {
     if (tB > 0.04) {
       final collarScale = Curves.easeOutBack
           .transform(((tB - 0.04) / 0.72).clamp(0.0, 1.0))
-          .clamp(0.0, 1.15);
+          .clamp(0.0, 1.25);
       _drawCurledBotanicalLeaf(
         canvas,
-        origin: Offset(cx - 17, metrics.topRimY - 3),
+        origin: Offset(cx - 14, metrics.topRimY - 2),
         angle: -2.58 + sway,
-        length: 42 * collarScale,
-        width: 13.8,
+        length: 46 * collarScale,
+        width: 15.0,
         curlSign: -1.0,
       );
       _drawCurledBotanicalLeaf(
         canvas,
-        origin: Offset(cx + 17, metrics.topRimY - 3),
+        origin: Offset(cx + 14, metrics.topRimY - 2),
         angle: -0.54 + sway,
-        length: 42 * collarScale,
-        width: 13.8,
+        length: 46 * collarScale,
+        width: 15.0,
         curlSign: 1.0,
       );
       _drawCurledBotanicalLeaf(
         canvas,
-        origin: Offset(cx - 7, metrics.topRimY - 22),
+        origin: Offset(cx - 6, metrics.topRimY - 24),
         angle: -2.06 + sway,
-        length: 37 * collarScale,
-        width: 12.2,
+        length: 40 * collarScale,
+        width: 13.5,
         curlSign: -1.0,
       );
       _drawCurledBotanicalLeaf(
         canvas,
-        origin: Offset(cx + 8, metrics.topRimY - 20),
+        origin: Offset(cx + 7, metrics.topRimY - 22),
         angle: -1.06 + sway,
-        length: 37 * collarScale,
-        width: 12.2,
+        length: 40 * collarScale,
+        width: 13.5,
         curlSign: 1.0,
       );
     }
@@ -3621,7 +3870,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     // Helper for true cylindrical 3D shaded stems (shadow right, core emerald, specular left)
     void drawCylindricalStem(Offset start, Offset ctrl, Offset end, double sw) {
       canvas.save();
-      canvas.clipRect(Rect.fromLTRB(0, upperClipTop, 380, upperClipBottom + 3));
+      canvas.clipRect(Rect.fromLTRB(-20, upperClipTop, 400, upperClipBottom + 3));
       _scratchPath
         ..reset()
         ..moveTo(start.dx, start.dy)
@@ -3656,47 +3905,47 @@ class _WaterGardenMasterPainter extends CustomPainter {
     );
 
     final leftTargetPos = Offset(
-      cx - 48.0 + 3.2 * math.sin(ambientPhase + 0.7),
-      metrics.topRimY - 50.0,
+      cx - 58.0 + 3.2 * math.sin(ambientPhase + 0.7),
+      metrics.topRimY - 68.0,
     );
     final rightTargetPos = Offset(
-      cx + 49.0 + 3.2 * math.sin(ambientPhase + 1.4),
-      metrics.topRimY - 46.0,
+      cx + 60.0 + 3.2 * math.sin(ambientPhase + 1.4),
+      metrics.topRimY - 62.0,
     );
 
     final leftTipPos = Offset.lerp(
-      Offset(cx - 8, metrics.topRimY - 4),
+      Offset(cx - 7, metrics.topRimY - 4),
       leftTargetPos,
       leftExtendT,
     )!;
     final rightTipPos = Offset.lerp(
-      Offset(cx + 8, metrics.topRimY - 4),
+      Offset(cx + 7, metrics.topRimY - 4),
       rightTargetPos,
       rightExtendT,
     )!;
 
     if (leftExtendT > 0.02) {
       drawCylindricalStem(
-        Offset(cx - 8, stemBaseY),
+        Offset(cx - 7, stemBaseY),
         Offset.lerp(
-          Offset(cx - 10, metrics.topRimY - 4),
-          Offset(cx - 28, metrics.topRimY - 24),
+          Offset(cx - 9, metrics.topRimY - 4),
+          Offset(cx - 32, metrics.topRimY - 30),
           leftExtendT,
         )!,
         leftTipPos,
-        5.6,
+        6.0,
       );
     }
     if (rightExtendT > 0.02) {
       drawCylindricalStem(
-        Offset(cx + 8, stemBaseY),
+        Offset(cx + 7, stemBaseY),
         Offset.lerp(
-          Offset(cx + 10, metrics.topRimY - 4),
-          Offset(cx + 28, metrics.topRimY - 22),
+          Offset(cx + 9, metrics.topRimY - 4),
+          Offset(cx + 32, metrics.topRimY - 28),
           rightExtendT,
         )!,
         rightTipPos,
-        5.6,
+        6.0,
       );
     }
 
@@ -3705,18 +3954,19 @@ class _WaterGardenMasterPainter extends CustomPainter {
       Offset(primaryBaseX, stemBaseY),
       primaryCtrl,
       centerPos,
-      6.4,
+      6.8,
     );
 
     // 4. Primary Stem's 2 Signature Asymmetrical Twisted 3D Leaves
+    final leafScale = ui.lerpDouble(0.84, 1.12, wf)!;
     final leafNodeL = Offset.lerp(
-      Offset(primaryBaseX + 6, metrics.topRimY - 18 - growthLift * 0.45),
-      Offset(cx - 18, metrics.topRimY - 16),
+      Offset(primaryBaseX + 4, metrics.topRimY - 18 - growthLift * 0.45),
+      Offset(cx - 18, metrics.topRimY - 20),
       centerMorph,
     )!;
     final leafNodeR = Offset.lerp(
-      Offset(primaryBaseX + 9, metrics.topRimY - 14 - growthLift * 0.45),
-      Offset(cx + 18, metrics.topRimY - 15),
+      Offset(primaryBaseX + 7, metrics.topRimY - 14 - growthLift * 0.45),
+      Offset(cx + 18, metrics.topRimY - 19),
       centerMorph,
     )!;
 
@@ -3724,26 +3974,26 @@ class _WaterGardenMasterPainter extends CustomPainter {
       canvas,
       origin: leafNodeL,
       angle: ui.lerpDouble(-2.32, -2.38, centerMorph)! + sway,
-      length: ui.lerpDouble(33.0, 31.0, centerMorph)!,
-      width: 12.0,
+      length: ui.lerpDouble(33.0, 35.0, centerMorph)! * leafScale,
+      width: 12.6 * leafScale,
       curlSign: -1.0,
     );
     _drawCurledBotanicalLeaf(
       canvas,
       origin: leafNodeR,
       angle: ui.lerpDouble(-0.42, -0.74, centerMorph)! + sway,
-      length: ui.lerpDouble(36.0, 31.0, centerMorph)!,
-      width: 12.6,
+      length: ui.lerpDouble(36.0, 35.0, centerMorph)! * leafScale,
+      width: 13.0 * leafScale,
       curlSign: 1.0,
     );
 
-    // 5. Render Pre-Bloom Sculpted 3D Tulip Bud OR Continuous Unfurling 3D Bouquet!
+    // 5. Render Pre-Bloom Sculpted 3D Tulip Bud (gradually enlarging) OR Grand 3D Bouquet!
     if (tB <= 0.01) {
       _drawOrganicPinkTulipBud(
         canvas,
         center: centerPos,
-        tiltAngle: 0.36 + sway * 1.2,
-        scale: 1.06 + 0.10 * waterFraction.clamp(0.0, 1.0),
+        tiltAngle: 0.30 + sway * 1.2,
+        scale: (0.86 + 0.34 * wf) * pourNourish,
       );
       return;
     }
@@ -3752,6 +4002,11 @@ class _WaterGardenMasterPainter extends CustomPainter {
     final leftUnfurl = ((tB - 0.16) / 0.66).clamp(0.0, 1.0);
     final rightUnfurl = ((tB - 0.26) / 0.66).clamp(0.0, 1.0);
 
+    canvas.save();
+    canvas.translate(cx, metrics.topRimY);
+    final popScale = 1.0 + 0.22 * Curves.easeOutCubic.transform(tB);
+    canvas.scale(popScale, popScale);
+    canvas.translate(-cx, -metrics.topRimY);
     _drawBouquetByType(
       canvas: canvas,
       flowerType: flowerType,
@@ -3765,11 +4020,12 @@ class _WaterGardenMasterPainter extends CustomPainter {
       rightAppear: rightExtendT,
       sway: sway,
     );
+    canvas.restore();
   }
 
   /// Renders authentic extracted Flower Merge stage sprites (`0..3`) cleanly anchored at the
-  /// crystal vase neck so both pre-bloom buds (`chưa nở`) and 100% full bloom (`nở hoa`)
-  /// emerge organically out of the water vase without vector stems or hard cuts.
+  /// crystal vase neck so the flower grows progressively (`stage_0 -> stage_1 -> stage_2`)
+  /// with water progress and bursts into an oversized hero bouquet (`stage_3`) at 100%!
   void _drawSpriteBotanicals({
     required Canvas canvas,
     required double cx,
@@ -3777,6 +4033,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required double waterTopY,
     required bool hasWater,
     required double waterFraction,
+    required double pourProgress,
     required double bloomFraction,
     required FlowerType flowerType,
   }) {
@@ -3785,16 +4042,16 @@ class _WaterGardenMasterPainter extends CustomPainter {
     if (stages == null || stages[0] == null || stages[3] == null) return;
 
     final boxH = switch (flowerType) {
-      FlowerType.tulipPink || FlowerType.sunflower => 162.0,
-      _ => 176.0,
+      FlowerType.tulipPink || FlowerType.sunflower => 210.0,
+      _ => 224.0,
     };
     final boxW = boxH * (640.0 / 600.0);
-    final stemAnchor = Offset(cx, metrics.topRimY + 10.5);
+    final stemAnchor = Offset(cx, metrics.topRimY + 9.0);
     final rimMouthBottom =
         metrics.topRimY + metrics.ellipseHalfHeight(metrics.mouthHalfW) * 0.68;
     final clipBottom = hasWater
-        ? math.min(waterTopY + 3.0, math.max(metrics.topRimY + 11.5, rimMouthBottom))
-        : (metrics.topRimY + 11.0);
+        ? math.min(waterTopY + 3.0, math.max(metrics.topRimY + 10.0, rimMouthBottom))
+        : (metrics.topRimY + 9.5);
 
     void drawStage(
       ui.Image img, {
@@ -3811,7 +4068,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
         ..blendMode = BlendMode.srcOver
         ..color = Colors.white.withValues(alpha: alpha.clamp(0.0, 1.0));
       canvas.save();
-      canvas.clipRect(Rect.fromLTRB(0.0, -180.0, 380.0, clipBottom));
+      canvas.clipRect(Rect.fromLTRB(-24.0, -240.0, 404.0, clipBottom));
       canvas.translate(stemAnchor.dx, stemAnchor.dy);
       canvas.rotate(angleRad);
       canvas.scale(scaleX, scaleY);
@@ -3824,70 +4081,119 @@ class _WaterGardenMasterPainter extends CustomPainter {
       canvas.restore();
     }
 
-    final sway = 0.024 * math.sin(ambientPhase);
-    final breatheY = 1.0 + 0.013 * math.sin(ambientPhase * 2.0);
+    (int idx, double scale) tierAndScaleFor(double wp) {
+      final p = wp.clamp(0.0, 1.0);
+      if (p < 0.26) {
+        return (0, ui.lerpDouble(0.68, 1.06, (p / 0.26).clamp(0.0, 1.0))!);
+      } else if (p < 0.56) {
+        return (1, ui.lerpDouble(0.82, 1.12, ((p - 0.26) / 0.30).clamp(0.0, 1.0))!);
+      }
+      return (2, ui.lerpDouble(0.88, 1.18, ((p - 0.56) / 0.44).clamp(0.0, 1.0))!);
+    }
+
+    final sway = 0.022 * math.sin(ambientPhase);
+    final breatheY = 1.0 + 0.015 * math.sin(ambientPhase * 2.0);
+    double pourSwellX = 1.0;
+    double pourSwellY = 1.0;
+    if (didAdvanceStep && pourProgress > 0.16 && pourProgress < 0.99) {
+      final u = ((pourProgress - 0.16) / 0.83).clamp(0.0, 1.0);
+      if (u < 0.22) {
+        final k = Curves.easeInOutCubic.transform(u / 0.22);
+        pourSwellX = ui.lerpDouble(1.0, 1.06, k)!;
+        pourSwellY = ui.lerpDouble(1.0, 0.93, k)!;
+      } else if (u < 0.62) {
+        final k = Curves.easeOutCubic.transform((u - 0.22) / 0.40);
+        pourSwellX = ui.lerpDouble(1.06, 1.15, k)!;
+        pourSwellY = ui.lerpDouble(0.93, 1.18, k)!;
+      } else {
+        final k = Curves.easeInOutCubic.transform((u - 0.62) / 0.38);
+        pourSwellX = ui.lerpDouble(1.15, 1.0, k)!;
+        pourSwellY = ui.lerpDouble(1.18, 1.0, k)!;
+      }
+    }
     final tB = bloomFraction.clamp(0.0, 1.0);
 
-    // 1. Pre-bloom state (`chưa nở` when water < 100% or revealing next vase)
+    // 1. Pre-bloom state: progressive multi-stage growth (`stage_0 -> stage_1 -> stage_2`)
     if (!is100Percent || tB <= 0.01 || isNewVaseReveal) {
       final wp = isNewVaseReveal ? 0.0 : waterFraction.clamp(0.0, 1.0);
       final stage0 = stages[0]!;
       final stage1 = stages[1] ?? stage0;
+      final stage2 = stages[2] ?? stage1;
+      final (curIdx, targetSc) = tierAndScaleFor(wp);
+      final prevIdx = tierAndScaleFor(oldWaterProgress).$1;
 
-      // Cross threshold at 50%: smooth Spine-inspired bud-to-sprout pop (`00_01`)
-      const threshold = 0.48;
-      if (wp < threshold) {
-        drawStage(
-          stage0,
-          scaleX: 1.18,
-          scaleY: 1.18 * breatheY,
-          angleRad: sway,
-        );
-      } else if (oldWaterProgress < threshold && wp < 0.62) {
-        final popT = ((wp - threshold) / (0.62 - threshold)).clamp(0.0, 1.0);
-        if (popT < 0.34) {
-          final u = popT / 0.34;
-          final sc = ui.lerpDouble(1.18, 0.52, Curves.easeInBack.transform(u))!;
-          drawStage(stage0, scaleX: sc * 0.94, scaleY: sc * 1.08, angleRad: sway);
-        } else {
-          final u = (popT - 0.34) / 0.66;
-          final sc = ui.lerpDouble(0.50, 1.08, Curves.easeOutBack.transform(u))!;
-          drawStage(stage1, scaleX: sc, scaleY: sc * breatheY, angleRad: sway);
+      if (!isNewVaseReveal && curIdx > prevIdx) {
+        final threshold = curIdx == 1 ? 0.26 : 0.56;
+        final popWindow = math.max(0.10, (wp - threshold) + 0.02);
+        if (wp < threshold + 0.16) {
+          final popT = ((wp - threshold) / math.min(0.16, popWindow)).clamp(0.0, 1.0);
+          final fromImg = curIdx == 1 ? stage0 : stage1;
+          final toImg = curIdx == 1 ? stage1 : stage2;
+          final fromScale = curIdx == 1 ? 1.06 : 1.12;
+          if (popT < 0.28) {
+            final u = popT / 0.28;
+            final sc = ui.lerpDouble(fromScale, 0.56, Curves.easeInBack.transform(u))!;
+            drawStage(
+              fromImg,
+              scaleX: sc * 0.94,
+              scaleY: sc * 1.08,
+              angleRad: sway,
+            );
+            return;
+          } else {
+            final u = (popT - 0.28) / 0.72;
+            final sc = ui.lerpDouble(
+              0.56,
+              targetSc * pourSwellX,
+              Curves.easeOutBack.transform(u),
+            )!;
+            drawStage(
+              toImg,
+              scaleX: sc,
+              scaleY: sc * breatheY,
+              angleRad: sway,
+            );
+            return;
+          }
         }
-      } else {
-        drawStage(
-          stage1,
-          scaleX: 1.08,
-          scaleY: 1.08 * breatheY,
-          angleRad: sway,
-        );
       }
+
+      final activeImg = curIdx == 0
+          ? stage0
+          : curIdx == 1
+              ? stage1
+              : stage2;
+      drawStage(
+        activeImg,
+        scaleX: targetSc * pourSwellX,
+        scaleY: targetSc * pourSwellY * breatheY,
+        angleRad: sway,
+      );
       return;
     }
 
-    // 2. Full 100% Bloom choreography (`đầy 100% -> nở hoa ra`, following `02_03` Spine curve)
-    final startIdx = oldWaterProgress < 0.48 ? 0 : 1;
+    // 2. Full 100% Bloom choreography (`rót đầy -> nở bừng to ra` with elastic overshoot)
+    final (startIdx, startScale) = tierAndScaleFor(oldWaterProgress);
     final startImg = stages[startIdx] ?? stages[0]!;
-    final startScale = startIdx == 0 ? 1.18 : 1.08;
     final stage2 = stages[2] ?? stages[3]!;
     final stage3 = stages[3]!;
 
-    if (tB < 0.28) {
-      // Anticipation stretch -> squash -> compress into bloom spark
+    if (tB < 0.22) {
+      // Anticipation stretch -> squash -> gather magic energy
       double sx = 1.0;
       double sy = 1.0;
-      if (tB < 0.10) {
-        final u = Curves.easeInOutCubic.transform(tB / 0.10);
+      if (tB < 0.08) {
+        final u = Curves.easeInOutCubic.transform(tB / 0.08);
         sx = ui.lerpDouble(1.0, 0.92, u)!;
         sy = ui.lerpDouble(1.0, 1.15, u)!;
-      } else if (tB < 0.20) {
-        final u = Curves.easeInOutCubic.transform((tB - 0.10) / 0.10);
-        sx = ui.lerpDouble(0.92, 1.08, u)!;
+      } else if (tB < 0.16) {
+        final u = Curves.easeInOutCubic.transform((tB - 0.08) / 0.08);
+        sx = ui.lerpDouble(0.92, 1.10, u)!;
         sy = ui.lerpDouble(1.15, 0.84, u)!;
       } else {
-        final u = Curves.easeInCubic.transform((tB - 0.20) / 0.08);
-        sx = ui.lerpDouble(1.08, 0.26, u)!;
-        sy = ui.lerpDouble(0.84, 0.26, u)!;
+        final u = Curves.easeInCubic.transform((tB - 0.16) / 0.06);
+        sx = ui.lerpDouble(1.10, 0.34, u)!;
+        sy = ui.lerpDouble(0.84, 0.34, u)!;
       }
       drawStage(
         startImg,
@@ -3896,68 +4202,68 @@ class _WaterGardenMasterPainter extends CustomPainter {
         angleRad: sway * 0.5,
       );
 
-      // Building golden bloom spark before burst
-      if (tB > 0.14) {
-        final chargeT = ((tB - 0.14) / 0.14).clamp(0.0, 1.0);
-        final sparkCenter = Offset(cx, metrics.topRimY - 42);
+      if (tB > 0.10) {
+        final chargeT = ((tB - 0.10) / 0.12).clamp(0.0, 1.0);
+        final sparkCenter = Offset(cx, metrics.topRimY - 68);
         _fxPaint
           ..blendMode = BlendMode.plus
           ..maskFilter = null
           ..shader = ui.Gradient.radial(
             sparkCenter,
-            48.0 * chargeT,
+            66.0 * chargeT,
             [
-              Colors.white.withValues(alpha: 0.72 * chargeT),
-              const Color(0xFFFFE57F).withValues(alpha: 0.42 * chargeT),
+              Colors.white.withValues(alpha: 0.85 * chargeT),
+              const Color(0xFFFFE57F).withValues(alpha: 0.52 * chargeT),
               const Color(0x00FFE57F),
             ],
-            const [0.0, 0.48, 1.0],
+            const [0.0, 0.45, 1.0],
           );
-        canvas.drawCircle(sparkCenter, 48.0 * chargeT, _fxPaint);
+        canvas.drawCircle(sparkCenter, 66.0 * chargeT, _fxPaint);
         _fxPaint
           ..shader = null
           ..blendMode = BlendMode.srcOver;
       }
-    } else if (tB < 0.48) {
-      // Unfurling rapidly through Stage 2 right inside the magic burst puff
-      final u = Curves.easeOutCubic.transform(((tB - 0.28) / 0.20).clamp(0.0, 1.0));
-      final sc = ui.lerpDouble(0.32, 1.04, u)!;
+    } else if (tB < 0.42) {
+      // Unfurling rapidly through Stage 2 inside the magic burst puff
+      final u = Curves.easeOutCubic.transform(((tB - 0.22) / 0.20).clamp(0.0, 1.0));
+      final minSc = startIdx >= 2 ? 0.82 : 0.48;
+      final sc = ui.lerpDouble(minSc, 1.14, u)!;
       drawStage(stage2, scaleX: sc, scaleY: sc, angleRad: sway * 0.6);
     } else {
-      // Stage 3 full bouquet with Spine elastic settle (`1.07 -> 0.95 -> 1.02 -> 1.0`)
-      if (tB < 0.56) {
-        final crossAlpha = 1.0 - ((tB - 0.48) / 0.08).clamp(0.0, 1.0);
+      // Stage 3 full bouquet pops HUGE and settles lushly (`0.76 -> 1.28 -> 1.06 -> 1.18 -> 1.14`)
+      if (tB < 0.50) {
+        final crossAlpha = 1.0 - ((tB - 0.42) / 0.08).clamp(0.0, 1.0);
         drawStage(
           stage2,
-          scaleX: 1.04,
-          scaleY: 1.04,
+          scaleX: 1.14,
+          scaleY: 1.14,
           angleRad: sway * 0.7,
           alpha: crossAlpha * 0.65,
         );
       }
 
-      final u = ((tB - 0.48) / 0.52).clamp(0.0, 1.0);
-      double sx = 1.0;
-      double sy = 1.0;
-      if (u < 0.22) {
-        final k = Curves.easeOutCubic.transform(u / 0.22);
-        sx = ui.lerpDouble(0.82, 0.98, k)!;
-        sy = ui.lerpDouble(0.76, 1.08, k)!;
-      } else if (u < 0.48) {
-        final k = Curves.easeInOutCubic.transform((u - 0.22) / 0.26);
-        sx = ui.lerpDouble(0.98, 1.04, k)!;
-        sy = ui.lerpDouble(1.08, 0.95, k)!;
-      } else if (u < 0.74) {
-        final k = Curves.easeInOutCubic.transform((u - 0.48) / 0.26);
-        sx = ui.lerpDouble(1.04, 0.99, k)!;
-        sy = ui.lerpDouble(0.95, 1.025, k)!;
+      final u = ((tB - 0.42) / 0.58).clamp(0.0, 1.0);
+      double sx = 1.14;
+      double sy = 1.14;
+      if (u < 0.28) {
+        final k = Curves.easeOutCubic.transform(u / 0.28);
+        sx = ui.lerpDouble(0.76, 1.26, k)!;
+        sy = ui.lerpDouble(0.68, 1.29, k)!;
+      } else if (u < 0.54) {
+        final k = Curves.easeInOutCubic.transform((u - 0.28) / 0.26);
+        sx = ui.lerpDouble(1.26, 1.06, k)!;
+        sy = ui.lerpDouble(1.29, 1.04, k)!;
+      } else if (u < 0.78) {
+        final k = Curves.easeInOutCubic.transform((u - 0.54) / 0.24);
+        sx = ui.lerpDouble(1.06, 1.18, k)!;
+        sy = ui.lerpDouble(1.04, 1.19, k)!;
       } else {
-        final k = Curves.easeInOutCubic.transform((u - 0.74) / 0.26);
-        sx = ui.lerpDouble(0.99, 1.0, k)!;
-        sy = ui.lerpDouble(1.025, 1.0, k)!;
+        final k = Curves.easeInOutCubic.transform((u - 0.78) / 0.22);
+        sx = ui.lerpDouble(1.18, 1.14, k)!;
+        sy = ui.lerpDouble(1.19, 1.14, k)!;
       }
 
-      final appearAlpha = ((tB - 0.48) / 0.07).clamp(0.0, 1.0);
+      final appearAlpha = ((tB - 0.42) / 0.07).clamp(0.0, 1.0);
       drawStage(
         stage3,
         scaleX: sx,
@@ -5001,6 +5307,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required Canvas canvas,
     required Offset jarCenter,
     required double jarTiltRad,
+    double jarScale = 1.0,
     required Offset vaseMouthCenter,
     required Offset waterImpactPt,
     required double headT,
@@ -5010,8 +5317,10 @@ class _WaterGardenMasterPainter extends CustomPainter {
     if (headT <= 0.02 || tailT >= 0.98) return;
 
     final spoutPt = Offset(
-      jarCenter.dx + 4.0 * math.cos(jarTiltRad) + 31.0 * math.sin(jarTiltRad),
-      jarCenter.dy + 4.0 * math.sin(jarTiltRad) - 31.0 * math.cos(jarTiltRad),
+      jarCenter.dx +
+          (4.0 * math.cos(jarTiltRad) + 31.0 * math.sin(jarTiltRad)) * jarScale,
+      jarCenter.dy +
+          (4.0 * math.sin(jarTiltRad) - 31.0 * math.cos(jarTiltRad)) * jarScale,
     );
 
     final flutter = 1.4 * math.sin(ambientPhase * 4.0);
@@ -5499,52 +5808,168 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.drawPath(_vaseOuterPath, _paint);
     _paint.shader = null;
 
-    // 4. Sculpted Neck Collar Band (Beveled brushed gold for royalTall/ovalCeramic or crystal ring)
+    // 4. Escalating Sculpted Neck Collar, Chest Medallion Emblem & Crystal Accents per Vase
     final neckRect = Rect.fromCenter(
       center: Offset(cx, m.neckY + 1.0),
       width: m.neckHalfW * 2.02,
       height: m.ellipseHalfHeight(m.neckHalfW) * 1.32,
     );
-    if (type == VaseShapeType.royalTall || type == VaseShapeType.ovalCeramic) {
-      _paint
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.4
-        ..strokeCap = StrokeCap.round
-        ..color = Colors.white
-        ..shader = ui.Gradient.linear(
-          Offset(cx - m.neckHalfW, m.neckY),
-          Offset(cx + m.neckHalfW, m.neckY),
-          const [
-            Color(0xCC9E6B12),
-            Color(0xF8FFF2AA),
-            Color(0xEDD1932C),
-            Color(0xCC7A4E0B),
-          ],
-          const [0.0, 0.34, 0.68, 1.0],
-        );
-      canvas.drawArc(neckRect, 0.05, math.pi - 0.10, false, _paint);
-      _paint.shader = null;
 
-      // Center neck pearl jewel dot
-      _paint
-        ..style = PaintingStyle.fill
-        ..color = type == VaseShapeType.royalTall
-            ? const Color(0xFFFFD54F)
-            : const Color(0xFFA8F8EC);
-      canvas.drawCircle(
-        Offset(cx, m.neckY + m.ellipseHalfHeight(m.neckHalfW) * 0.72),
-        3.0,
-        _paint,
-      );
-    } else {
+    if (type == VaseShapeType.fishbowl) {
+      // Vase 1: Clean crystal collar glint
       _paint
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.1
+        ..strokeWidth = 2.0
         ..strokeCap = StrokeCap.round
+        ..shader = null
         ..color = hasWater
             ? const Color(0x7CFFEAA4)
             : const Color(0x66E0FFFF);
       canvas.drawArc(neckRect, 0.06, math.pi - 0.12, false, _paint);
+    } else {
+      // Vases 2..5+: Progressively richer brushed-gold collar + waist/foot filigree + centerpiece gem!
+      final goldGrad = ui.Gradient.linear(
+        Offset(cx - m.neckHalfW, m.neckY),
+        Offset(cx + m.neckHalfW, m.neckY),
+        const [
+          Color(0xCC9E6B12),
+          Color(0xFAFFF3B2),
+          Color(0xEED5972E),
+          Color(0xCC7A4E0B),
+        ],
+        const [0.0, 0.34, 0.68, 1.0],
+      );
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = type == VaseShapeType.ovalCeramic ? 3.2 : 3.8
+        ..strokeCap = StrokeCap.round
+        ..color = Colors.white
+        ..shader = goldGrad;
+      canvas.drawArc(neckRect, 0.04, math.pi - 0.08, false, _paint);
+
+      // Secondary upper filigree ring for Vases 3..5+
+      if (type == VaseShapeType.flutedCrystal ||
+          type == VaseShapeType.royalTall ||
+          type == VaseShapeType.prismLotus) {
+        _paint.strokeWidth = 1.6;
+        canvas.drawArc(
+          neckRect.shift(const Offset(0, 4.2)),
+          0.10,
+          math.pi - 0.20,
+          false,
+          _paint,
+        );
+      }
+
+      // Golden lower base collar band for Vases 4 & 5+
+      if (type == VaseShapeType.royalTall || type == VaseShapeType.prismLotus) {
+        final baseBandW = m.baseHalfW * 2.0;
+        final baseBandRect = Rect.fromCenter(
+          center: Offset(cx, m.innerBaseY + 1.0),
+          width: baseBandW,
+          height: m.ellipseHalfHeight(m.baseHalfW) * 1.15,
+        );
+        _paint.strokeWidth = 2.6;
+        canvas.drawArc(baseBandRect, 0.08, math.pi - 0.16, false, _paint);
+      }
+      _paint.shader = null;
+
+      // Belly engraved emblem / filigree medallion (increases complexity per vase tier)
+      final chestY = ui.lerpDouble(m.neckY, m.innerBaseY, m.bellyYFrac)!;
+      final gemPos = Offset(cx, m.neckY + m.ellipseHalfHeight(m.neckHalfW) * 0.72);
+      final centerGemColor = switch (type) {
+        VaseShapeType.ovalCeramic => const Color(0xFF42F5C8),
+        VaseShapeType.flutedCrystal => const Color(0xFF56C2FF),
+        VaseShapeType.royalTall => const Color(0xFFFFCA28),
+        VaseShapeType.prismLotus => const Color(0xFFFF72D2),
+        VaseShapeType.fishbowl => Colors.white,
+      };
+
+      if (type == VaseShapeType.ovalCeramic) {
+        // Vase 2: Delicate etched golden botanical diamond clasp on chest
+        _paint
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.3
+          ..color = const Color(0xAAFFE28A);
+        canvas.drawOval(
+          Rect.fromCenter(center: Offset(cx, chestY), width: 16, height: 22),
+          _paint,
+        );
+      } else if (type == VaseShapeType.flutedCrystal) {
+        // Vase 3: Twin curved sapphire filigree wings flanking central diamond
+        _paint
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = const Color(0xBBFFE694);
+        canvas.drawArc(
+          Rect.fromCenter(center: Offset(cx - 12, chestY), width: 14, height: 20),
+          math.pi * 0.5,
+          math.pi,
+          false,
+          _paint,
+        );
+        canvas.drawArc(
+          Rect.fromCenter(center: Offset(cx + 12, chestY), width: 14, height: 20),
+          -math.pi * 0.5,
+          math.pi,
+          false,
+          _paint,
+        );
+      } else if (type == VaseShapeType.royalTall) {
+        // Vase 4: Crowned royal gold amphora crest & side scrolls + stardust motes
+        _paint
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6
+          ..color = const Color(0xDAFFE28A);
+        for (final dir in const [-1.0, 1.0]) {
+          _scratchPath
+            ..reset()
+            ..moveTo(cx + dir * 4, chestY - 12)
+            ..quadraticBezierTo(cx + dir * 18, chestY - 2, cx + dir * 8, chestY + 12)
+            ..quadraticBezierTo(cx + dir * 2, chestY + 15, cx, chestY + 10);
+          canvas.drawPath(_scratchPath, _paint);
+        }
+        _drawFourPointStar(canvas, Offset(cx, chestY - 1), 6.0, const Color(0xEEFFF5B8));
+        _drawFourPointStar(canvas, Offset(cx - 19, chestY - 16), 3.6, const Color(0xAAFFE6A8));
+        _drawFourPointStar(canvas, Offset(cx + 21, chestY + 14), 3.4, const Color(0xAAFFE6A8));
+      } else if (type == VaseShapeType.prismLotus) {
+        // Vase 5+: Sculpted 5-petal celestial gold lotus filigree + orbiting crystal stars
+        _paint
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = const Color(0xE8FFEAA8);
+        for (int p = -2; p <= 2; p++) {
+          final px = cx + p * 8.5;
+          final py = chestY - (2 - p.abs()) * 3.5;
+          canvas.drawOval(
+            Rect.fromCenter(center: Offset(px, py), width: 7.5, height: 15.0),
+            _paint,
+          );
+        }
+        _drawFourPointStar(canvas, Offset(cx, chestY - 3), 7.2, const Color(0xFFFFD1F5));
+        for (int g = 0; g < 4; g++) {
+          final a = g * math.pi * 0.5 + ambientPhase * 0.45;
+          final gx = cx + math.cos(a) * (m.bellyHalfW + 10.0);
+          final gy = chestY + math.sin(a) * 26.0;
+          _drawFourPointStar(
+            canvas,
+            Offset(gx, gy),
+            4.2 + 1.2 * math.sin(ambientPhase * 2.5 + g),
+            g.isEven ? const Color(0xCCFFE6FF) : const Color(0xCC82F9FF),
+          );
+        }
+      }
+
+      // Beveled gold setting + luminous cabochon jewel on the neck collar
+      _paint
+        ..style = PaintingStyle.fill
+        ..shader = null
+        ..color = const Color(0xFFD99826);
+      canvas.drawCircle(gemPos, 3.8, _paint);
+      _paint.color = centerGemColor;
+      canvas.drawCircle(gemPos.translate(0, -0.2), 2.5, _paint);
+      _paint.color = Colors.white.withValues(alpha: 0.90);
+      canvas.drawCircle(gemPos.translate(-0.8, -0.9), 0.9, _paint);
     }
 
     // 5. Rolled 3D Toroidal Glass Mouth Lip (occluding stems cleanly)
@@ -5801,6 +6226,177 @@ class _WaterGardenMasterPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// Nourishing hydration sparkles, double emerald-gold growth waves, flower-tinted aura,
+  /// and persistent glowing dew motes that grow richer with every completed level (`0% -> 99%`).
+  void _drawHydrationGrowthFx({
+    required Canvas canvas,
+    required double cx,
+    required double rimY,
+    required double waterFraction,
+    required double pourT,
+    required int stepIndex,
+    required int totalSteps,
+    required FlowerType flowerType,
+  }) {
+    final cache = _GardenFlowerSpriteCache.instance;
+    final activePour = pourT > 0.04 && pourT < 0.99;
+    final growEnv = activePour
+        ? math.sin(pourT.clamp(0.0, 1.0) * math.pi)
+        : 0.38;
+    final fxAlpha = (0.36 + 0.64 * growEnv).clamp(0.0, 1.0);
+    final flowerHeadY = rimY - ui.lerpDouble(46.0, 118.0, waterFraction)!;
+    final auraR = ui.lerpDouble(54.0, 96.0, waterFraction)! + (activePour ? 16.0 * growEnv : 0.0);
+
+    final (accentA, accentB) = switch (flowerType) {
+      FlowerType.sunflower => (const Color(0xFFFFF59D), const Color(0xFFFFCA28)),
+      FlowerType.scarletPoppy => (const Color(0xFFFFCCBC), const Color(0xFFFF8A65)),
+      FlowerType.crystalLotus => (const Color(0xFFF3E5F5), const Color(0xFFE1BEE7)),
+      FlowerType.trioDaisy => (const Color(0xFFE1BEE7), const Color(0xFF9CFFEE)),
+      FlowerType.tulipPink => (const Color(0xFFFFD1E2), const Color(0xFFA6FFAF)),
+    };
+
+    // 1. Expanding double growth waves when water swells the flower on level complete
+    if (pourT > 0.24 && pourT < 0.99) {
+      final ringT = Curves.easeOutCubic.transform(
+        ((pourT - 0.24) / 0.75).clamp(0.0, 1.0),
+      );
+      final ringR = ui.lerpDouble(18.0, 114.0, ringT)!;
+      final ringAlpha = (0.62 * (1.0 - ringT)).clamp(0.0, 1.0);
+      _fxPaint
+        ..style = PaintingStyle.stroke
+        ..shader = null
+        ..maskFilter = null
+        ..blendMode = BlendMode.plus
+        ..strokeWidth = 4.2 * (1.0 - ringT)
+        ..color = const Color(0xFFB9FF9E).withValues(alpha: ringAlpha);
+      canvas.drawCircle(Offset(cx, flowerHeadY), ringR, _fxPaint);
+
+      if (pourT > 0.36) {
+        final ring2T = Curves.easeOutCubic.transform(
+          ((pourT - 0.36) / 0.63).clamp(0.0, 1.0),
+        );
+        final ring2R = ui.lerpDouble(14.0, 94.0, ring2T)!;
+        final ring2Alpha = (0.50 * (1.0 - ring2T)).clamp(0.0, 1.0);
+        _fxPaint
+          ..strokeWidth = 2.8 * (1.0 - ring2T)
+          ..color = accentA.withValues(alpha: ring2Alpha);
+        canvas.drawCircle(Offset(cx, flowerHeadY), ring2R, _fxPaint);
+      }
+    }
+
+    // 2. Luminous botanical radiance behind the growing flower crown
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..maskFilter = null
+      ..blendMode = BlendMode.plus
+      ..shader = ui.Gradient.radial(
+        Offset(cx, flowerHeadY),
+        auraR,
+        [
+          accentA.withValues(alpha: 0.34 * fxAlpha),
+          const Color(0xFFB2FF9E).withValues(alpha: 0.22 * fxAlpha),
+          const Color(0x0072FAFF),
+        ],
+        const [0.0, 0.50, 1.0],
+      );
+    canvas.drawCircle(Offset(cx, flowerHeadY), auraR, _fxPaint);
+    _fxPaint.shader = null;
+
+    // 3. Swirling ascending botanical growth stars & mini petal sparks during pour
+    final sparkleImg = cache.sparkleStar;
+    final starCount = activePour ? 10 : 0;
+    for (int i = 0; i < starCount; i++) {
+      final tPhase = ((pourT * 1.55 + i * 0.11) % 1.0);
+      final spreadX = (i.isEven ? -1.0 : 1.0) * (16.0 + (i % 4) * 18.0);
+      final pt = Offset(
+        cx + spreadX * (0.40 + 0.65 * tPhase) + 7.0 * math.sin(ambientPhase * 2.2 + i),
+        ui.lerpDouble(rimY - 6.0, flowerHeadY - 64.0, tPhase)!,
+      );
+      final starPulse = math.sin(tPhase * math.pi).clamp(0.0, 1.0) * fxAlpha;
+      if (starPulse <= 0.08) continue;
+
+      if (sparkleImg != null) {
+        final sz = (12.0 + (i % 3) * 4.0) * starPulse;
+        _fxPaint
+          ..style = PaintingStyle.fill
+          ..shader = null
+          ..blendMode = BlendMode.plus
+          ..color = (i.isEven ? accentA : const Color(0xFFB2FF9E))
+              .withValues(alpha: starPulse);
+        canvas.save();
+        canvas.translate(pt.dx, pt.dy);
+        canvas.rotate(ambientPhase + i);
+        canvas.drawImageRect(
+          sparkleImg,
+          Rect.fromLTWH(
+            0,
+            0,
+            sparkleImg.width.toDouble(),
+            sparkleImg.height.toDouble(),
+          ),
+          Rect.fromCenter(center: Offset.zero, width: sz, height: sz),
+          _fxPaint,
+        );
+        canvas.restore();
+      } else {
+        _drawFourPointStar(
+          canvas,
+          pt,
+          6.8 * starPulse,
+          (i.isEven ? accentA : const Color(0xFFB9FF9E))
+              .withValues(alpha: starPulse),
+        );
+      }
+    }
+
+    // 4. Persistent step-scaled glowing dew/pollen motes (count scales up with completed steps)
+    final stepFraction =
+        totalSteps > 0 ? (stepIndex / totalSteps).clamp(0.0, 1.0) : waterFraction;
+    final persistentMotes = (2 + (stepFraction * 7.0).round()).clamp(2, 9);
+    final petalImg = cache.petals[flowerType];
+    for (int m = 0; m < persistentMotes; m++) {
+      final a = m * (math.pi * 2.0 / persistentMotes) + ambientPhase * 0.55;
+      final orbitR = 36.0 + 38.0 * waterFraction + (m % 3) * 10.0;
+      final pt = Offset(
+        cx + math.cos(a) * orbitR,
+        flowerHeadY + math.sin(a) * (orbitR * 0.55),
+      );
+      final twinkle = (0.35 + 0.65 * math.sin(ambientPhase * 2.6 + m * 1.2)).clamp(0.0, 1.0);
+      if (m % 3 == 0 && petalImg != null && waterFraction >= 0.45) {
+        _paint
+          ..style = PaintingStyle.fill
+          ..shader = null
+          ..maskFilter = null
+          ..blendMode = BlendMode.srcOver
+          ..color = Colors.white.withValues(alpha: (0.85 * twinkle).clamp(0.0, 1.0));
+        canvas.save();
+        canvas.translate(pt.dx, pt.dy);
+        canvas.rotate(ambientPhase + m);
+        canvas.drawImageRect(
+          petalImg,
+          Rect.fromLTWH(0, 0, petalImg.width.toDouble(), petalImg.height.toDouble()),
+          const Rect.fromLTWH(-6.0, -7.5, 12.0, 15.0),
+          _paint,
+        );
+        canvas.restore();
+      } else {
+        _drawFourPointStar(
+          canvas,
+          pt,
+          (4.6 + 1.8 * waterFraction) * twinkle,
+          (m.isEven ? accentB : const Color(0xFFFFF8C4))
+              .withValues(alpha: (0.82 * twinkle).clamp(0.0, 1.0)),
+        );
+      }
+    }
+
+    _fxPaint
+      ..style = PaintingStyle.fill
+      ..shader = null
+      ..maskFilter = null
+      ..blendMode = BlendMode.srcOver;
+  }
+
   /// 3D Tumbling Real/Vector Petals, Magic Bloom Burst, Fluttering Butterflies & Sparkles
   void _drawFloatingPetalsAndSparkles({
     required Canvas canvas,
@@ -5812,19 +6408,19 @@ class _WaterGardenMasterPainter extends CustomPainter {
   }) {
     final cache = _GardenFlowerSpriteCache.instance;
     final usingSprites = cache.hasStages(flowerType);
-    final crownCenterY = usingSprites ? topY - 40.0 : topY;
+    final crownCenterY = usingSprites ? topY - 78.0 : topY - 16.0;
 
     // 1. Magic Bloom Burst FX (`SX_effect_ywbd`: golden burst puff + streamers + sparkles)
-    if (bloomProgress >= 0.24 && bloomProgress <= 0.88) {
-      final burstT = ((bloomProgress - 0.24) / 0.64).clamp(0.0, 1.0);
+    if (bloomProgress >= 0.22 && bloomProgress <= 0.90) {
+      final burstT = ((bloomProgress - 0.22) / 0.68).clamp(0.0, 1.0);
       final frameIdx = (burstT * 8).floor().clamp(0, 7);
       final burstImg = cache.burstFrames[frameIdx];
       if (burstImg != null) {
         final burstAlpha = burstT < 0.72
             ? 1.0
             : (1.0 - ((burstT - 0.72) / 0.28)).clamp(0.0, 1.0);
-        final burstScale = ui.lerpDouble(0.76, 1.18, burstT)!;
-        final size = 186.0 * burstScale;
+        final burstScale = ui.lerpDouble(0.84, 1.28, burstT)!;
+        final size = 228.0 * burstScale;
         _fxPaint
           ..style = PaintingStyle.fill
           ..shader = null
@@ -5840,7 +6436,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
             burstImg.height.toDouble(),
           ),
           Rect.fromCenter(
-            center: Offset(cx, crownCenterY + 6.0),
+            center: Offset(cx, crownCenterY + 4.0),
             width: size,
             height: size,
           ),
@@ -5849,7 +6445,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       }
     }
 
-    // 2. Tumbling Real Flower Petals (fallback smoothly to vector petals if not cached)
+    // 2. Tumbling Real Flower Petals radiating outward around the hero bouquet
     final petalImg = cache.petals[flowerType];
     final (petalLight, petalDeep) = switch (flowerType) {
       FlowerType.sunflower => (
@@ -5871,21 +6467,27 @@ class _WaterGardenMasterPainter extends CustomPainter {
     };
 
     const baseOffsets = <Offset>[
-      Offset(-98, 12),
-      Offset(102, 10),
-      Offset(-86, -42),
-      Offset(90, -36),
-      Offset(-62, -74),
-      Offset(68, -70),
+      Offset(-114, 16),
+      Offset(118, 14),
+      Offset(-104, -44),
+      Offset(108, -38),
+      Offset(-76, -86),
+      Offset(82, -82),
+      Offset(-38, -110),
+      Offset(42, -108),
+      Offset(-132, -14),
+      Offset(134, -10),
+      Offset(-92, 54),
+      Offset(96, 52),
     ];
 
     for (int i = 0; i < baseOffsets.length; i++) {
       final b = baseOffsets[i];
-      final driftX = 7.0 * math.sin(ambientPhase + i * 1.15);
-      final driftY = 6.0 * math.cos(ambientPhase * 1.25 + i * 0.9);
+      final driftX = 8.5 * math.sin(ambientPhase + i * 1.15);
+      final driftY = 7.0 * math.cos(ambientPhase * 1.25 + i * 0.9);
       final pos = Offset(
         cx + b.dx * intensity + driftX,
-        crownCenterY + b.dy + driftY,
+        crownCenterY + b.dy * intensity + driftY,
       );
       final tumble = math.cos(ambientPhase * 1.8 + i * 1.3);
       final flipY = (0.36 + 0.64 * tumble.abs()) * intensity;
@@ -5902,7 +6504,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
           ..shader = null
           ..maskFilter = null
           ..blendMode = BlendMode.srcOver
-          ..color = Colors.white.withValues(alpha: (0.94 * intensity).clamp(0.0, 1.0));
+          ..color = Colors.white.withValues(alpha: (0.96 * intensity).clamp(0.0, 1.0));
         canvas.drawImageRect(
           petalImg,
           Rect.fromLTWH(
@@ -5911,15 +6513,15 @@ class _WaterGardenMasterPainter extends CustomPainter {
             petalImg.width.toDouble(),
             petalImg.height.toDouble(),
           ),
-          const Rect.fromLTWH(-7.5, -9.8, 15.0, 19.6),
+          const Rect.fromLTWH(-8.5, -11.0, 17.0, 22.0),
           _paint,
         );
       } else {
         _scratchPath
           ..reset()
-          ..moveTo(-8.5, 0)
-          ..cubicTo(-4, -6.5, 5, -6.8, 8.5, -0.5)
-          ..cubicTo(5, 5.8, -3, 5.2, -8.5, 0)
+          ..moveTo(-9.0, 0)
+          ..cubicTo(-4.5, -7.0, 5.5, -7.2, 9.0, -0.5)
+          ..cubicTo(5.5, 6.2, -3.5, 5.6, -9.0, 0)
           ..close();
         _paint
           ..style = PaintingStyle.fill
@@ -5929,12 +6531,12 @@ class _WaterGardenMasterPainter extends CustomPainter {
             const Offset(8, 5),
             isBackSide
                 ? [
-                    petalDeep.withValues(alpha: (0.85 * intensity).clamp(0.0, 1.0)),
-                    petalLight.withValues(alpha: (0.72 * intensity).clamp(0.0, 1.0)),
+                    petalDeep.withValues(alpha: (0.88 * intensity).clamp(0.0, 1.0)),
+                    petalLight.withValues(alpha: (0.76 * intensity).clamp(0.0, 1.0)),
                   ]
                 : [
-                    petalLight.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
-                    petalDeep.withValues(alpha: (0.95 * intensity).clamp(0.0, 1.0)),
+                    petalLight.withValues(alpha: (0.96 * intensity).clamp(0.0, 1.0)),
+                    petalDeep.withValues(alpha: (0.96 * intensity).clamp(0.0, 1.0)),
                   ],
           );
         canvas.drawPath(_scratchPath, _paint);
@@ -5943,23 +6545,23 @@ class _WaterGardenMasterPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // 3. Floating warm golden pollen fairy motes / glint orbs
+    // 3. Floating warm golden pollen fairy motes / glint orbs around bouquet crown
     final glintImg = cache.glintDot;
-    for (int m = 0; m < 8; m++) {
-      final angle = m * 0.785 + ambientPhase * 0.4;
-      final r = 54.0 + (m % 3) * 22.0;
+    for (int m = 0; m < 14; m++) {
+      final angle = m * (math.pi * 2.0 / 14.0) + ambientPhase * 0.42;
+      final r = 64.0 + (m % 4) * 20.0;
       final mx = cx + math.cos(angle) * r;
       final my =
-          crownCenterY - 12 + math.sin(angle * 1.3) * 44.0 - (ambientPhase % 6.28) * 1.5;
+          crownCenterY - 8 + math.sin(angle * 1.3) * 56.0 - (ambientPhase % 6.28) * 1.8;
       final pulse = (0.4 + 0.6 * math.sin(ambientPhase * 2.5 + m)).clamp(0.0, 1.0);
       if (glintImg != null) {
-        final gs = (6.0 + (m % 3) * 2.5) * pulse;
+        final gs = (6.5 + (m % 3) * 2.8) * pulse;
         _fxPaint
           ..style = PaintingStyle.fill
           ..shader = null
           ..maskFilter = null
           ..blendMode = BlendMode.plus
-          ..color = Colors.white.withValues(alpha: (0.85 * intensity * pulse).clamp(0.0, 1.0));
+          ..color = Colors.white.withValues(alpha: (0.90 * intensity * pulse).clamp(0.0, 1.0));
         canvas.drawImageRect(
           glintImg,
           Rect.fromLTWH(
@@ -5975,11 +6577,11 @@ class _WaterGardenMasterPainter extends CustomPainter {
         _fxPaint
           ..style = PaintingStyle.fill
           ..maskFilter = null
-          ..color = const Color(0xFFFFF59D).withValues(alpha: 0.28 * intensity * pulse);
-        canvas.drawCircle(Offset(mx, my), 4.0, _fxPaint);
+          ..color = const Color(0xFFFFF59D).withValues(alpha: 0.30 * intensity * pulse);
+        canvas.drawCircle(Offset(mx, my), 4.4, _fxPaint);
         _fxPaint.color =
-            const Color(0xFFFFF59D).withValues(alpha: 0.72 * intensity * pulse);
-        canvas.drawCircle(Offset(mx, my), 2.1, _fxPaint);
+            const Color(0xFFFFF59D).withValues(alpha: 0.78 * intensity * pulse);
+        canvas.drawCircle(Offset(mx, my), 2.3, _fxPaint);
       }
     }
     _fxPaint
@@ -5989,11 +6591,16 @@ class _WaterGardenMasterPainter extends CustomPainter {
     // 4. Twinkling Golden Sparkles (`fx_sparkle.png` + 4-point star glow)
     final sparkleImg = cache.sparkleStar;
     const starOffsets = <Offset>[
-      Offset(-78, -56),
-      Offset(82, -52),
-      Offset(0, -92),
-      Offset(-96, -8),
-      Offset(100, -4),
+      Offset(-92, -62),
+      Offset(96, -58),
+      Offset(0, -108),
+      Offset(-118, -6),
+      Offset(122, -2),
+      Offset(-54, -98),
+      Offset(58, -94),
+      Offset(-86, 42),
+      Offset(88, 40),
+      Offset(4, -56),
     ];
     for (int s = 0; s < starOffsets.length; s++) {
       final twinkle =
@@ -6002,7 +6609,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       if (twinkle <= 0.08) continue;
       final pt = Offset(cx + starOffsets[s].dx, crownCenterY + starOffsets[s].dy);
       if (sparkleImg != null) {
-        final sz = 16.0 * twinkle;
+        final sz = (14.5 + (s % 3) * 3.0) * twinkle;
         _fxPaint
           ..style = PaintingStyle.fill
           ..shader = null
@@ -6028,20 +6635,20 @@ class _WaterGardenMasterPainter extends CustomPainter {
         _drawFourPointStar(
           canvas,
           pt,
-          7.8 * twinkle,
+          8.4 * twinkle,
           const Color(0xFFFFFDE7),
         );
       }
     }
     _fxPaint.blendMode = BlendMode.srcOver;
 
-    // 5. Animated Iridescent Morpho Butterflies (`sxch_an_hd`, matches Flower Merge bloom)
+    // 5. Animated Iridescent Morpho Butterflies (`sxch_an_hd`, dancing around full flower crown)
     final bBody = cache.butterflyBody;
     final bWingL = cache.butterflyWingL;
     final bWingR = cache.butterflyWingR;
-    if (bBody != null && bWingL != null && bWingR != null && bloomProgress > 0.42) {
+    if (bBody != null && bWingL != null && bWingR != null && bloomProgress > 0.38) {
       final flyInT = Curves.easeOutCubic.transform(
-        ((bloomProgress - 0.42) / 0.34).clamp(0.0, 1.0),
+        ((bloomProgress - 0.38) / 0.34).clamp(0.0, 1.0),
       );
       _drawAnimatedButterfly(
         canvas: canvas,
@@ -6049,10 +6656,10 @@ class _WaterGardenMasterPainter extends CustomPainter {
         wingL: bWingL,
         wingR: bWingR,
         center: Offset(
-          cx + 76.0 * flyInT + 10.0 * math.sin(ambientPhase * 2.0),
-          crownCenterY - 52.0 + 7.5 * math.cos(ambientPhase * 2.8),
+          cx + 88.0 * flyInT + 11.0 * math.sin(ambientPhase * 2.0),
+          crownCenterY - 58.0 + 8.5 * math.cos(ambientPhase * 2.8),
         ),
-        scale: 0.24 * flyInT,
+        scale: 0.27 * flyInT,
         tiltRad: -0.34 + 0.14 * math.cos(ambientPhase * 2.0),
         flapPhase: ambientPhase * 9.5,
         alpha: flyInT,
@@ -6063,13 +6670,27 @@ class _WaterGardenMasterPainter extends CustomPainter {
         wingL: bWingL,
         wingR: bWingR,
         center: Offset(
-          cx - 78.0 * flyInT + 9.0 * math.cos(ambientPhase * 2.2 + 1.1),
-          crownCenterY - 26.0 + 6.5 * math.sin(ambientPhase * 2.6 + 0.8),
+          cx - 90.0 * flyInT + 10.0 * math.cos(ambientPhase * 2.2 + 1.1),
+          crownCenterY - 34.0 + 7.5 * math.sin(ambientPhase * 2.6 + 0.8),
         ),
-        scale: 0.18 * flyInT,
+        scale: 0.21 * flyInT,
         tiltRad: 0.38 + 0.14 * math.sin(ambientPhase * 2.2),
         flapPhase: ambientPhase * 10.5 + 1.4,
-        alpha: flyInT * 0.92,
+        alpha: flyInT * 0.94,
+      );
+      _drawAnimatedButterfly(
+        canvas: canvas,
+        body: bBody,
+        wingL: bWingL,
+        wingR: bWingR,
+        center: Offset(
+          cx + 18.0 * flyInT + 12.0 * math.cos(ambientPhase * 1.9 + 2.3),
+          crownCenterY - 96.0 + 6.5 * math.sin(ambientPhase * 2.4 + 1.9),
+        ),
+        scale: 0.16 * flyInT,
+        tiltRad: 0.22 + 0.16 * math.cos(ambientPhase * 2.4),
+        flapPhase: ambientPhase * 11.2 + 2.1,
+        alpha: flyInT * 0.88,
       );
     }
   }
@@ -6235,6 +6856,9 @@ class _WaterGardenMasterPainter extends CustomPainter {
         oldDelegate.config.vaseId != config.vaseId ||
         oldDelegate.isNewVaseReveal != isNewVaseReveal ||
         oldDelegate.newVaseSparkleT != newVaseSparkleT ||
+        oldDelegate.stepIndex != stepIndex ||
+        oldDelegate.totalSteps != totalSteps ||
+        oldDelegate.didAdvanceStep != didAdvanceStep ||
         oldDelegate.spriteVersion != spriteVersion;
   }
 }

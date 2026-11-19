@@ -1,11 +1,16 @@
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'remote_config_service.dart';
 
 class PlayerProgressService extends ChangeNotifier {
   static const _kCurrentLevel = 'bo_current_level';
   static const _kHighestLevel = 'bo_highest_level';
   static const _kCoins = 'bo_coins';
   static const _kLives = 'bo_lives';
+  static const _kLastLifeRegenMs = 'bo_last_life_regen_ms';
+  static const _kInfinityExpireMs = 'bo_infinity_expire_ms';
+  static const _kMaxHearts = 'bo_max_hearts';
   static const _kLevelUpCount = 'bo_pu_level_up';
   static const _kTimeFreezeCount = 'bo_pu_time_freeze';
   static const _kSeenMechanics = 'bo_seen_mechanics';
@@ -18,6 +23,8 @@ class PlayerProgressService extends ChangeNotifier {
   static const _kVaseUnlockedIds = 'bo_vase_unlocked_ids';
 
   static const int maxLives = 5;
+  static const int lifeRegenSeconds = 15 * 60; // 1 Heart per 15 minutes (900s)
+  static const int refillLivesCost = 900;
 
   /// Exact Unity `remote_config.json` power-up progression & economy settings:
   /// - `LevelUp` (`type = 0`): `unlock_level = 17`, `initial_inventory = 3`, `price_coins = 600` (`x3`)
@@ -34,10 +41,14 @@ class PlayerProgressService extends ChangeNotifier {
   int _currentLevel = 1;
   int _highestLevel = 1;
   int _coins = 875;
+  int _maxLives = maxLives;
   int _lives = maxLives;
+  int? _lastLifeRegenMs;
+  int? _infinityExpireMs;
   int _levelUpCount = initialPowerUpInventory;
   int _timeFreezeCount = initialPowerUpInventory;
   int _pendingWinCoins = 0;
+  int _pendingMilestoneCoins = 0;
   Set<String> _seenMechanics = {};
   Set<String> _freePowerUpsPending = {};
   bool _ftueLoadingLogged = false;
@@ -51,10 +62,15 @@ class PlayerProgressService extends ChangeNotifier {
   int get currentLevel => _currentLevel;
   int get highestLevel => _highestLevel;
   int get coins => _coins;
+  int get currentMaxLives => _maxLives;
   int get lives => _lives;
+  int? get lastLifeRegenMs => _lastLifeRegenMs;
+  int? get infinityExpireMs => _infinityExpireMs;
+  bool get isHeartsMax => _lives >= _maxLives;
   int get levelUpCount => _levelUpCount;
   int get timeFreezeCount => _timeFreezeCount;
   int get pendingWinCoins => _pendingWinCoins;
+  int get pendingMilestoneCoins => _pendingMilestoneCoins;
   bool get isFtueCompleted => _ftueCompleted;
 
   int get vaseCurrentId => _vaseCurrentId;
@@ -94,7 +110,10 @@ class PlayerProgressService extends ChangeNotifier {
       _highestLevel = _currentLevel;
     }
     _coins = _prefs?.getInt(_kCoins) ?? 875;
-    _lives = (_prefs?.getInt(_kLives) ?? maxLives).clamp(1, maxLives);
+    _maxLives = math.max(1, _prefs?.getInt(_kMaxHearts) ?? maxLives);
+    _lives = math.max(0, _prefs?.getInt(_kLives) ?? _maxLives);
+    _lastLifeRegenMs = _prefs?.getInt(_kLastLifeRegenMs);
+    _infinityExpireMs = _prefs?.getInt(_kInfinityExpireMs);
     _levelUpCount =
         _prefs?.getInt(_kLevelUpCount) ?? initialPowerUpInventory;
     _timeFreezeCount =
@@ -117,6 +136,7 @@ class PlayerProgressService extends ChangeNotifier {
         .map((s) => int.tryParse(s) ?? 0)
         .where((id) => id > 0)
         .toSet();
+    syncLivesRegen();
     notifyListeners();
   }
 
@@ -205,7 +225,7 @@ class PlayerProgressService extends ChangeNotifier {
     flushPendingWinCoins();
     _pendingWinCoins = rewardCoins;
     // Persist total coins immediately on disk so closing mid-win never loses reward
-    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins);
+    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins + _pendingMilestoneCoins);
     if (!isBonus) {
       final next = _currentLevel + 1;
       if (next > _highestLevel) {
@@ -221,7 +241,7 @@ class PlayerProgressService extends ChangeNotifier {
   void doublePendingWinCoins(int extraCoins) {
     if (extraCoins <= 0) return;
     _pendingWinCoins += extraCoins;
-    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins);
+    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins + _pendingMilestoneCoins);
     notifyListeners();
   }
 
@@ -231,14 +251,25 @@ class PlayerProgressService extends ChangeNotifier {
     final delta = amount.clamp(0, _pendingWinCoins);
     _pendingWinCoins -= delta;
     _coins += delta;
-    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins);
+    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins + _pendingMilestoneCoins);
+    notifyListeners();
+  }
+
+  /// Credits a chunk of pending vase-milestone coins during the Claim flying-coin animation.
+  void collectPendingMilestoneCoinChunk(int amount) {
+    if (_pendingMilestoneCoins <= 0) return;
+    final delta = amount.clamp(0, _pendingMilestoneCoins);
+    _pendingMilestoneCoins -= delta;
+    _coins += delta;
+    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins + _pendingMilestoneCoins);
     notifyListeners();
   }
 
   void flushPendingWinCoins() {
-    if (_pendingWinCoins <= 0) return;
-    _coins += _pendingWinCoins;
+    if (_pendingWinCoins <= 0 && _pendingMilestoneCoins <= 0) return;
+    _coins += _pendingWinCoins + _pendingMilestoneCoins;
     _pendingWinCoins = 0;
+    _pendingMilestoneCoins = 0;
     _prefs?.setInt(_kCoins, _coins);
     notifyListeners();
   }
@@ -268,20 +299,269 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void loseLife() {
-    if (_lives > 0) {
-      _lives--;
-      _prefs?.setInt(_kLives, _lives);
-      notifyListeners();
+  void _persistLivesAndAnchor() {
+    _prefs?.setInt(_kLives, _lives);
+    _prefs?.setInt(_kMaxHearts, _maxLives);
+    if (_lastLifeRegenMs != null) {
+      _prefs?.setInt(_kLastLifeRegenMs, _lastLifeRegenMs!);
+    } else {
+      _prefs?.remove(_kLastLifeRegenMs);
+    }
+    if (_infinityExpireMs != null) {
+      _prefs?.setInt(_kInfinityExpireMs, _infinityExpireMs!);
+    } else {
+      _prefs?.remove(_kInfinityExpireMs);
     }
   }
 
-  void ensureAtLeastOneLife() {
-    if (_lives <= 0) {
-      _lives = maxLives;
-      _prefs?.setInt(_kLives, _lives);
-      notifyListeners();
+  bool isInfinityLives({DateTime? now}) {
+    final expireMs = _infinityExpireMs;
+    if (expireMs == null) return false;
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    return nowMs < expireMs;
+  }
+
+  int infinitySecondsLeft({DateTime? now}) {
+    final expireMs = _infinityExpireMs;
+    if (expireMs == null) return 0;
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    if (nowMs >= expireMs) return 0;
+    return ((expireMs - nowMs) / 1000.0).ceil();
+  }
+
+  bool canPlay({DateTime? now}) =>
+      isInfinityLives(now: now) || _lives > 0;
+
+  /// Synchronizes Infinity expiry & Heart recovery (`HeartService.CalculateOfflineRecovery` + `Tick`).
+  /// - If Infinity expired while offline or ticking: freezes/resumes regen anchor from `_infinityExpireMs`
+  ///   when `_lives < _maxLives`, clears `_infinityExpireMs`, then runs normal 15:00 regen.
+  /// - While Infinity is active: skips normal regen.
+  /// - Preserves surplus hearts (`> _maxLives`) granted via `isFromBuy: true`.
+  int syncLivesRegen({DateTime? now}) {
+    final clockNow = now ?? DateTime.now();
+    final nowMs = clockNow.millisecondsSinceEpoch;
+    bool stateChanged = false;
+
+    // 1. Handle expired Infinity mode cleanly (advance regen anchor to infinity expiry time).
+    if (_infinityExpireMs != null && nowMs >= _infinityExpireMs!) {
+      if (_lives < _maxLives &&
+          (_lastLifeRegenMs == null || _lastLifeRegenMs! < _infinityExpireMs!)) {
+        _lastLifeRegenMs = _infinityExpireMs!;
+      }
+      _infinityExpireMs = null;
+      stateChanged = true;
     }
+
+    // 2. Active Infinity pauses normal heart regeneration.
+    if (_infinityExpireMs != null && nowMs < _infinityExpireMs!) {
+      if (stateChanged) {
+        _persistLivesAndAnchor();
+        notifyListeners();
+      }
+      return 0;
+    }
+
+    // 3. Full (or surplus bought) hearts -> no active regen timer needed.
+    if (_lives >= _maxLives) {
+      if (_lastLifeRegenMs != null) {
+        _lastLifeRegenMs = null;
+        stateChanged = true;
+      }
+      if (stateChanged) {
+        _persistLivesAndAnchor();
+        notifyListeners();
+      }
+      return 0;
+    }
+
+    // 4. Normal regeneration (`RECOVERY_INTERVAL_SECONDS = 900`)
+    if (_lastLifeRegenMs == null) {
+      _lastLifeRegenMs = nowMs;
+      _persistLivesAndAnchor();
+      notifyListeners();
+      return 0;
+    }
+
+    final elapsedMs = nowMs - _lastLifeRegenMs!;
+    if (elapsedMs < 0) {
+      _lastLifeRegenMs = nowMs;
+      _persistLivesAndAnchor();
+      if (stateChanged) notifyListeners();
+      return 0;
+    }
+
+    const int intervalMs = lifeRegenSeconds * 1000;
+    if (elapsedMs < intervalMs) {
+      if (stateChanged) {
+        _persistLivesAndAnchor();
+        notifyListeners();
+      }
+      return 0;
+    }
+
+    final int recovered = elapsedMs ~/ intervalMs;
+    final int oldLives = _lives;
+    _lives = math.min(_maxLives, _lives + recovered);
+    if (_lives >= _maxLives) {
+      _lastLifeRegenMs = null;
+    } else {
+      _lastLifeRegenMs = _lastLifeRegenMs! + recovered * intervalMs;
+    }
+    _persistLivesAndAnchor();
+    notifyListeners();
+    return _lives - oldLives;
+  }
+
+  /// Remaining time until the next Heart regenerates, or `null` if already full/infinity.
+  Duration? timeUntilNextLife({DateTime? now}) {
+    if (isInfinityLives(now: now)) {
+      final expireMs = _infinityExpireMs!;
+      final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+      return Duration(milliseconds: math.max(0, expireMs - nowMs));
+    }
+    if (_lives >= _maxLives) return null;
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    final anchorMs = _lastLifeRegenMs ?? nowMs;
+    const int intervalMs = lifeRegenSeconds * 1000;
+    final elapsedMs = (nowMs - anchorMs).clamp(0, intervalMs);
+    final remMs = (intervalMs - elapsedMs).clamp(0, intervalMs);
+    return Duration(milliseconds: remMs);
+  }
+
+  /// Formats timer matching `HeartService.FormatTime`:
+  /// - Infinity: `Xd Xh` (>24h), `HH:MM:SS` (>=1h), or `MM:SS` (<1h).
+  /// - Regen: `MM:SS` countdown until next heart, or `'Full'` when >= `_maxLives`.
+  String formattedNextLifeCountdown({DateTime? now}) {
+    final clockNow = now ?? DateTime.now();
+    if (isInfinityLives(now: clockNow)) {
+      final secs = infinitySecondsLeft(now: clockNow);
+      return formatHeartTimerSeconds(secs);
+    }
+    if (_lives >= _maxLives) return 'Full';
+    final rem = timeUntilNextLife(now: clockNow)!;
+    final totalSecs = (rem.inMilliseconds / 1000.0).ceil().clamp(0, lifeRegenSeconds);
+    return formatHeartTimerSeconds(totalSecs);
+  }
+
+  static String formatHeartTimerSeconds(int sec) {
+    final s = math.max(0, sec);
+    const int secPerDay = 86400;
+    const int secPerHour = 3600;
+    const int secPerMin = 60;
+    if (s > secPerDay) {
+      final days = s ~/ secPerDay;
+      final hours = (s % secPerDay) ~/ secPerHour;
+      return '${days}d ${hours}h';
+    }
+    if (s >= secPerHour) {
+      final hours = (s ~/ secPerHour).toString().padLeft(2, '0');
+      final mins = ((s % secPerHour) ~/ secPerMin).toString().padLeft(2, '0');
+      final secs = (s % secPerMin).toString().padLeft(2, '0');
+      return '$hours:$mins:$secs';
+    }
+    final mins = (s ~/ secPerMin).toString().padLeft(2, '0');
+    final secs = (s % secPerMin).toString().padLeft(2, '0');
+    return '$mins:$secs';
+  }
+
+  void _setLivesCount(
+    int nextLives, {
+    required int nowMs,
+    bool allowOverMax = false,
+  }) {
+    _lives = allowOverMax ? math.max(0, nextLives) : nextLives.clamp(0, _maxLives);
+    if (_lives >= _maxLives) {
+      _lastLifeRegenMs = null;
+    } else {
+      _lastLifeRegenMs ??= nowMs;
+    }
+    _persistLivesAndAnchor();
+    notifyListeners();
+  }
+
+  /// Mirrors `HeartService.TrySpendHeart(amount)`:
+  /// - Returns `true` immediately during Infinity mode without deducting hearts.
+  /// - Returns `false` if `_lives <= 0`.
+  /// - Starts regen anchor when dropping from `_maxLives` and deducts `amount`.
+  bool trySpendHeart({int amount = 1, DateTime? now}) {
+    if (amount <= 0) return true;
+    final clockNow = now ?? DateTime.now();
+    syncLivesRegen(now: clockNow);
+    if (isInfinityLives(now: clockNow)) return true;
+    if (_lives <= 0) return false;
+    final nextLives = math.max(0, _lives - amount);
+    if (_lives >= _maxLives && nextLives < _maxLives) {
+      _lastLifeRegenMs = clockNow.millisecondsSinceEpoch;
+    }
+    _lives = nextLives;
+    if (_lives >= _maxLives) {
+      _lastLifeRegenMs = null;
+    } else {
+      _lastLifeRegenMs ??= clockNow.millisecondsSinceEpoch;
+    }
+    _persistLivesAndAnchor();
+    notifyListeners();
+    return true;
+  }
+
+  /// Mirrors `HeartService.AddInfinity(seconds)`: freezes `_lastLifeRegenMs`.
+  void addInfinityLives(Duration duration, {DateTime? now}) {
+    if (duration <= Duration.zero) return;
+    final clockNow = now ?? DateTime.now();
+    final nowMs = clockNow.millisecondsSinceEpoch;
+    syncLivesRegen(now: clockNow);
+    if (isInfinityLives(now: clockNow)) {
+      _infinityExpireMs = _infinityExpireMs! + duration.inMilliseconds;
+    } else {
+      _infinityExpireMs = nowMs + duration.inMilliseconds;
+    }
+    _persistLivesAndAnchor();
+    notifyListeners();
+  }
+
+  /// Mirrors `HeartService.AddHearts(amount, isFromBuy)` returning actual delta granted.
+  int addHearts(int amount, {bool isFromBuy = false, DateTime? now}) {
+    if (amount <= 0) return 0;
+    final clockNow = now ?? DateTime.now();
+    syncLivesRegen(now: clockNow);
+    final oldLives = _lives;
+    final target = isFromBuy
+        ? (_lives + amount)
+        : math.min(_maxLives, _lives + amount);
+    _setLivesCount(
+      target,
+      nowMs: clockNow.millisecondsSinceEpoch,
+      allowOverMax: isFromBuy,
+    );
+    return _lives - oldLives;
+  }
+
+  /// Mirrors `HeartService.SetMaxHeart(maxHeart)` returning delta granted.
+  int setMaxHearts(int nextMax, {DateTime? now}) {
+    _maxLives = math.max(1, nextMax);
+    _prefs?.setInt(_kMaxHearts, _maxLives);
+    return addHearts(_maxLives, now: now);
+  }
+
+  void loseLife({DateTime? now}) {
+    trySpendHeart(amount: 1, now: now);
+  }
+
+  void addOneLife({DateTime? now}) {
+    addHearts(1, isFromBuy: false, now: now);
+  }
+
+  /// Restores the single attempt heart held at first interaction when winning a level.
+  void refundAttemptHeart({DateTime? now}) {
+    addHearts(1, isFromBuy: false, now: now);
+  }
+
+  bool refillLivesWithCoins({int? cost}) {
+    final resolvedCost = cost ?? RemoteConfigService.liveHeartRefillPrice;
+    if (_lives >= _maxLives) return false;
+    if (!spendCoins(resolvedCost)) return false;
+    _setLivesCount(_maxLives, nowMs: DateTime.now().millisecondsSinceEpoch);
+    return true;
   }
 
   bool spendCoins(int amount) {
@@ -294,9 +574,8 @@ class PlayerProgressService extends ChangeNotifier {
   }
 
   void addCoins(int amount) {
-    flushPendingWinCoins();
     _coins += amount;
-    _prefs?.setInt(_kCoins, _coins);
+    _prefs?.setInt(_kCoins, _coins + _pendingWinCoins + _pendingMilestoneCoins);
     notifyListeners();
   }
 
@@ -321,8 +600,10 @@ class PlayerProgressService extends ChangeNotifier {
     int? cost,
     int count = 3,
   }) {
-    final resolvedCost =
-        cost ?? (isLevelUp ? levelUpPackCost : timeFreezePackCost);
+    final resolvedCost = cost ??
+        (isLevelUp
+            ? RemoteConfigService.boosterLevelUpPrice
+            : RemoteConfigService.boosterTimeFreezePrice);
     if (!spendCoins(resolvedCost)) return false;
     if (isLevelUp) {
       _levelUpCount += count;
@@ -367,10 +648,10 @@ class PlayerProgressService extends ChangeNotifier {
     }
   }
 
-  bool buyLevelUpPack({int cost = levelUpPackCost, int count = 3}) =>
+  bool buyLevelUpPack({int? cost, int count = 3}) =>
       buyPowerUpPack(isLevelUp: true, cost: cost, count: count);
 
-  bool buyTimeFreezePack({int cost = timeFreezePackCost, int count = 3}) =>
+  bool buyTimeFreezePack({int? cost, int count = 3}) =>
       buyPowerUpPack(isLevelUp: false, cost: cost, count: count);
 
   // ── Cheat / QA Helpers (Gated by `RemoteConfigService.cheatEnable`) ────────
@@ -394,9 +675,16 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void cheatSetLives(int livesCount) {
-    _lives = livesCount.clamp(0, maxLives);
-    _prefs?.setInt(_kLives, _lives);
+  void cheatSetLives(int livesCount, {DateTime? now}) {
+    final nowMs = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    final clamped = livesCount.clamp(0, _maxLives);
+    _lives = clamped;
+    if (_lives >= _maxLives) {
+      _lastLifeRegenMs = null;
+    } else {
+      _lastLifeRegenMs ??= nowMs;
+    }
+    _persistLivesAndAnchor();
     notifyListeners();
   }
 
@@ -417,7 +705,41 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Records a won level step and returns animation data (oldProgress -> newProgress).
+  /// Computes deterministic progress toward unlocking the next gameplay mechanic/booster
+  /// after winning campaign level [wonLevelNumber], aligned with actual level data:
+  /// - Lv 1 -> 7: `ice` (6 wins: Lv 1..6)
+  /// - Lv 7 -> 14: `dud` (7 wins: Lv 7..13)
+  /// - Lv 14 -> 17: `pu_level_up` (3 wins: Lv 14..16 -> unlocks on Lv 17!)
+  /// - Lv 17 -> 22: `arrows` (5 wins: Lv 17..21)
+  /// - Lv 22 -> 27: `pu_time_freeze` (5 wins: Lv 22..26 -> unlocks on Lv 27!)
+  /// - Lv 27 -> 42: `pinned` (15 wins: Lv 27..41)
+  /// Returns `null` once all campaign mechanics are unlocked (`wonLevelNumber >= 42`).
+  static MechanicUnlockProgressResult? computeMechanicAdvance(
+    int wonLevelNumber,
+  ) {
+    if (wonLevelNumber <= 0) return null;
+    for (final m in MechanicUnlockMilestone.schedule) {
+      if (wonLevelNumber >= m.startLevel && wonLevelNumber < m.unlockLevel) {
+        final totalSteps = (m.unlockLevel - m.startLevel).clamp(1, 999);
+        final oldStep = (wonLevelNumber - m.startLevel).clamp(0, totalSteps);
+        final newStep = (oldStep + 1).clamp(0, totalSteps);
+        return MechanicUnlockProgressResult(
+          milestone: m,
+          wonLevelNumber: wonLevelNumber,
+          oldStep: oldStep,
+          newStep: newStep,
+          totalSteps: totalSteps,
+          oldProgress: (oldStep / totalSteps).clamp(0.0, 1.0),
+          newProgress: (newStep / totalSteps).clamp(0.0, 1.0),
+          didUnlockNext: wonLevelNumber + 1 >= m.unlockLevel,
+        );
+      }
+    }
+    return null;
+  }
+
+  /// Records a won level step and returns animation data for both the blooming Flower Vase
+  /// and the `"xx% to unlock"` next-mechanic countdown bar.
   VaseStepAdvanceResult recordLevelWonVaseStep(int wonLevelNumber) {
     final cfg = currentVaseConfig;
     final oldStep = _vaseStepCount;
@@ -449,11 +771,11 @@ class PlayerProgressService extends ChangeNotifier {
       newProgress: newProg,
       didReach100Percent: did100,
       config: cfg,
+      mechanicProgress: computeMechanicAdvance(wonLevelNumber),
     );
   }
 
-  /// Claims current vase milestone reward and advances to the next vase!
-  void claimCurrentVaseMilestone() {
+  VaseMilestoneConfig _completeVaseClaimMetadata() {
     final cfg = currentVaseConfig;
     _vaseClaimedIds.add(cfg.vaseId);
     _vaseUnlockedIds.add(cfg.vaseId);
@@ -465,11 +787,6 @@ class PlayerProgressService extends ChangeNotifier {
       _kVaseUnlockedIds,
       _vaseUnlockedIds.map((i) => i.toString()).toList(),
     );
-
-    // Reward coins
-    if (cfg.rewardCoins > 0) {
-      addCoins(cfg.rewardCoins);
-    }
 
     // Mark non-booster mechanic milestones seen upon vase claim;
     // in-game boosters present their "New Feature" popup (Claim / Claim X2)
@@ -485,7 +802,31 @@ class PlayerProgressService extends ChangeNotifier {
     _vaseStepCount = 0;
     _prefs?.setInt(_kVaseCurrentId, _vaseCurrentId);
     _prefs?.setInt(_kVaseStepCount, _vaseStepCount);
+    return cfg;
+  }
+
+  /// Claims current vase milestone reward immediately (used by direct callers/unit tests).
+  void claimCurrentVaseMilestone() {
+    final cfg = _completeVaseClaimMetadata();
+    if (cfg.rewardCoins > 0) {
+      addCoins(cfg.rewardCoins);
+    }
     notifyListeners();
+  }
+
+  /// Stages current vase milestone reward into `_pendingMilestoneCoins` so the Claim button's
+  /// flying coins visibly tick the HUD balance up while persisting full total to disk for safety.
+  int stageCurrentVaseMilestoneClaim() {
+    final cfg = _completeVaseClaimMetadata();
+    if (cfg.rewardCoins > 0) {
+      _pendingMilestoneCoins += cfg.rewardCoins;
+      _prefs?.setInt(
+        _kCoins,
+        _coins + _pendingWinCoins + _pendingMilestoneCoins,
+      );
+    }
+    notifyListeners();
+    return cfg.rewardCoins;
   }
 
   void cheatAdvanceVaseToFull() {
@@ -543,7 +884,10 @@ class PlayerProgressService extends ChangeNotifier {
     _currentLevel = 1;
     _highestLevel = 1;
     _coins = 875;
-    _lives = maxLives;
+    _maxLives = maxLives;
+    _lives = _maxLives;
+    _lastLifeRegenMs = null;
+    _infinityExpireMs = null;
     _levelUpCount = initialPowerUpInventory;
     _timeFreezeCount = initialPowerUpInventory;
     _seenMechanics.clear();
@@ -556,6 +900,9 @@ class PlayerProgressService extends ChangeNotifier {
     await _prefs?.setInt(_kHighestLevel, _highestLevel);
     await _prefs?.setInt(_kCoins, _coins);
     await _prefs?.setInt(_kLives, _lives);
+    await _prefs?.remove(_kMaxHearts);
+    await _prefs?.remove(_kLastLifeRegenMs);
+    await _prefs?.remove(_kInfinityExpireMs);
     await _prefs?.setInt(_kLevelUpCount, _levelUpCount);
     await _prefs?.setInt(_kTimeFreezeCount, _timeFreezeCount);
     await _prefs?.setStringList(_kSeenMechanics, const []);
@@ -637,10 +984,10 @@ class VaseMilestoneConfig {
       startLevel: 4,
       endLevel: 8,
       totalSteps: 5,
-      unlockMechanicId: 'ice',
-      rewardTitle: 'Ice Blocks',
+      unlockMechanicId: null,
+      rewardTitle: 'Trio Daisies Chest',
       rewardCoins: 200,
-      rewardNote: 'Unlocks at Level 9!',
+      rewardNote: '+200 Coins & Next Crystal Vase!',
     ),
     VaseMilestoneConfig(
       vaseId: 3,
@@ -651,10 +998,10 @@ class VaseMilestoneConfig {
       startLevel: 9,
       endLevel: 16,
       totalSteps: 8,
-      unlockMechanicId: 'pu_level_up',
-      rewardTitle: 'Level Up',
+      unlockMechanicId: null,
+      rewardTitle: 'Sunflower Chest',
       rewardCoins: 250,
-      rewardNote: 'Booster unlocks at Level 17!',
+      rewardNote: '+250 Coins & Next Crystal Vase!',
     ),
     VaseMilestoneConfig(
       vaseId: 4,
@@ -665,10 +1012,10 @@ class VaseMilestoneConfig {
       startLevel: 17,
       endLevel: 26,
       totalSteps: 10,
-      unlockMechanicId: 'pu_time_freeze',
-      rewardTitle: 'Time Freeze',
+      unlockMechanicId: null,
+      rewardTitle: 'Scarlet Poppy Chest',
       rewardCoins: 300,
-      rewardNote: 'Booster unlocks at Level 27!',
+      rewardNote: '+300 Coins & Next Crystal Vase!',
     ),
   ];
 
@@ -723,6 +1070,95 @@ class VaseMilestoneConfig {
   }
 }
 
+class MechanicUnlockMilestone {
+  final int startLevel;
+  final int unlockLevel;
+  final String mechanicId;
+  final String title;
+  final String note;
+
+  const MechanicUnlockMilestone({
+    required this.startLevel,
+    required this.unlockLevel,
+    required this.mechanicId,
+    required this.title,
+    required this.note,
+  });
+
+  /// Exact unlock schedule verified against `all_121_levels.json` and `PlayerProgressService`:
+  /// Ice (Lv 7) -> Stone Blocker (Lv 14) -> Level Up (Lv 17) ->
+  /// Arrow Block (Lv 22) -> Time Freeze (Lv 27) -> Screwed Block (Lv 42).
+  static const List<MechanicUnlockMilestone> schedule = [
+    MechanicUnlockMilestone(
+      startLevel: 1,
+      unlockLevel: 7,
+      mechanicId: 'ice',
+      title: 'Ice Blocks',
+      note: 'Unlocks at Level 7!',
+    ),
+    MechanicUnlockMilestone(
+      startLevel: 7,
+      unlockLevel: 14,
+      mechanicId: 'dud',
+      title: 'Stone Blocker',
+      note: 'Unlocks at Level 14!',
+    ),
+    MechanicUnlockMilestone(
+      startLevel: 14,
+      unlockLevel: PlayerProgressService.levelUpUnlockLevel,
+      mechanicId: 'pu_level_up',
+      title: 'Level Up',
+      note: 'Booster unlocks at Level 17!',
+    ),
+    MechanicUnlockMilestone(
+      startLevel: PlayerProgressService.levelUpUnlockLevel,
+      unlockLevel: 22,
+      mechanicId: 'arrows',
+      title: 'Arrow Block',
+      note: 'Unlocks at Level 22!',
+    ),
+    MechanicUnlockMilestone(
+      startLevel: 22,
+      unlockLevel: PlayerProgressService.timeFreezeUnlockLevel,
+      mechanicId: 'pu_time_freeze',
+      title: 'Time Freeze',
+      note: 'Booster unlocks at Level 27!',
+    ),
+    MechanicUnlockMilestone(
+      startLevel: PlayerProgressService.timeFreezeUnlockLevel,
+      unlockLevel: 42,
+      mechanicId: 'pinned',
+      title: 'Screwed Block',
+      note: 'Unlocks at Level 42!',
+    ),
+  ];
+}
+
+class MechanicUnlockProgressResult {
+  final MechanicUnlockMilestone milestone;
+  final int wonLevelNumber;
+  final int oldStep;
+  final int newStep;
+  final int totalSteps;
+  final double oldProgress;
+  final double newProgress;
+  final bool didUnlockNext;
+
+  const MechanicUnlockProgressResult({
+    required this.milestone,
+    required this.wonLevelNumber,
+    required this.oldStep,
+    required this.newStep,
+    required this.totalSteps,
+    required this.oldProgress,
+    required this.newProgress,
+    required this.didUnlockNext,
+  });
+
+  int get remainingPercent =>
+      (100 - (newProgress * 100).round()).clamp(0, 100);
+}
+
 class VaseStepAdvanceResult {
   final int vaseId;
   final int oldStep;
@@ -732,6 +1168,7 @@ class VaseStepAdvanceResult {
   final double newProgress;
   final bool didReach100Percent;
   final VaseMilestoneConfig config;
+  final MechanicUnlockProgressResult? mechanicProgress;
 
   const VaseStepAdvanceResult({
     required this.vaseId,
@@ -742,5 +1179,6 @@ class VaseStepAdvanceResult {
     required this.newProgress,
     required this.didReach100Percent,
     required this.config,
+    this.mechanicProgress,
   });
 }

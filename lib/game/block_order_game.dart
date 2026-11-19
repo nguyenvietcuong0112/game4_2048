@@ -721,6 +721,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   PieceComponent? _finalWinningPiece;
   double _elapsedGameTime = 0.0;
   double get elapsedGameTime => _elapsedGameTime;
+  bool get hasPlayerInteracted => _firstActionTriggered;
   int movesCount = 0;
   int highestCombo = 0;
 
@@ -3019,6 +3020,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (paused) resumeEngine();
     isTimerStartedNotifier.value = true;
     _setTimeFreezeRemaining(maxTimeFreezeSeconds, forceNotify: true);
+    _notifyFirstAction();
     audio.playTimeFreeze();
     return true;
   }

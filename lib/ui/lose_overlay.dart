@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../services/player_progress_service.dart';
+import '../services/remote_config_service.dart';
 import 'unity_ui_kit.dart';
 
 /// Two-Stage `Out of time!` (`assets/UI Bo Sung/Out of time/Out of time.png`) -> `LoseGameplayView.prefab`:
@@ -31,12 +31,14 @@ class LoseOverlay extends StatefulWidget {
   final String levelLabel;
   final int playerCoins;
   final int remainingLives;
-  final int playOnCost;
+  final int? playOnCost;
   final int extraSeconds;
+  final bool startInFailedStage;
   final VoidCallback onPlayOnCoins;
   final VoidCallback? onInsufficientCoins;
   final VoidCallback onPlayOnAd;
   final VoidCallback? onEnterFailedStage;
+  final VoidCallback? onCloseToHome;
   final ValueChanged<bool>? onPeekingChanged;
   final VoidCallback onRetry;
 
@@ -45,12 +47,14 @@ class LoseOverlay extends StatefulWidget {
     required this.levelLabel,
     required this.playerCoins,
     required this.remainingLives,
-    this.playOnCost = 450,
+    this.playOnCost,
     this.extraSeconds = 30,
+    this.startInFailedStage = false,
     required this.onPlayOnCoins,
     this.onInsufficientCoins,
     required this.onPlayOnAd,
     this.onEnterFailedStage,
+    this.onCloseToHome,
     this.onPeekingChanged,
     required this.onRetry,
   });
@@ -71,10 +75,27 @@ class _LoseOverlayState extends State<LoseOverlay>
   @override
   void initState() {
     super.initState();
+    _inFailedStage = widget.startInFailedStage;
     _openCtrl = AnimationController(
       vsync: this,
       duration: _openDuration,
-    )..forward();
+      value: widget.startInFailedStage ? 1.0 : 0.0,
+    );
+    if (!widget.startInFailedStage) {
+      _openCtrl.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant LoseOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.startInFailedStage && !_inFailedStage) {
+      setState(() {
+        _inFailedStage = true;
+        _peekingBoard = false;
+        _openCtrl.value = 1.0;
+      });
+    }
   }
 
   @override
@@ -84,9 +105,8 @@ class _LoseOverlayState extends State<LoseOverlay>
   }
 
   void _setPeeking(bool peeking) {
-    if (_inFailedStage) return;
-    // Only allow board peek once popup & `"Hold to see board"` have appeared (`t >= 1.333s`)
-    if (peeking && _openCtrl.value < (1.333 / 1.500)) return;
+    // In Stage 1, only allow board peek once popup & `"Hold to see board"` have appeared (`t >= 1.333s`).
+    if (!_inFailedStage && peeking && _openCtrl.value < (1.333 / 1.500)) return;
     if (_peekingBoard == peeking) return;
     setState(() => _peekingBoard = peeking);
     widget.onPeekingChanged?.call(peeking);
@@ -115,7 +135,9 @@ class _LoseOverlayState extends State<LoseOverlay>
   /// Stage 1: Redesigned `Out of time!` popup (`assets/UI Bo Sung/Out of time/Out of time.png`)
   /// + `PlayOn_Open.anim` + `PlayOn_PeekBoard.anim`.
   Widget _buildStage1PlayOn(BuildContext context) {
-    final canAfford = widget.playerCoins >= widget.playOnCost;
+    final resolvedPlayOnCost =
+        widget.playOnCost ?? RemoteConfigService.playOnBasePrice;
+    final canAfford = widget.playerCoins >= resolvedPlayOnCost;
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 140),
@@ -174,38 +196,7 @@ class _LoseOverlayState extends State<LoseOverlay>
             ),
 
             // Bottom `"Hold to see board"` prompt (`Out of time.png`)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: math.max(
-                MediaQuery.paddingOf(context).bottom + ux(context, 48.0),
-                ux(context, 160.0),
-              ),
-              height: ux(context, 84.0),
-              child: IgnorePointer(
-                child: Center(
-                  child: Text(
-                    'Hold to see board',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Baloo2',
-                      fontSize: ux(context, 54.0),
-                      fontWeight: FontWeight.w800,
-                      fontVariations: const [FontVariation('wght', 800)],
-                      color: Colors.white,
-                      height: 1.05,
-                      shadows: const [
-                        Shadow(
-                          color: Color(0xCC000000),
-                          offset: Offset(0, 2.5),
-                          blurRadius: 5.0,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            _buildHoldToSeeBoardPrompt(context),
           ],
         ),
       ),
@@ -226,6 +217,8 @@ class _LoseOverlayState extends State<LoseOverlay>
     BuildContext context, {
     required bool canAfford,
   }) {
+    final resolvedPlayOnCost =
+        widget.playOnCost ?? RemoteConfigService.playOnBasePrice;
     return SizedBox(
       key: const ValueKey('out_of_time_popup_card'),
       width: ux(context, 884),
@@ -322,7 +315,7 @@ class _LoseOverlayState extends State<LoseOverlay>
             width: ux(context, 393),
             height: ux(context, 221),
             child: _PlayOnCoinsButton(
-              cost: widget.playOnCost,
+              cost: resolvedPlayOnCost,
               enabled: canAfford,
               onTap: canAfford ? widget.onPlayOnCoins : null,
               onDisabledTap: canAfford ? null : widget.onInsufficientCoins,
@@ -485,104 +478,221 @@ class _LoseOverlayState extends State<LoseOverlay>
     );
   }
 
-  /// Stage 2: Exact `LoseGameplayView.prefab` (`Level X failed`, `Icon_BrokenLife.png` `510.72x403.71`,
-  /// overlapping `"-1"` `212.2` at `(+103.80, -31.90)`, 5 `Icon_Life.png` hearts, green `"Try Again"` CTA).
+  /// Stage 2 (`media_1794927599240.png`): `Level X`, `icon_heart2.png` + `"-1"`,
+  /// `"Level Failed!"`, green `"Try Again"` CTA, active `(X)` close to Home, and `"Hold to see board"`.
   Widget _buildStage2LoseFailed(BuildContext context) {
-    final activeHearts =
-        widget.remainingLives.clamp(0, PlayerProgressService.maxLives);
-    const double panelCx = UnityPopupCard.localInnerWidth * 0.5; // 513.25
-    const double panelCy = UnityPopupCard.localPanelHeight * 0.5; // 367.115
-
-    // `BrokenLife`: `pos = (0, +90.66) sz = (510.72, 403.71)`
-    const double brokenW = 510.72;
-    const double brokenH = 403.71;
-    const double brokenCy = panelCy - 90.66;
-
-    // `Text (TMP)` `"-1"`: `pos = (+103.80, -31.90) sz = (197.94, 190.39)`
-    const double minusCx = panelCx + 103.80;
-    const double minusCy = panelCy + 31.90;
-
-    // `Lives`: `pos = (0, -253.00) sz = (-148.05, -609.73)` -> `878.45 x 124.50`, `Spacing = -20.4`
-    const double livesW = 878.45;
-    const double livesH = 124.50;
-    const double livesCy = panelCy + 253.00;
-    const int maxHearts = PlayerProgressService.maxLives; // 5
-    const double heartSpacing = -20.4;
-    const double heartSlotW =
-        (livesW - heartSpacing * (maxHearts - 1)) / maxHearts; // 192.01
-
-    return ColoredBox(
-      color: const Color.fromRGBO(5, 0, 13, 0.949),
-      child: SafeArea(
-        child: Center(
-          child: UnityPopupCard(
-            title: '${widget.levelLabel} failed',
-            localTitleFontSize: 137.37,
-            onClose: null, // `CloseButton` is `active = False` in `LoseGameplayView.prefab`
-            panelChild: Stack(
-              clipBehavior: Clip.none,
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOut,
+      opacity: _peekingBoard ? 0.0 : 1.0,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => _setPeeking(true),
+            onPointerUp: (_) => _setPeeking(false),
+            onPointerCancel: (_) => _setPeeking(false),
+            child: const ColoredBox(
+              color: Color.fromRGBO(5, 0, 13, 0.949),
+              child: SizedBox.expand(),
+            ),
+          ),
+          IgnorePointer(
+            ignoring: _peekingBoard,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                // 1. `BrokenLife` (`Icon_BrokenLife.png`, `510.72 x 403.71`)
-                Positioned(
-                  left: ppx(context, panelCx - brokenW * 0.5),
-                  top: ppx(context, brokenCy - brokenH * 0.5),
-                  width: ppx(context, brokenW),
-                  height: ppx(context, brokenH),
-                  child: Image.asset(
-                    'assets/images/Icon_BrokenLife.png',
-                    fit: BoxFit.contain,
-                  ),
-                ),
-
-                // 2. Overlapping `"-1"` (`pos = (+103.80, -31.90)`, `fontSize = 212.2`)
-                Positioned(
-                  left: ppx(context, minusCx - 130.0),
-                  top: ppx(context, minusCy - 120.0),
-                  width: ppx(context, 260.0),
-                  height: ppx(context, 240.0),
+                SafeArea(
                   child: Center(
-                    child: UnitySdfText(
-                      '-1',
-                      unityFontSize: 212.2 * kUnityPopupScale,
-                      letterSpacing: ppx(context, 3.0),
-                      material: UnityTextMaterial.brownCounter,
+                    child: Transform.translate(
+                      offset: Offset(0.0, -ux(context, 24.0)),
+                      child: SizedBox(
+                        key: const ValueKey('level_failed_popup_card'),
+                        width: ux(context, 884),
+                        height: ux(context, 1044),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            // 1. Main Gold-Rimmed Blue Popup Body (`popup_bg.png`, `884x1021` at `top = 23`)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: ux(context, 23),
+                              height: ux(context, 1021),
+                              child: Listener(
+                                behavior: HitTestBehavior.opaque,
+                                child: Image.asset(
+                                  'assets/images/popup_bg.png',
+                                  width: ux(context, 884),
+                                  height: ux(context, 1021),
+                                  fit: BoxFit.fill,
+                                ),
+                              ),
+                            ),
+
+                            // 2. Cream Inner Content Well (`frame_content.png`, `784x495` at `left = 50, top = 167`)
+                            Positioned(
+                              left: ux(context, 50),
+                              top: ux(context, 167),
+                              width: ux(context, 784),
+                              height: ux(context, 495),
+                              child: IgnorePointer(
+                                child: Stack(
+                                  alignment: Alignment.topCenter,
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Positioned.fill(
+                                      child: Image.asset(
+                                        'assets/images/frame_content.png',
+                                        fit: BoxFit.fill,
+                                      ),
+                                    ),
+
+                                    // Broken Heart (`icon_heart2.png`)
+                                    Positioned(
+                                      top: ux(context, 56),
+                                      width: ux(context, 286),
+                                      height: ux(context, 248),
+                                      child: Image.asset(
+                                        'assets/images/icon_heart2.png',
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+
+                                    // Overlapping `"-1"` badge at bottom-right of broken heart
+                                    Positioned(
+                                      left: ux(context, 428),
+                                      top: ux(context, 198),
+                                      child: const UnitySdfText(
+                                        '-1',
+                                        unityFontSize: 96,
+                                        material: UnityTextMaterial.winCoinAmount,
+                                      ),
+                                    ),
+
+                                    // `"Level Failed!"` prompt (`#5A270B`, bold)
+                                    Positioned(
+                                      left: ux(context, 40),
+                                      right: ux(context, 40),
+                                      bottom: ux(context, 44),
+                                      child: Text(
+                                        'Level Failed!',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontFamily: 'Baloo2',
+                                          fontSize: ux(context, 58),
+                                          fontWeight: FontWeight.w800,
+                                          fontVariations: const [
+                                            FontVariation('wght', 800),
+                                          ],
+                                          color: const Color(0xFF5A270B),
+                                          height: 1.05,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            // 3. Centered Green `"Try Again"` CTA Button
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: ux(context, 738),
+                              child: Center(
+                                child: UnityPopupCtaButton(
+                                  skin: UnityButtonSkin.green,
+                                  label: 'Try Again',
+                                  onTap: widget.onRetry,
+                                ),
+                              ),
+                            ),
+
+                            // 4. Top Header Ribbon (`Frame_Popup_Title.png`, `Level X`)
+                            Positioned(
+                              left: ux(context, (884 - 558) * 0.5),
+                              top: 0,
+                              width: ux(context, 558),
+                              height: ux(context, 143),
+                              child: IgnorePointer(
+                                child: UnityNineSlice(
+                                  sprite: 'Frame_Popup_Title.png',
+                                  padding: EdgeInsets.fromLTRB(
+                                    ux(context, 40),
+                                    ux(context, 8),
+                                    ux(context, 40),
+                                    ux(context, 16),
+                                  ),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: UnitySdfText(
+                                      widget.levelLabel,
+                                      unityFontSize: 64,
+                                      material: UnityTextMaterial.popupTitle,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // 5. Top-Right Red-Gold Close Button (`Button_Close.png`)
+                            Positioned(
+                              right: ux(context, 14),
+                              top: ux(context, 4),
+                              width: ux(context, 139),
+                              height: ux(context, 139),
+                              child: UnitySpriteButton(
+                                key: const ValueKey('lose_failed_close_btn'),
+                                asset: 'Button_Close.png',
+                                unitySize: 139,
+                                onTap: widget.onCloseToHome ?? widget.onRetry,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-
-                // 3. `Lives` row (`878.45 x 124.50` directly on white panel, `Spacing = -20.4`,
-                //    `DisabledLifeAlpha = 0.7` in `LoseGameplayView.SetAmountOfLives`)
-                Positioned(
-                  left: ppx(context, panelCx - livesW * 0.5),
-                  top: ppx(context, livesCy - livesH * 0.5),
-                  width: ppx(context, livesW),
-                  height: ppx(context, livesH),
-                  child: Stack(
-                    children: List.generate(maxHearts, (idx) {
-                      final filled = idx < activeHearts;
-                      final slotLeft = idx * (heartSlotW + heartSpacing);
-                      return Positioned(
-                        left: ppx(context, slotLeft),
-                        top: 0,
-                        width: ppx(context, heartSlotW),
-                        height: ppx(context, livesH),
-                        child: Opacity(
-                          opacity: filled ? 1.0 : 0.7,
-                          child: Image.asset(
-                            'assets/images/Icon_Life.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                ),
+                _buildHoldToSeeBoardPrompt(context),
               ],
             ),
-            footerChild: UnityPopupCtaButton(
-              skin: UnityButtonSkin.green,
-              label: 'Try Again',
-              onTap: widget.onRetry,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHoldToSeeBoardPrompt(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: math.max(
+        MediaQuery.paddingOf(context).bottom + ux(context, 48.0),
+        ux(context, 160.0),
+      ),
+      height: ux(context, 84.0),
+      child: IgnorePointer(
+        child: Center(
+          child: Text(
+            'Hold to see board',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Baloo2',
+              fontSize: ux(context, 54.0),
+              fontWeight: FontWeight.w800,
+              fontVariations: const [FontVariation('wght', 800)],
+              color: Colors.white,
+              height: 1.05,
+              shadows: const [
+                Shadow(
+                  color: Color(0xCC000000),
+                  offset: Offset(0, 2.5),
+                  blurRadius: 5.0,
+                ),
+              ],
             ),
           ),
         ),

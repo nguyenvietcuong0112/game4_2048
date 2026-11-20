@@ -1,7 +1,7 @@
 name: block_order_2048
 description: "Block Order 2048 built with Flutter & Flame."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+101
 
 environment:
   sdk: ^3.13.0

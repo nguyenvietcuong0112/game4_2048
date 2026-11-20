@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/level_models.dart';
+import '../services/app_version_service.dart';
 import '../services/player_progress_service.dart';
 import 'flower_assets_test_screen.dart';
 import 'unity_ui_kit.dart';
@@ -752,12 +753,15 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
                 color: Colors.white,
               ),
             ),
-            subtitle: Text(
-              'When hidden, you can reopen the Cheat Panel via Settings -> tap v.1.0.0',
-              style: TextStyle(
-                fontFamily: 'Baloo2',
-                fontSize: ux(context, 26),
-                color: Colors.white70,
+            subtitle: ValueListenableBuilder<String>(
+              valueListenable: AppVersionService.versionNotifier,
+              builder: (context, _, _) => Text(
+                'When hidden, you can reopen the Cheat Panel via Settings -> tap ${AppVersionService.displayLabel}',
+                style: TextStyle(
+                  fontFamily: 'Baloo2',
+                  fontSize: ux(context, 26),
+                  color: Colors.white70,
+                ),
               ),
             ),
             value: widget.hideHudButton,

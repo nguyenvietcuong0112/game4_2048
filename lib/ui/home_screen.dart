@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/level_models.dart';
 import '../services/ads_manager.dart';
 import '../services/analytics_service.dart';
+import '../services/app_version_service.dart';
 import '../services/audio_haptics_service.dart';
 import '../services/player_progress_service.dart';
 import 'more_lives_dialog.dart';
@@ -49,7 +50,8 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); 
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(AppVersionService.init());
     widget.progress.syncLivesRegen();
     _syncLifeRegenTicker();
     AdsManager.showBanner('home', level: widget.progress.currentLevel);
@@ -717,7 +719,8 @@ class _HomeScreenState extends State<HomeScreen>
           onTap: () {},
           child: SizedBox(
             width: ux(context, 884),
-            height: ux(context, 780),
+            // Compact height while Restore is commented out (was 780 with Restore button)
+            height: ux(context, 600),
             child: Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.topCenter,
@@ -736,7 +739,8 @@ class _HomeScreenState extends State<HomeScreen>
                   left: ux(context, 50),
                   right: ux(context, 50),
                   top: ux(context, 184),
-                  height: ux(context, 520),
+                  // Compact inner panel while Restore is commented out (was 520 with Restore button)
+                  height: ux(context, 340),
                   child: UnityNineSlice(
                     sprite: 'Panel_Popup.png',
                     pixelMultiplier: 1.0,
@@ -777,32 +781,37 @@ class _HomeScreenState extends State<HomeScreen>
                             );
                           },
                         ),
-                        SizedBox(height: ux(context, 36)),
-                        _HomeAssetActionButton(
-                          key: const ValueKey('home_settings_restore_btn'),
-                          assetPath:
-                              'assets/images/UI Home/btn_green_setting 2.png',
-                          label: 'Restore',
-                          width: ux(context, 420),
-                          height: ux(context, 190),
-                          onTap: () {
-                            widget.audio.playClick();
-                            _showToast('Purchases restored!');
-                          },
-                        ),
-                        SizedBox(height: ux(context, 16)),
-                        Text(
-                          'v.1.0.0',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Baloo2',
-                            fontSize: ux(context, 40),
-                            fontWeight: FontWeight.w800,
-                            fontVariations: const [
-                              FontVariation('wght', 800),
-                            ],
-                            color: const Color(0xFF9C5B40),
-                            height: 1.0,
+                        // Temporarily disabled while Restore Purchases feature is not used yet:
+                        // SizedBox(height: ux(context, 36)),
+                        // _HomeAssetActionButton(
+                        //   key: const ValueKey('home_settings_restore_btn'),
+                        //   assetPath:
+                        //       'assets/images/UI Home/btn_green_setting 2.png',
+                        //   label: 'Restore',
+                        //   width: ux(context, 420),
+                        //   height: ux(context, 190),
+                        //   onTap: () {
+                        //     widget.audio.playClick();
+                        //     _showToast('Purchases restored!');
+                        //   },
+                        // ),
+                        SizedBox(height: ux(context, 44)),
+                        ValueListenableBuilder<String>(
+                          valueListenable: AppVersionService.versionNotifier,
+                          builder: (context, _, _) => Text(
+                            AppVersionService.displayLabel,
+                            key: const ValueKey('home_settings_version_text'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Baloo2',
+                              fontSize: ux(context, 40),
+                              fontWeight: FontWeight.w800,
+                              fontVariations: const [
+                                FontVariation('wght', 800),
+                              ],
+                              color: const Color(0xFF9C5B40),
+                              height: 1.0,
+                            ),
                           ),
                         ),
                       ],
@@ -1388,6 +1397,7 @@ class _HomeSettingToggle extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _HomeAssetActionButton extends StatefulWidget {
   final String assetPath;
   final String label;
@@ -1396,6 +1406,7 @@ class _HomeAssetActionButton extends StatefulWidget {
   final VoidCallback onTap;
 
   const _HomeAssetActionButton({
+    // ignore: unused_element_parameter
     super.key,
     required this.assetPath,
     required this.label,

@@ -9,6 +9,7 @@ import '../models/palette.dart';
 import '../models/unity_curve.dart';
 import '../services/ads_manager.dart';
 import '../services/analytics_service.dart';
+import '../services/app_version_service.dart';
 import '../services/audio_haptics_service.dart';
 import '../services/player_progress_service.dart';
 import '../services/remote_config_service.dart';
@@ -93,6 +94,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(AppVersionService.init());
     widget.progress.syncLivesRegen();
     _activeLevel =
         widget.repository.getCampaignLevel(widget.progress.currentLevel);
@@ -1617,23 +1619,23 @@ class _GameplayScreenState extends State<GameplayScreen>
               ),
             ),
 
-          // 6a. Floating Developer Cheat Button (positioned cleanly above Slot 0 when `cheat_enable == true`)
+          // 6a. Floating Developer Cheat Button (positioned cleanly above Bottom-Right Settings when `cheat_enable == true`)
           if (!isTutorialLevel1)
-            ListenableBuilder(
-              listenable: Listenable.merge([
-                RemoteConfigService.cheatEnableNotifier,
-                _game.isHammerTargetingNotifier,
-              ]),
-              builder: (context, _) {
-                if (!RemoteConfigService.cheatEnable ||
-                    _hideCheatHudButton ||
-                    _game.isHammerTargetingNotifier.value) {
-                  return const SizedBox.shrink();
-                }
-                return Positioned(
-                  left: ux(context, 28),
-                  bottom: safePadding.bottom + ux(context, 256),
-                  child: CheatHudButton(
+            Positioned(
+              right: ux(context, 28),
+              bottom: safePadding.bottom + ux(context, 256),
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  RemoteConfigService.cheatEnableNotifier,
+                  _game.isHammerTargetingNotifier,
+                ]),
+                builder: (context, _) {
+                  if (!RemoteConfigService.cheatEnable ||
+                      _hideCheatHudButton ||
+                      _game.isHammerTargetingNotifier.value) {
+                    return const SizedBox.shrink();
+                  }
+                  return CheatHudButton(
                     key: const ValueKey('hud_cheat_btn'),
                     onTap: () {
                       widget.audio.playClick();
@@ -1643,9 +1645,9 @@ class _GameplayScreenState extends State<GameplayScreen>
                         _syncGamePauseState();
                       });
                     },
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
 
           // 6c. Interactive `Hammer` Targeting Mode Banner (non-blocking so player taps any obstacle directly!)
@@ -2867,7 +2869,7 @@ class _GameplayScreenState extends State<GameplayScreen>
                                         ),
                                       ),
 
-                                      // Bottom Version Text (`v.1.0.0` — also acts as secret Cheat Panel trigger when `cheat_enable == true`)
+                                      // Bottom Version Text (auto-detected from app version — also acts as secret Cheat Panel trigger when `cheat_enable == true`)
                                       Positioned(
                                         bottom: ux(context, 28),
                                         child: ValueListenableBuilder<bool>(
@@ -2893,18 +2895,25 @@ class _GameplayScreenState extends State<GameplayScreen>
                                               child: child,
                                             );
                                           },
-                                          child: Text(
-                                            'v.1.0.0',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontFamily: 'Baloo2',
-                                              fontSize: ux(context, 42),
-                                              fontWeight: FontWeight.w800,
-                                              fontVariations: const [
-                                                FontVariation('wght', 800),
-                                              ],
-                                              color: const Color(0xFF9C5B40),
-                                              height: 1.0,
+                                          child: ValueListenableBuilder<String>(
+                                            valueListenable: AppVersionService
+                                                .versionNotifier,
+                                            builder: (context, _, _) => Text(
+                                              AppVersionService.displayLabel,
+                                              key: const ValueKey(
+                                                'gameplay_settings_version_text',
+                                              ),
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontFamily: 'Baloo2',
+                                                fontSize: ux(context, 42),
+                                                fontWeight: FontWeight.w800,
+                                                fontVariations: const [
+                                                  FontVariation('wght', 800),
+                                                ],
+                                                color: const Color(0xFF9C5B40),
+                                                height: 1.0,
+                                              ),
                                             ),
                                           ),
                                         ),

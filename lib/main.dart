@@ -8,6 +8,7 @@ import 'models/palette.dart';
 import 'models/unity_curve.dart';
 import 'services/ads_manager.dart';
 import 'services/analytics_service.dart';
+import 'services/app_version_service.dart';
 import 'services/audio_haptics_service.dart';
 import 'services/player_progress_service.dart';
 import 'ui/gameplay_screen.dart';
@@ -37,6 +38,7 @@ Future<void> main() async {
   );
 
   runApp(const BlockOrder2048App());
+  unawaited(AppVersionService.init());
   unawaited(AnalyticsService.initialize());
 }
 

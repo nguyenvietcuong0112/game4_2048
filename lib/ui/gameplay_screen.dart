@@ -51,6 +51,7 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   late final AnimationController _coinBounceCtrl;
   late final AnimationController _freezeFlyCtrl;
+  late final AnimationController _shuffleFlyCtrl;
   late final AnimationController _lowTimerPulseCtrl;
   late final Animation<double> _lowTimerVignetteOpacity;
   late final AnimationController _levelTransitionCtrl;
@@ -74,8 +75,10 @@ class _GameplayScreenState extends State<GameplayScreen>
 
   String? _lockedToastMessage;
   Timer? _lockedToastTimer;
+  Timer? _specialBannerTimer;
   Timer? _lifeRegenTimer;
   double _lockedToastOpacity = 0.0;
+  double _specialBannerOpacity = 0.0;
   int _lastLoggedTutMergeStep = 0;
   VaseStepAdvanceResult? _activeVaseAdvanceResult;
 
@@ -88,7 +91,11 @@ class _GameplayScreenState extends State<GameplayScreen>
       RemoteConfigService.playOnIncrementPrice * _playOnsUsedInAttempt;
 
   /// Configurable win-level coin reward (`RemoteConfigService.keyWinLevelCoinReward`, default `25`).
-  int get _currentWinCoinReward => RemoteConfigService.winLevelCoinReward;
+  /// Special Hard levels award `3x` coins (default `75`, or `150` with Reward x2)!
+  int get _currentWinCoinReward {
+    final base = RemoteConfigService.winLevelCoinReward;
+    return _activeLevel.isSpecial ? base * 3 : base;
+  }
 
   @override
   void initState() {
@@ -107,6 +114,11 @@ class _GameplayScreenState extends State<GameplayScreen>
     _freezeFlyCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 820),
+    );
+
+    _shuffleFlyCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 980),
     );
 
     _lowTimerPulseCtrl = AnimationController(
@@ -170,6 +182,9 @@ class _GameplayScreenState extends State<GameplayScreen>
         return;
       }
       _checkNewMechanicOrPowerUpUnlock(_activeLevel);
+      if (_activeLevel.isSpecial) {
+        _triggerSpecialLevelBanner();
+      }
     });
 
     AnalyticsService.logLevelStart(level: _activeLevel.number);
@@ -195,6 +210,7 @@ class _GameplayScreenState extends State<GameplayScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _lockedToastTimer?.cancel();
+    _specialBannerTimer?.cancel();
     _lifeRegenTimer?.cancel();
     widget.progress.removeListener(_syncLifeRegenTicker);
     RemoteConfigService.boosterUnlockOrderNotifier
@@ -203,6 +219,7 @@ class _GameplayScreenState extends State<GameplayScreen>
     _game.isTimeFrozenNotifier.removeListener(_syncLowTimerPulseTicker);
     _coinBounceCtrl.dispose();
     _freezeFlyCtrl.dispose();
+    _shuffleFlyCtrl.dispose();
     _lowTimerPulseCtrl.dispose();
     _levelTransitionCtrl.dispose();
     super.dispose();
@@ -326,9 +343,41 @@ class _GameplayScreenState extends State<GameplayScreen>
       }
     }
     if (unlock == null &&
+        lv.hasToggleWalls &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.toggleWalls.id)) {
+      unlock = MechanicUnlockInfo.toggleWalls;
+    } else if (unlock == null &&
+        lv.hasDispensers &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.dispenser.id)) {
+      unlock = MechanicUnlockInfo.dispenser;
+    } else if (unlock == null &&
+        lv.hasClockBonus &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.clockBonus.id)) {
+      unlock = MechanicUnlockInfo.clockBonus;
+    } else if (unlock == null &&
+        lv.hasLimitedMove &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.limitedMove.id)) {
+      unlock = MechanicUnlockInfo.limitedMove;
+    } else if (unlock == null &&
+        lv.hasSwap &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.swap.id)) {
+      unlock = MechanicUnlockInfo.swap;
+    } else if (unlock == null &&
+        lv.hasKeyLock &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.keyLock.id)) {
+      unlock = MechanicUnlockInfo.keyLock;
+    } else if (unlock == null &&
+        lv.hasOneWayArrow &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.oneWayArrow.id)) {
+      unlock = MechanicUnlockInfo.oneWayArrow;
+    } else if (unlock == null &&
         lv.hasPinned &&
         !widget.progress.hasSeenMechanic(MechanicUnlockInfo.pinned.id)) {
       unlock = MechanicUnlockInfo.pinned;
+    } else if (unlock == null &&
+        lv.hasMystery &&
+        !widget.progress.hasSeenMechanic(MechanicUnlockInfo.mystery.id)) {
+      unlock = MechanicUnlockInfo.mystery;
     } else if (unlock == null &&
         lv.hasArrows &&
         !widget.progress.hasSeenMechanic(MechanicUnlockInfo.arrows.id)) {
@@ -356,6 +405,21 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
   }
 
+  void _triggerSpecialLevelBanner() {
+    _specialBannerTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _specialBannerOpacity = 1.0;
+    });
+    _specialBannerTimer = Timer(const Duration(milliseconds: 2300), () {
+      if (mounted) {
+        setState(() {
+          _specialBannerOpacity = 0.0;
+        });
+      }
+    });
+  }
+
   void _startLevel(LevelDefinition level) {
     FocusManager.instance.primaryFocus?.unfocus();
     if (!level.isBonus) {
@@ -365,6 +429,9 @@ class _GameplayScreenState extends State<GameplayScreen>
     }
     _freezeFlyCtrl.stop();
     _freezeFlyCtrl.value = 0.0;
+    _shuffleFlyCtrl.stop();
+    _shuffleFlyCtrl.value = 0.0;
+    _specialBannerTimer?.cancel();
     setState(() {
       _activeLevel = level;
       _activeVaseAdvanceResult = null;
@@ -380,11 +447,15 @@ class _GameplayScreenState extends State<GameplayScreen>
       _cheatOpen = false;
       _activeMechanicModal = null;
       _activeBoosterArrowHint = null;
+      _specialBannerOpacity = 0.0;
       _syncGamePauseState();
     });
     _playLevelRevealTransition();
     _game.loadLevel(level);
     _checkNewMechanicOrPowerUpUnlock(level);
+    if (level.isSpecial) {
+      _triggerSpecialLevelBanner();
+    }
     AnalyticsService.logLevelStart(level: level.number);
     AnalyticsService.updateUserProperties(
       currentLevel: widget.progress.currentLevel,
@@ -1003,27 +1074,67 @@ class _GameplayScreenState extends State<GameplayScreen>
       return;
     }
 
-    if (_game.triggerShufflePowerUp()) {
-      if (isFree) {
-        widget.progress
-            .consumeFreePowerUp(MechanicUnlockInfo.shufflePowerUp.id);
-      } else {
-        widget.progress.consumeShuffle();
-      }
-      AnalyticsService.logSpendResource(
-        level: _activeLevel.number,
-        type: 'booster',
-        name: 'shuffle',
-        amount: 1,
-        reason: 'gameplay',
-        balance: widget.progress.shuffleCount.toDouble(),
-      );
+    if (isFree) {
+      widget.progress.consumeFreePowerUp(MechanicUnlockInfo.shufflePowerUp.id);
+    } else {
+      if (!widget.progress.consumeShuffle()) return;
     }
+    AnalyticsService.logSpendResource(
+      level: _activeLevel.number,
+      type: 'booster',
+      name: 'shuffle',
+      amount: 1,
+      reason: 'gameplay',
+      balance: widget.progress.shuffleCount.toDouble(),
+    );
+
+    widget.audio.playPowerUpSelect();
+    _runShuffleIntroAndTrigger();
+  }
+
+  void _runShuffleIntroAndTrigger() {
+    _game.isShuffleIntroInFlight = true;
+    final targetLevelNumber = _activeLevel.number;
+    bool shuffled = false;
+
+    void onTick() {
+      if (!mounted || _activeLevel.number != targetLevelNumber) return;
+      if (!shuffled && _shuffleFlyCtrl.value >= 0.48) {
+        shuffled = true;
+        _game.isShuffleIntroInFlight = false;
+        _game.triggerShufflePowerUp();
+      }
+    }
+
+    _shuffleFlyCtrl.addListener(onTick);
+    _shuffleFlyCtrl.forward(from: 0.0).whenComplete(() {
+      _shuffleFlyCtrl.removeListener(onTick);
+      if (!mounted || _activeLevel.number != targetLevelNumber) return;
+      _game.isShuffleIntroInFlight = false;
+      if (!shuffled) {
+        _game.triggerShufflePowerUp();
+      }
+    });
+  }
+
+  Offset _boosterHudCenterScreen(BuildContext context, String boosterId) {
+    final screen = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    return Offset(
+      screen.width * 0.5 + ux(context, _boosterHudOffsetUnity(boosterId)),
+      screen.height -
+          pad.bottom -
+          ux(
+            context,
+            UnityPowerUpHudButton.bottomOffsetUnity +
+                UnityPowerUpHudButton.scaledUnitySize * 0.5,
+          ),
+    );
   }
 
   /// Obstacle Breaker Hammer booster (`pu_hammer`):
-  /// Enters targeting mode highlighting every smashable obstacle (`Ice`, `Dud`, `Pinned`, `Arrows`).
-  /// Only consumes the booster (or `FREE` turn) once the player taps a valid obstacle!
+  /// Enters targeting mode highlighting every splittable block (`>= 4`).
+  /// Only consumes the booster (or `FREE` turn) once the player taps a valid block!
   void _handleHammerTap({bool fromFtue = false}) {
     if (!_isHammerUnlocked) {
       _showLockedBoosterToast(PlayerProgressService.hammerUnlockLevel);
@@ -1059,7 +1170,14 @@ class _GameplayScreenState extends State<GameplayScreen>
       return;
     }
 
-    _game.enterHammerTargeting(isFree: isFree);
+    final hudOrigin = _boosterHudCenterScreen(
+      context,
+      MechanicUnlockInfo.hammerPowerUp.id,
+    );
+    _game.enterHammerTargeting(
+      isFree: isFree,
+      hammerOriginWorld: Vector2(hudOrigin.dx, hudOrigin.dy),
+    );
   }
 
   void _handleHammerApplied(bool wasFree) {
@@ -1336,25 +1454,93 @@ class _GameplayScreenState extends State<GameplayScreen>
                               Positioned(
                                 top: ux(context, 10),
                                 child: IgnorePointer(
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      minWidth: ux(context, 287),
-                                    ),
-                                    child: UnityNineSlice(
-                                      sprite: 'Frame_Level.png',
-                                      height: ux(context, 125),
-                                      padding: EdgeInsets.fromLTRB(
-                                        ux(context, 34),
-                                        ux(context, 6),
-                                        ux(context, 34),
-                                        ux(context, 12),
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    alignment: Alignment.topCenter,
+                                    children: [
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minWidth: ux(context, 287),
+                                        ),
+                                        child: UnityNineSlice(
+                                          sprite: 'Frame_Level.png',
+                                          height: ux(context, 125),
+                                          padding: EdgeInsets.fromLTRB(
+                                            ux(context, 34),
+                                            ux(context, 6),
+                                            ux(context, 34),
+                                            ux(context, 12),
+                                          ),
+                                          child: UnitySdfText(
+                                            _activeLevel.title,
+                                            unityFontSize: 52,
+                                            material:
+                                                UnityTextMaterial.levelCounter,
+                                          ),
+                                        ),
                                       ),
-                                      child: UnitySdfText(
-                                        _activeLevel.title,
-                                        unityFontSize: 52,
-                                        material: UnityTextMaterial.levelCounter,
-                                      ),
-                                    ),
+                                      if (_activeLevel.isSpecial)
+                                        Positioned(
+                                          bottom: -ux(context, 22),
+                                          child: Container(
+                                            key: const ValueKey(
+                                              'special_hard_hud_badge',
+                                            ),
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: ux(context, 22),
+                                              vertical: ux(context, 5),
+                                            ),
+                                            decoration: BoxDecoration(
+                                              gradient: const LinearGradient(
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                                colors: [
+                                                  Color(0xFFFF4D6D),
+                                                  Color(0xFFB91C1C),
+                                                ],
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                ux(context, 22),
+                                              ),
+                                              border: Border.all(
+                                                color: const Color(0xFFFDE047),
+                                                width: ux(context, 3.2),
+                                              ),
+                                              boxShadow: const [
+                                                BoxShadow(
+                                                  color: Color(0x993B0816),
+                                                  blurRadius: 6,
+                                                  offset: Offset(0, 2),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.local_fire_department_rounded,
+                                                  size: ux(context, 26),
+                                                  color:
+                                                      const Color(0xFFFDE047),
+                                                ),
+                                                SizedBox(width: ux(context, 6)),
+                                                Text(
+                                                  'SPECIAL HARD · +$_currentWinCoinReward',
+                                                  style: TextStyle(
+                                                    fontFamily: 'Baloo2',
+                                                    fontSize: ux(context, 24),
+                                                    fontWeight: FontWeight.w900,
+                                                    color: Colors.white,
+                                                    height: 1.05,
+                                                    letterSpacing: 0.4,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -1650,6 +1836,101 @@ class _GameplayScreenState extends State<GameplayScreen>
               ),
             ),
 
+          // 6b. Dramatic Non-Blocking Special Hard Level Intro Ribbon (2.3s fade-out)
+          if (_activeLevel.isSpecial)
+            Positioned(
+              top: safePadding.top + ux(context, 236),
+              left: ux(context, 48),
+              right: ux(context, 48),
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: _specialBannerOpacity,
+                  duration: const Duration(milliseconds: 340),
+                  curve: Curves.easeOutCubic,
+                  child: Center(
+                    child: Container(
+                      key: const ValueKey('special_hard_intro_banner'),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ux(context, 44),
+                        vertical: ux(context, 20),
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0xF57F1D1D),
+                            Color(0xF5450A0A),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(ux(context, 36)),
+                        border: Border.all(
+                          color: const Color(0xFFFDE047),
+                          width: ux(context, 4.5),
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0xAA000000),
+                            blurRadius: 18,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.whatshot_rounded,
+                                size: ux(context, 48),
+                                color: const Color(0xFFFDE047),
+                              ),
+                              SizedBox(width: ux(context, 12)),
+                              Text(
+                                'SPECIAL LEVEL',
+                                style: TextStyle(
+                                  fontFamily: 'PoetsenOne',
+                                  fontSize: ux(context, 46),
+                                  color: const Color(0xFFFDE047),
+                                  height: 1.05,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Color(0xFF3B0816),
+                                      blurRadius: 6,
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(width: ux(context, 12)),
+                              Icon(
+                                Icons.whatshot_rounded,
+                                size: ux(context, 48),
+                                color: const Color(0xFFFDE047),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: ux(context, 4)),
+                          Text(
+                            'HARD CHALLENGE · WIN +$_currentWinCoinReward COINS',
+                            style: TextStyle(
+                              fontFamily: 'Baloo2',
+                              fontSize: ux(context, 30),
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
           // 6c. Interactive `Hammer` Targeting Mode Banner (non-blocking so player taps any obstacle directly!)
           ValueListenableBuilder<bool>(
             valueListenable: _game.isHammerTargetingNotifier,
@@ -1843,6 +2124,17 @@ class _GameplayScreenState extends State<GameplayScreen>
                 return const SizedBox.shrink();
               }
               return _buildTimeFreezeFlightFx(context, _freezeFlyCtrl.value);
+            },
+          ),
+
+          // 7b. Flying & Spinning `PowerUp_Shuffle.png` + Gentle Full-Screen Ripple Mist FX
+          AnimatedBuilder(
+            animation: _shuffleFlyCtrl,
+            builder: (context, _) {
+              if (!_shuffleFlyCtrl.isAnimating && _shuffleFlyCtrl.value == 0.0) {
+                return const SizedBox.shrink();
+              }
+              return _buildShuffleFlightFx(context, _shuffleFlyCtrl.value);
             },
           ),
 
@@ -2720,6 +3012,94 @@ class _GameplayScreenState extends State<GameplayScreen>
     );
   }
 
+  /// Flying & spinning `PowerUp_Shuffle.png` from bottom Shuffle HUD button to screen center
+  /// paired with a light, dreamy full-screen spreading mist & soft pastel ripple wave.
+  Widget _buildShuffleFlightFx(BuildContext context, double t) {
+    final screen = MediaQuery.sizeOf(context);
+    final start = _boosterHudCenterScreen(
+      context,
+      MechanicUnlockInfo.shufflePowerUp.id,
+    );
+    final center = Offset(screen.width * 0.5, screen.height * 0.46);
+
+    // Stage 1 (`0.00 -> 0.30`): Fly smoothly up from HUD button to center
+    final flyT = (t / 0.30).clamp(0.0, 1.0);
+    final flyEased = Curves.easeOutCubic.transform(flyT);
+    final ctrl = Offset(
+      start.dx + (center.dx - start.dx) * 0.35 + ux(context, 70),
+      center.dy + (start.dy - center.dy) * 0.42,
+    );
+    final om = 1.0 - flyEased;
+    final px = om * om * start.dx +
+        2 * om * flyEased * ctrl.dx +
+        flyEased * flyEased * center.dx;
+    final py = om * om * start.dy +
+        2 * om * flyEased * ctrl.dy +
+        flyEased * flyEased * center.dy;
+
+    // Spin smoothly ~2 full clockwise turns across the flight & peak dwell
+    final spinEase = Curves.easeInOutCubic.transform(t.clamp(0.0, 1.0));
+    final rotationRad = spinEase * math.pi * 4.0;
+
+    // Scale: pop up smoothly from HUD -> juicy float at center -> soft shrink out
+    double scale;
+    double logoAlpha = 1.0;
+    if (t < 0.30) {
+      scale = 0.58 + 0.96 * flyEased;
+    } else if (t < 0.72) {
+      final dwellT = ((t - 0.30) / 0.42).clamp(0.0, 1.0);
+      scale = 1.54 + 0.16 * math.sin(dwellT * math.pi);
+    } else {
+      final outT = ((t - 0.72) / 0.28).clamp(0.0, 1.0);
+      final outEase = Curves.easeInCubic.transform(outT);
+      scale = 1.54 - 0.96 * outEase;
+      logoAlpha = (1.0 - outEase).clamp(0.0, 1.0);
+    }
+
+    // Soft spreading wave starts right as the logo arrives at center (`t >= 0.24`)
+    final waveT = ((t - 0.24) / 0.76).clamp(0.0, 1.0);
+    final iconBasePx = ux(context, 168);
+
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          if (waveT > 0.0)
+            Positioned.fill(
+              child: CustomPaint(
+                key: const ValueKey('shuffle_screen_wave_fx'),
+                painter: _ShuffleScreenWavePainter(
+                  center: center,
+                  progress: waveT,
+                  spinRad: rotationRad * 0.35,
+                ),
+              ),
+            ),
+          if (logoAlpha > 0.01)
+            Positioned(
+              left: px - iconBasePx * 0.5,
+              top: py - iconBasePx * 0.5,
+              child: Opacity(
+                opacity: logoAlpha,
+                child: Transform.rotate(
+                  angle: rotationRad,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Image.asset(
+                      'assets/images/PowerUp_Shuffle.png',
+                      key: const ValueKey('shuffle_flying_logo'),
+                      width: iconBasePx,
+                      height: iconBasePx,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   void _closeSettingsPopup() {
     widget.audio.playClick();
     setState(() {
@@ -3355,5 +3735,140 @@ class _SettingsAssetActionButtonState
       ),
     );
   }
+}
+
+/// Delicate, airy full-screen spreading mist & pastel concentric ripple FX behind
+/// the spinning `PowerUp_Shuffle.png` emblem (intentionally subtle & non-glaring).
+class _ShuffleScreenWavePainter extends CustomPainter {
+  final Offset center;
+  final double progress;
+  final double spinRad;
+
+  const _ShuffleScreenWavePainter({
+    required this.center,
+    required this.progress,
+    required this.spinRad,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = progress.clamp(0.0, 1.0);
+    if (t <= 0.0 || t >= 1.0) return;
+
+    final maxR = math.sqrt(size.width * size.width + size.height * size.height) * 0.72;
+    final expand = Curves.easeOutCubic.transform(t);
+    final envelope = t < 0.22
+        ? Curves.easeOut.transform(t / 0.22)
+        : (1.0 - Curves.easeInQuad.transform(((t - 0.22) / 0.78).clamp(0.0, 1.0)));
+
+    // 1. Light full-screen luminous mist wash spreading outward from center
+    final mistR = maxR * (0.18 + 0.96 * expand);
+    final mistRect = Rect.fromCircle(center: center, radius: mistR);
+    canvas.drawCircle(
+      center,
+      mistR,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [
+            const Color(0xFFFFF6D6).withValues(alpha: 0.22 * envelope),
+            const Color(0xFFA5F3FC).withValues(alpha: 0.14 * envelope),
+            const Color(0xFFFFE4A0).withValues(alpha: 0.07 * envelope),
+            const Color(0x00FFFFFF),
+          ],
+          stops: const [0.0, 0.42, 0.78, 1.0],
+        ).createShader(mistRect),
+    );
+
+    // 2. Soft rotating 8-petal warm-gold aura right behind the spinning Shuffle icon
+    if (t < 0.75) {
+      final auraFade = (1.0 - (t / 0.75)).clamp(0.0, 1.0);
+      final auraAlpha = (envelope * auraFade * 0.24).clamp(0.0, 1.0);
+      final rayR = math.min(size.width, size.height) * (0.20 + 0.26 * expand);
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(spinRad);
+      final rayPaint = Paint()
+        ..shader = RadialGradient(
+          colors: [
+            const Color(0xFFFFF3B0).withValues(alpha: auraAlpha),
+            const Color(0x00FFF3B0),
+          ],
+        ).createShader(Rect.fromCircle(center: Offset.zero, radius: rayR));
+      for (int i = 0; i < 8; i++) {
+        canvas.save();
+        canvas.rotate(i * (math.pi / 4.0));
+        final petal = Path()
+          ..moveTo(0, 0)
+          ..quadraticBezierTo(-rayR * 0.16, -rayR * 0.52, 0, -rayR)
+          ..quadraticBezierTo(rayR * 0.16, -rayR * 0.52, 0, 0)
+          ..close();
+        canvas.drawPath(petal, rayPaint);
+        canvas.restore();
+      }
+      canvas.restore();
+    }
+
+    // 3. Primary & secondary delicate expanding ripple rings covering the whole screen
+    final ring1R = maxR * (0.10 + 0.96 * expand);
+    final ring1Alpha = (0.34 * envelope).clamp(0.0, 1.0);
+    canvas.drawCircle(
+      center,
+      ring1R,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (18.0 * (1.0 - t * 0.55)).clamp(4.0, 18.0)
+        ..color = const Color(0xFFFFEEAD).withValues(alpha: ring1Alpha)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10.0),
+    );
+
+    final ring2T = ((t - 0.10) / 0.90).clamp(0.0, 1.0);
+    if (ring2T > 0.0) {
+      final ring2Expand = Curves.easeOutCubic.transform(ring2T);
+      final ring2R = maxR * (0.06 + 0.92 * ring2Expand);
+      final ring2Alpha = (0.26 * (1.0 - ring2T)).clamp(0.0, 1.0);
+      canvas.drawCircle(
+        center,
+        ring2R,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (10.0 * (1.0 - ring2T * 0.5)).clamp(2.5, 10.0)
+          ..color = const Color(0xFF99F6FF).withValues(alpha: ring2Alpha)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0),
+      );
+    }
+
+    // 4. 14 tiny delicate glints drifting gently outward along the soft wave
+    const glintCount = 14;
+    for (int i = 0; i < glintCount; i++) {
+      final angle = (i / glintCount) * math.pi * 2.0 + spinRad * 0.45 + (i.isEven ? 0.14 : -0.10);
+      final radialScale = 0.24 + (i % 3) * 0.18 + expand * (0.58 + (i % 4) * 0.10);
+      final dist = maxR * 0.85 * radialScale;
+      final pt = Offset(
+        center.dx + math.cos(angle) * dist,
+        center.dy + math.sin(angle) * dist,
+      );
+      final starR = (5.0 + (i % 3) * 2.5) * (0.7 + 0.3 * envelope);
+      final starAlpha = (0.48 * envelope).clamp(0.0, 1.0);
+      final p = Path()
+        ..moveTo(pt.dx, pt.dy - starR)
+        ..quadraticBezierTo(pt.dx + starR * 0.20, pt.dy - starR * 0.20, pt.dx + starR, pt.dy)
+        ..quadraticBezierTo(pt.dx + starR * 0.20, pt.dy + starR * 0.20, pt.dx, pt.dy + starR)
+        ..quadraticBezierTo(pt.dx - starR * 0.20, pt.dy + starR * 0.20, pt.dx - starR, pt.dy)
+        ..quadraticBezierTo(pt.dx - starR * 0.20, pt.dy - starR * 0.20, pt.dx, pt.dy - starR)
+        ..close();
+      canvas.drawPath(
+        p,
+        Paint()
+          ..color = (i.isEven ? const Color(0xFFFFF7CC) : const Color(0xFFCFFAFE))
+              .withValues(alpha: starAlpha),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ShuffleScreenWavePainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.spinRad != spinRad ||
+      oldDelegate.center != center;
 }
 

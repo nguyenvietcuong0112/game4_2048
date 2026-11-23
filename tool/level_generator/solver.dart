@@ -43,6 +43,11 @@ class _SimPiece {
   final int? number;
   final int? iceTarget;
   final MovementType movement;
+  final bool isMystery;
+  final String? keyColor;
+  final String? lockColor;
+  final int swapUses;
+  final int? movesLeft;
 
   const _SimPiece({
     required this.id,
@@ -53,12 +58,18 @@ class _SimPiece {
     required this.number,
     required this.iceTarget,
     required this.movement,
+    this.isMystery = false,
+    this.keyColor,
+    this.lockColor,
+    this.swapUses = 0,
+    this.movesLeft,
   });
 
   bool get isDud => number == null;
   bool get isFrozen => iceTarget != null;
-  bool get canMove => !isFrozen && movement.canMove;
-  bool get canMerge => !isDud && !isFrozen;
+  bool get isLocked => lockColor != null;
+  bool get canMove => !isFrozen && !isLocked && movement.canMove;
+  bool get canMerge => !isDud && !isFrozen && !isLocked && !isMystery;
 
   /// Compact signature used for canonical state hashing.
   String signature() {
@@ -72,6 +83,16 @@ class _SimPiece {
       ..write(iceTarget ?? 0)
       ..write(',')
       ..write(movement.index)
+      ..write(',')
+      ..write(isMystery ? 1 : 0)
+      ..write(',')
+      ..write(keyColor ?? '')
+      ..write(',')
+      ..write(lockColor ?? '')
+      ..write(',')
+      ..write(swapUses)
+      ..write(',')
+      ..write(movesLeft ?? 0)
       ..write(':');
     for (int i = 0; i < cells.length; i++) {
       final (dc, dr) = cells[i];
@@ -91,6 +112,8 @@ class _SearchNode {
   final int merges;
   final int tieBreaker;
   final List<_SimPiece> pieces;
+  final int wallPhase;
+  final List<int> dispenserOffsets;
   final _SearchNode? parent;
   final String? moveDesc;
 
@@ -100,6 +123,8 @@ class _SearchNode {
     required this.merges,
     required this.tieBreaker,
     required this.pieces,
+    this.wallPhase = 0,
+    this.dispenserOffsets = const [],
     this.parent,
     this.moveDesc,
   });
@@ -174,6 +199,10 @@ class LevelSolver {
   static const List<GridCell> _dirsAll = [(1, 0), (-1, 0), (0, 1), (0, -1)];
   static const List<GridCell> _dirsHoriz = [(1, 0), (-1, 0)];
   static const List<GridCell> _dirsVert = [(0, 1), (0, -1)];
+  static const List<GridCell> _dirLeft = [(-1, 0)];
+  static const List<GridCell> _dirRight = [(1, 0)];
+  static const List<GridCell> _dirUp = [(0, -1)];
+  static const List<GridCell> _dirDown = [(0, 1)];
 
   static List<GridCell> _allowedDirs(MovementType mv) {
     switch (mv) {
@@ -183,6 +212,14 @@ class LevelSolver {
         return _dirsHoriz;
       case MovementType.vertical:
         return _dirsVert;
+      case MovementType.left:
+        return _dirLeft;
+      case MovementType.right:
+        return _dirRight;
+      case MovementType.up:
+        return _dirUp;
+      case MovementType.down:
+        return _dirDown;
       case MovementType.pinned:
         return const [];
     }
@@ -206,13 +243,28 @@ class LevelSolver {
       }
     }
 
-    // 2. Multiset parity check (must collapse to single power of 2)
+    // 2. Multiset parity check (board pieces + dispenser queues must collapse to single power of 2)
     final counts = <int, int>{};
     for (final p in level.pieces) {
       final n = p.number;
       if (n != null) {
         if (n < 2 || (n & (n - 1)) != 0) {
           return 'Non-power-of-2 piece number: $n';
+        }
+        counts[n] = (counts[n] ?? 0) + 1;
+      }
+    }
+    for (final d in level.dispensers) {
+      final (mc, mr) = d.mouthCell;
+      if (mc < 0 || mc >= level.cols || mr < 0 || mr >= level.rows) {
+        return 'Dispenser at ${d.cell} mouth $mc,$mr out of bounds';
+      }
+      if (level.walls.contains((mc, mr))) {
+        return 'Dispenser at ${d.cell} mouth ($mc,$mr) is a wall';
+      }
+      for (final n in d.queue) {
+        if (n < 2 || (n & (n - 1)) != 0) {
+          return 'Non-power-of-2 dispenser number: $n';
         }
         counts[n] = (counts[n] ?? 0) + 1;
       }
@@ -241,6 +293,11 @@ class LevelSolver {
         frozen.add(p);
       } else if (p.number != null) {
         avail[p.number!] = (avail[p.number!] ?? 0) + 1;
+      }
+    }
+    for (final d in level.dispensers) {
+      for (final n in d.queue) {
+        avail[n] = (avail[n] ?? 0) + 1;
       }
     }
     if (frozen.isNotEmpty) {
@@ -292,6 +349,20 @@ class LevelSolver {
       }
     }
 
+    // 5. Key & Lock consistency check (every lock color must have an existing key)
+    final presentKeyColors = <String>{
+      for (final p in level.pieces)
+        if (p.keyColor != null) p.keyColor!,
+    };
+    for (final p in level.pieces) {
+      if (p.lockColor != null && !presentKeyColors.contains(p.lockColor)) {
+        return 'Orphan lock color "${p.lockColor}" on piece ${p.key} with no matching key';
+      }
+      if (p.keyColor != null && p.lockColor == p.keyColor) {
+        return 'Self-locked key "${p.keyColor}" on piece ${p.key}';
+      }
+    }
+
     return null;
   }
 
@@ -323,6 +394,7 @@ class LevelSolver {
     int maxVisited = 30000,
     int timeoutMs = 1800,
     bool recordSteps = false,
+    bool strictWallBlocking = true,
   }) {
     final sw = Stopwatch()..start();
 
@@ -344,8 +416,79 @@ class LevelSolver {
         playable[r * cols + c] = 0;
       }
     }
+    final redWallMask = Uint8List(gridSize);
+    for (final (c, r) in level.redWalls) {
+      if (c >= 0 && c < cols && r >= 0 && r < rows) {
+        redWallMask[r * cols + c] = 1;
+      }
+    }
+    final blueWallMask = Uint8List(gridSize);
+    for (final (c, r) in level.blueWalls) {
+      if (c >= 0 && c < cols && r >= 0 && r < rows) {
+        blueWallMask[r * cols + c] = 1;
+      }
+    }
+    final hasToggle = level.hasToggleWalls;
+    final dispensers = level.dispensers;
+    int nextSpawnId = level.pieces.length + 100;
 
-    final initial = [
+    (List<_SimPiece>, List<int>) applyDispense(
+      List<_SimPiece> pieces,
+      List<int> offsets,
+      int wallPhase,
+    ) {
+      if (dispensers.isEmpty) return (pieces, offsets);
+      final activeToggle = wallPhase == 0 ? redWallMask : blueWallMask;
+      final occSet = <int>{};
+      for (final p in pieces) {
+        for (final (dc, dr) in p.cells) {
+          occSet.add((p.row + dr) * cols + (p.col + dc));
+        }
+      }
+      List<_SimPiece>? nextPieces;
+      List<int>? nextOffsets;
+      for (int di = 0; di < dispensers.length; di++) {
+        final d = dispensers[di];
+        final off = (nextOffsets ?? offsets)[di];
+        if (off >= d.queue.length) continue;
+        final (mc, mr) = d.mouthCell;
+        if (mc < 0 || mc >= cols || mr < 0 || mr >= rows) continue;
+        final mIdx = mr * cols + mc;
+        if (playable[mIdx] == 0) continue;
+        if (hasToggle && activeToggle[mIdx] == 1) continue;
+        if (occSet.contains(mIdx)) continue;
+
+        nextPieces ??= List<_SimPiece>.of(pieces);
+        nextOffsets ??= List<int>.of(offsets);
+        final numVal = d.queue[off];
+        nextOffsets[di] = off + 1;
+        final sid = nextSpawnId++;
+        nextPieces.add(
+          _SimPiece(
+            id: sid,
+            key: 'D${di}_$off',
+            col: mc,
+            row: mr,
+            cells: const [(0, 0)],
+            number: numVal,
+            iceTarget: null,
+            movement: MovementType.free,
+          ),
+        );
+        occSet.add(mIdx);
+      }
+      return (nextPieces ?? pieces, nextOffsets ?? offsets);
+    }
+
+    int countRemainingDispensed(List<int> offsets) {
+      int rem = 0;
+      for (int di = 0; di < dispensers.length; di++) {
+        rem += dispensers[di].queue.length - offsets[di];
+      }
+      return rem;
+    }
+
+    final rawInitial = [
       for (final p in level.pieces)
         _SimPiece(
           id: p.id,
@@ -356,11 +499,18 @@ class LevelSolver {
           number: p.number,
           iceTarget: p.iceTarget,
           movement: p.movement,
+          isMystery: p.isMystery,
+          keyColor: p.keyColor,
+          lockColor: p.lockColor,
+          swapUses: p.swapUses,
+          movesLeft: p.movesLeft,
         ),
     ];
+    final initOffsetsRaw = List<int>.filled(dispensers.length, 0);
+    final (initial, initOffsets) = applyDispense(rawInitial, initOffsetsRaw, 0);
 
     final initNumbered = initial.where((p) => !p.isDud).length;
-    if (initNumbered <= 1) {
+    if (initNumbered <= 1 && countRemainingDispensed(initOffsets) == 0) {
       return SolveResult(
         status: SolveStatus.solved,
         reason: 'Already won',
@@ -368,16 +518,23 @@ class LevelSolver {
       );
     }
 
-    final visited = <String>{_canonicalKey(initial)};
+    final visited = <String>{
+      _canonicalKey(initial, wallPhase: hasToggle ? 0 : -1, dispenserOffsets: initOffsets),
+    };
     final heap = _MinHeap();
     int stateCounter = 0;
     heap.push(
       _SearchNode(
-        priority: _heuristic(initial),
+        priority: _heuristic(
+          initial,
+          remainingDispenserBlocks: countRemainingDispensed(initOffsets),
+        ),
         moves: 0,
         merges: 0,
         tieBreaker: stateCounter++,
         pieces: initial,
+        wallPhase: 0,
+        dispenserOffsets: initOffsets,
       ),
     );
 
@@ -409,7 +566,7 @@ class LevelSolver {
       for (final p in curPieces) {
         if (!p.isDud) numLeft++;
       }
-      if (numLeft <= 1) {
+      if (numLeft <= 1 && countRemainingDispensed(cur.dispenserOffsets) == 0) {
         final steps = <String>[];
         if (recordSteps) {
           _SearchNode? cursor = cur;
@@ -443,6 +600,7 @@ class LevelSolver {
           occ[(p.row + dr) * cols + (p.col + dc)] = idx;
         }
       }
+      final activeToggle = cur.wallPhase == 0 ? redWallMask : blueWallMask;
 
       // Expand moves for each movable piece
       for (int i = 0; i < curPieces.length; i++) {
@@ -472,6 +630,11 @@ class LevelSolver {
               final gIdx = r * cols + c;
               if (playable[gIdx] == 0) {
                 hitsWallOrBound = true;
+              } else if (hasToggle &&
+                  activeToggle[gIdx] == 1 &&
+                  occ[gIdx] != i) {
+                // Raised toggle wall blocks unless piece `i` itself is already holding it down
+                hitsWallOrBound = true;
               }
               final otherIdx = occ[gIdx];
               if (otherIdx >= 0 && otherIdx != i) {
@@ -485,6 +648,15 @@ class LevelSolver {
 
             // Case 1: Pure empty slide step
             if (!hitsWallOrBound && hitPieceIdx == -1) {
+              int? nextMovesLeft = p.movesLeft;
+              MovementType nextMv = p.movement;
+              if (nextMovesLeft != null && nextMovesLeft > 0) {
+                nextMovesLeft = nextMovesLeft - 1;
+                if (nextMovesLeft <= 0) {
+                  nextMovesLeft = null;
+                  nextMv = MovementType.pinned;
+                }
+              }
               final moved = _SimPiece(
                 id: p.id,
                 key: p.key,
@@ -493,13 +665,30 @@ class LevelSolver {
                 cells: p.cells,
                 number: p.number,
                 iceTarget: p.iceTarget,
-                movement: p.movement,
+                movement: nextMv,
+                isMystery: p.isMystery,
+                keyColor: p.keyColor,
+                lockColor: p.lockColor,
+                swapUses: p.swapUses,
+                movesLeft: nextMovesLeft,
               );
-              final nextPieces = List<_SimPiece>.of(curPieces)..[i] = moved;
-              final key = _canonicalKey(nextPieces);
+              final rawNext = List<_SimPiece>.of(curPieces)..[i] = moved;
+              final (nextPieces, nextOffsets) = applyDispense(
+                rawNext,
+                cur.dispenserOffsets,
+                cur.wallPhase,
+              );
+              final key = _canonicalKey(
+                nextPieces,
+                wallPhase: hasToggle ? cur.wallPhase : -1,
+                dispenserOffsets: nextOffsets,
+              );
               if (visited.add(key)) {
                 final nextMoves = cur.moves + 1;
-                final h = _heuristic(nextPieces);
+                final h = _heuristic(
+                  nextPieces,
+                  remainingDispenserBlocks: countRemainingDispensed(nextOffsets),
+                );
                 heap.push(
                   _SearchNode(
                     priority: h + nextMoves * 2,
@@ -507,6 +696,8 @@ class LevelSolver {
                     merges: cur.merges,
                     tieBreaker: stateCounter++,
                     pieces: nextPieces,
+                    wallPhase: cur.wallPhase,
+                    dispenserOffsets: nextOffsets,
                     parent: recordSteps ? cur : null,
                     moveDesc: recordSteps
                         ? 'Slide ${p.key}(${p.number ?? "DUD"}) -> ($nextCol,$nextRow)'
@@ -521,13 +712,15 @@ class LevelSolver {
             }
 
             // Case 2: Exact game-parity merge check when hitting exactly 1 piece
-            if (!multiHit && hitPieceIdx >= 0) {
+            if (!multiHit && hitPieceIdx >= 0 && (!strictWallBlocking || !hitsWallOrBound)) {
               final target = curPieces[hitPieceIdx];
               if (p.canMerge &&
                   target.canMerge &&
                   p.number == target.number) {
                 final draggedSurvives = p.cells.length > target.cells.length;
-                final canMerge = !draggedSurvives || !hitsWallOrBound;
+                final canMerge = strictWallBlocking
+                    ? !hitsWallOrBound
+                    : (!draggedSurvives || !hitsWallOrBound);
                 if (canMerge) {
                   final newNumber = p.number! * 2;
                   final combinedMv = p.movement.resolveMergedWith(
@@ -555,13 +748,47 @@ class LevelSolver {
                           movement: combinedMv,
                         );
 
+                  final triggeredKeyColors = <String>{
+                    if (p.keyColor != null) p.keyColor!,
+                    if (target.keyColor != null) target.keyColor!,
+                  };
+                  final mergeCells = <GridCell>{
+                    for (final (dc, dr) in survivor.cells)
+                      (survivor.col + dc, survivor.row + dr),
+                    for (final (dc, dr) in (draggedSurvives ? target.cells : p.cells))
+                      ((draggedSurvives ? target.col : contactCol) + dc,
+                          (draggedSurvives ? target.row : contactRow) + dr),
+                  };
+
                   final nextPieces = <_SimPiece>[];
                   int iceUnlocked = 0;
+                  int locksUnlocked = 0;
+                  int mysteriesRevealed = 0;
                   for (int k = 0; k < curPieces.length; k++) {
                     if (k == i || k == hitPieceIdx) continue;
                     final op = curPieces[k];
-                    if (op.iceTarget == newNumber) {
-                      iceUnlocked++;
+                    final unlockIce = op.iceTarget == newNumber;
+                    final unlockLock = op.lockColor != null &&
+                        triggeredKeyColors.contains(op.lockColor);
+                    bool revealMystery = false;
+                    if (op.isMystery) {
+                      for (final (dc, dr) in op.cells) {
+                        final oc = op.col + dc;
+                        final or = op.row + dr;
+                        if (mergeCells.contains((oc + 1, or)) ||
+                            mergeCells.contains((oc - 1, or)) ||
+                            mergeCells.contains((oc, or + 1)) ||
+                            mergeCells.contains((oc, or - 1))) {
+                          revealMystery = true;
+                          break;
+                        }
+                      }
+                    }
+
+                    if (unlockIce || unlockLock || revealMystery) {
+                      if (unlockIce) iceUnlocked++;
+                      if (unlockLock) locksUnlocked++;
+                      if (revealMystery) mysteriesRevealed++;
                       nextPieces.add(
                         _SimPiece(
                           id: op.id,
@@ -570,8 +797,13 @@ class LevelSolver {
                           row: op.row,
                           cells: op.cells,
                           number: op.number,
-                          iceTarget: null,
+                          iceTarget: unlockIce ? null : op.iceTarget,
                           movement: op.movement,
+                          isMystery: revealMystery ? false : op.isMystery,
+                          keyColor: op.keyColor,
+                          lockColor: unlockLock ? null : op.lockColor,
+                          swapUses: op.swapUses,
+                          movesLeft: op.movesLeft,
                         ),
                       );
                     } else {
@@ -579,21 +811,41 @@ class LevelSolver {
                     }
                   }
                   nextPieces.add(survivor);
+                  final nextWallPhase = hasToggle ? (cur.wallPhase ^ 1) : 0;
+                  final (finalPieces, nextOffsets) = applyDispense(
+                    nextPieces,
+                    cur.dispenserOffsets,
+                    nextWallPhase,
+                  );
 
-                  final key = _canonicalKey(nextPieces);
+                  final key = _canonicalKey(
+                    finalPieces,
+                    wallPhase: hasToggle ? nextWallPhase : -1,
+                    dispenserOffsets: nextOffsets,
+                  );
                   if (visited.add(key)) {
                     final nextMoves = cur.moves + 1;
                     final nextMerges = cur.merges + 1;
-                    final h = _heuristic(nextPieces);
+                    final h = _heuristic(
+                      finalPieces,
+                      remainingDispenserBlocks:
+                          countRemainingDispensed(nextOffsets),
+                    );
                     heap.push(
                       _SearchNode(
-                        // Strong reward for merges & ice unlocks so A* converges rapidly
-                        priority:
-                            h + nextMoves * 2 - 220 - iceUnlocked * 80,
+                        // Strong reward for merges, ice/key unlocks & mystery reveals
+                        priority: h +
+                            nextMoves * 2 -
+                            220 -
+                            iceUnlocked * 80 -
+                            locksUnlocked * 90 -
+                            mysteriesRevealed * 70,
                         moves: nextMoves,
                         merges: nextMerges,
                         tieBreaker: stateCounter++,
-                        pieces: nextPieces,
+                        pieces: finalPieces,
+                        wallPhase: nextWallPhase,
+                        dispenserOffsets: nextOffsets,
                         parent: recordSteps ? cur : null,
                         moveDesc: recordSteps
                             ? 'Merge ${p.key}(${p.number}) + ${target.key}(${target.number}) -> $newNumber'
@@ -601,6 +853,86 @@ class LevelSolver {
                       ),
                     );
                   }
+                }
+              } else if (p.swapUses > 0 &&
+                  p.canMerge &&
+                  target.canMerge &&
+                  p.number != target.number) {
+                // Case 2b: One-time Number Swap when pushing a Swap Block into a different-number block
+                final movedBeforeSwap = contactCol != p.col || contactRow != p.row;
+                int? nextMovesLeft = p.movesLeft;
+                MovementType nextMv = p.movement;
+                if (movedBeforeSwap && nextMovesLeft != null && nextMovesLeft > 0) {
+                  nextMovesLeft = nextMovesLeft - 1;
+                  if (nextMovesLeft <= 0) {
+                    nextMovesLeft = null;
+                    nextMv = MovementType.pinned;
+                  }
+                }
+                final swappedP = _SimPiece(
+                  id: p.id,
+                  key: p.key,
+                  col: contactCol,
+                  row: contactRow,
+                  cells: p.cells,
+                  number: target.number,
+                  iceTarget: p.iceTarget,
+                  movement: nextMv,
+                  isMystery: p.isMystery,
+                  keyColor: p.keyColor,
+                  lockColor: p.lockColor,
+                  swapUses: p.swapUses - 1,
+                  movesLeft: nextMovesLeft,
+                );
+                final swappedTarget = _SimPiece(
+                  id: target.id,
+                  key: target.key,
+                  col: target.col,
+                  row: target.row,
+                  cells: target.cells,
+                  number: p.number,
+                  iceTarget: target.iceTarget,
+                  movement: target.movement,
+                  isMystery: target.isMystery,
+                  keyColor: target.keyColor,
+                  lockColor: target.lockColor,
+                  swapUses: target.swapUses,
+                  movesLeft: target.movesLeft,
+                );
+                final rawNext = List<_SimPiece>.of(curPieces)
+                  ..[i] = swappedP
+                  ..[hitPieceIdx] = swappedTarget;
+                final (nextPieces, nextOffsets) = applyDispense(
+                  rawNext,
+                  cur.dispenserOffsets,
+                  cur.wallPhase,
+                );
+                final key = _canonicalKey(
+                  nextPieces,
+                  wallPhase: hasToggle ? cur.wallPhase : -1,
+                  dispenserOffsets: nextOffsets,
+                );
+                if (visited.add(key)) {
+                  final nextMoves = cur.moves + 1;
+                  final h = _heuristic(
+                    nextPieces,
+                    remainingDispenserBlocks: countRemainingDispensed(nextOffsets),
+                  );
+                  heap.push(
+                    _SearchNode(
+                      priority: h + nextMoves * 2 - 40,
+                      moves: nextMoves,
+                      merges: cur.merges,
+                      tieBreaker: stateCounter++,
+                      pieces: nextPieces,
+                      wallPhase: cur.wallPhase,
+                      dispenserOffsets: nextOffsets,
+                      parent: recordSteps ? cur : null,
+                      moveDesc: recordSteps
+                          ? 'Swap ${p.key}(${p.number}) <-> ${target.key}(${target.number})'
+                          : null,
+                    ),
+                  );
                 }
               }
             }
@@ -620,14 +952,21 @@ class LevelSolver {
     );
   }
 
-  static int _heuristic(List<_SimPiece> pieces) {
+  static int _heuristic(
+    List<_SimPiece> pieces, {
+    int remainingDispenserBlocks = 0,
+  }) {
     int numberedCount = 0;
     int frozenCount = 0;
+    int lockedCount = 0;
+    int mysteryCount = 0;
     int pinnedCount = 0;
     final byNum = <int, List<_SimPiece>>{};
 
     for (final p in pieces) {
       if (p.isFrozen) frozenCount++;
+      if (p.isLocked) lockedCount++;
+      if (p.isMystery) mysteryCount++;
       if (p.movement.isPinned) pinnedCount++;
       final n = p.number;
       if (n != null) {
@@ -654,15 +993,36 @@ class LevelSolver {
       }
     }
 
-    return numberedCount * 260 +
+    return (numberedCount + remainingDispenserBlocks) * 260 +
         frozenCount * 45 +
+        lockedCount * 55 +
+        mysteryCount * 40 +
         pinnedCount * 20 +
         distSum * 4;
   }
 
-  static String _canonicalKey(List<_SimPiece> pieces) {
+  static String _canonicalKey(
+    List<_SimPiece> pieces, {
+    int wallPhase = -1,
+    List<int> dispenserOffsets = const [],
+  }) {
     final sigs = [for (final p in pieces) p.signature()]..sort();
-    return sigs.join('|');
+    final base = sigs.join('|');
+    if (wallPhase < 0 && dispenserOffsets.isEmpty) return base;
+    final buf = StringBuffer(base);
+    if (wallPhase >= 0) {
+      buf
+        ..write('#W')
+        ..write(wallPhase);
+    }
+    if (dispenserOffsets.isNotEmpty) {
+      buf.write('#D');
+      for (int i = 0; i < dispenserOffsets.length; i++) {
+        if (i > 0) buf.write(',');
+        buf.write(dispenserOffsets[i]);
+      }
+    }
+    return buf.toString();
   }
 
   /// Counts how many distinct immediate legal actions exist from the starting board.

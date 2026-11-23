@@ -56,6 +56,7 @@ class BlockOrderPalette {
     8192: [Color(0xFF2812B8), Color(0xFF462EF2), Color(0xFF6852FF)], // Cosmic Blueberry Indigo
     0: [Color(0xFF4F5173), Color(0xFF8B94A4), Color(0xFF9EA5B8)], // Dud (Brushed Steel)
     -1: [Color(0xFF197AF0), Color(0xFF63A2FA), Color(0xFF82BEFF)], // Ice
+    -2: [Color(0xFF3F236E), Color(0xFF6E43B8), Color(0xFF9B72E8)], // Mystery (Frosted Amethyst)
   };
 
   static Color _parseUnityColor(Map<String, dynamic>? m, Color fallback) {
@@ -144,9 +145,16 @@ class BlockOrderPalette {
     return BlockOrderPalette(map);
   }
 
-  BlockColorStyle styleFor({required int? number, required bool isFrozen}) {
+  BlockColorStyle styleFor({
+    required int? number,
+    required bool isFrozen,
+    bool isMystery = false,
+  }) {
     if (isFrozen) {
       return _styles[-1] ?? _fallbackStyle(-1);
+    }
+    if (isMystery) {
+      return _fallbackStyle(-2);
     }
     if (number == null || number == 0) {
       return _styles[0] ?? _fallbackStyle(0);

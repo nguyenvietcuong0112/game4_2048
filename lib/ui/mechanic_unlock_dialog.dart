@@ -1,5 +1,7 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../game/vfx_components.dart' show drawEmeraldStopwatchIcon;
 import '../services/remote_config_service.dart';
 import 'unity_ui_kit.dart';
 
@@ -60,6 +62,62 @@ class MechanicUnlockInfo {
     iconAsset: 'assets/images/Icon_Mechanic_SingleAxis.png',
   );
 
+  static const clockBonus = MechanicUnlockInfo(
+    id: 'clock_bonus',
+    title: 'Clock Bonus',
+    note: 'Merge this block to gain extra seconds on the timer!',
+    iconAsset: '',
+  );
+
+  static const mystery = MechanicUnlockInfo(
+    id: 'mystery',
+    title: 'Mystery Blocks',
+    note: 'Merge any pair right next to a "?" block to reveal its number!',
+    iconAsset: '',
+  );
+
+  static const keyLock = MechanicUnlockInfo(
+    id: 'key_lock',
+    title: 'Key & Lock',
+    note: 'Merge the Key block to unlock matching padlocked blocks!',
+    iconAsset: '',
+  );
+
+  static const toggleWalls = MechanicUnlockInfo(
+    id: 'toggle_walls',
+    title: 'Toggle Walls',
+    note: 'Red & Blue walls swap UP and DOWN after every merge!',
+    iconAsset: '',
+  );
+
+  static const dispenser = MechanicUnlockInfo(
+    id: 'dispenser',
+    title: 'Pipe Dispenser',
+    note: 'Slide the block off the pipe mouth to dispense the next one!',
+    iconAsset: '',
+  );
+
+  static const swap = MechanicUnlockInfo(
+    id: 'swap',
+    title: 'Swap Blocks',
+    note: 'Drag a Swap block into another number to trade values once!',
+    iconAsset: '',
+  );
+
+  static const oneWayArrow = MechanicUnlockInfo(
+    id: 'one_way_arrow',
+    title: 'One-Way Arrows',
+    note: 'One-Way blocks can only slide forward in their arrow direction!',
+    iconAsset: '',
+  );
+
+  static const limitedMove = MechanicUnlockInfo(
+    id: 'limited_move',
+    title: 'Fragile Blocks',
+    note: 'Can only move N times before locking in place as a Stationary block!',
+    iconAsset: '',
+  );
+
   static const levelUpPowerUp = MechanicUnlockInfo(
     id: RemoteConfigService.boosterIdLevelUp,
     title: 'Level Up',
@@ -93,7 +151,7 @@ class MechanicUnlockInfo {
     title: 'Shuffle',
     subtitle: 'New power-up unlocked!',
     note: 'Shuffles unlocked block numbers to create fresh merges!',
-    iconAsset: '',
+    iconAsset: 'assets/images/PowerUp_Shuffle.png',
     isPowerUp: true,
     isLevelUpPowerUp: false,
     boosterType: BoosterType.shuffle,
@@ -107,7 +165,7 @@ class MechanicUnlockInfo {
     title: 'Hammer',
     subtitle: 'New power-up unlocked!',
     note: 'Split any block (4+) into two 1x1 half-value blocks!',
-    iconAsset: '',
+    iconAsset: 'assets/images/PowerUp_Hammer.png',
     isPowerUp: true,
     isLevelUpPowerUp: false,
     boosterType: BoosterType.hammer,
@@ -130,10 +188,8 @@ class MechanicUnlockInfo {
   }
 }
 
-/// Shared glossy 3D cartoon booster icon widget used across HUD buttons,
-/// `PowerUpBuyPopup`, `PowerUpFreeUnlockOverlay`, and `WaterGardenView`:
-/// - `levelUp` / `timeFreeze`: existing PNG sprites
-/// - `shuffle` / `hammer`: custom-painted high-DPI glossy cartoon icons matching the exact visual language
+/// Shared glossy 3D booster icon widget used across HUD buttons,
+/// `PowerUpBuyPopup`, `PowerUpFreeUnlockOverlay`, and `WaterGardenView`.
 class BoosterIconWidget extends StatelessWidget {
   final BoosterType type;
   final double size;
@@ -144,443 +200,22 @@ class BoosterIconWidget extends StatelessWidget {
     required this.size,
   });
 
+  static String assetPathFor(BoosterType type) => switch (type) {
+        BoosterType.levelUp => 'assets/images/PowerUp_LevelUp.png',
+        BoosterType.timeFreeze => 'assets/images/PowerUp_TimeFreeze.png',
+        BoosterType.shuffle => 'assets/images/PowerUp_Shuffle.png',
+        BoosterType.hammer => 'assets/images/PowerUp_Hammer.png',
+      };
+
   @override
   Widget build(BuildContext context) {
-    switch (type) {
-      case BoosterType.levelUp:
-        return Image.asset(
-          'assets/images/PowerUp_LevelUp.png',
-          width: size,
-          height: size,
-          fit: BoxFit.contain,
-        );
-      case BoosterType.timeFreeze:
-        return Image.asset(
-          'assets/images/PowerUp_TimeFreeze.png',
-          width: size,
-          height: size,
-          fit: BoxFit.contain,
-        );
-      case BoosterType.shuffle:
-        return SizedBox(
-          width: size,
-          height: size,
-          child: const CustomPaint(
-            painter: _ShuffleBoosterIconPainter(),
-          ),
-        );
-      case BoosterType.hammer:
-        return SizedBox(
-          width: size,
-          height: size,
-          child: const CustomPaint(
-            painter: _HammerBoosterIconPainter(),
-          ),
-        );
-    }
+    return Image.asset(
+      assetPathFor(type),
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+    );
   }
-}
-
-class _ShuffleBoosterIconPainter extends CustomPainter {
-  const _ShuffleBoosterIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = math.min(size.width, size.height);
-    if (s <= 1.0) return;
-
-    canvas.save();
-    canvas.translate((size.width - s) * 0.5, (size.height - s) * 0.5);
-
-    const outlineColor = Color(0xFF1A1048);
-
-    // Helper to build a thick curved ribbon arrow + head along cubic bezier
-    void drawRibbonArrow({
-      required Offset start,
-      required Offset c1,
-      required Offset c2,
-      required Offset end,
-      required Offset tip,
-      required Offset wingA,
-      required Offset wingB,
-      required List<Color> gradientColors,
-      required Color highlightColor,
-    }) {
-      final strokeW = s * 0.145;
-      final outlineW = strokeW + s * 0.068;
-
-      final curvePath = Path()
-        ..moveTo(start.dx, start.dy)
-        ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, end.dx, end.dy);
-
-      final headPath = Path()
-        ..moveTo(tip.dx, tip.dy)
-        ..lineTo(wingA.dx, wingA.dy)
-        ..lineTo(wingB.dx, wingB.dy)
-        ..close();
-
-      // Soft dark drop shadow
-      canvas.save();
-      canvas.translate(0, s * 0.035);
-      canvas.drawPath(
-        curvePath,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = outlineW
-          ..color = const Color(0x5508041C),
-      );
-      canvas.drawPath(
-        headPath,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeJoin = StrokeJoin.round
-          ..strokeWidth = s * 0.085
-          ..color = const Color(0x5508041C),
-      );
-      canvas.restore();
-
-      // Bold cartoon dark outline
-      canvas.drawPath(
-        curvePath,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = outlineW
-          ..color = outlineColor,
-      );
-      canvas.drawPath(
-        headPath,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeJoin = StrokeJoin.round
-          ..strokeWidth = s * 0.082
-          ..color = outlineColor,
-      );
-
-      // Glossy gradient body fill
-      final gradPaint = Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: gradientColors,
-        ).createShader(Rect.fromLTWH(0, 0, s, s));
-
-      canvas.drawPath(
-        curvePath,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = strokeW
-          ..shader = gradPaint.shader,
-      );
-      canvas.drawPath(
-        headPath,
-        Paint()
-          ..style = PaintingStyle.fill
-          ..shader = gradPaint.shader,
-      );
-      canvas.drawPath(
-        headPath,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeJoin = StrokeJoin.round
-          ..strokeWidth = s * 0.025
-          ..shader = gradPaint.shader,
-      );
-
-      // Crisp specular gloss ribbon along top
-      canvas.save();
-      canvas.translate(0, -s * 0.022);
-      canvas.drawPath(
-        curvePath,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = strokeW * 0.28
-          ..color = highlightColor,
-      );
-      canvas.restore();
-    }
-
-    // Back crossing ribbon: Top-Left -> Bottom-Right (Warm Golden Orange)
-    drawRibbonArrow(
-      start: Offset(s * 0.14, s * 0.28),
-      c1: Offset(s * 0.44, s * 0.28),
-      c2: Offset(s * 0.48, s * 0.72),
-      end: Offset(s * 0.72, s * 0.72),
-      tip: Offset(s * 0.90, s * 0.72),
-      wingA: Offset(s * 0.67, s * 0.56),
-      wingB: Offset(s * 0.67, s * 0.88),
-      gradientColors: const [
-        Color(0xFFFFF59D),
-        Color(0xFFFFB703),
-        Color(0xFFEA580C),
-      ],
-      highlightColor: Colors.white.withValues(alpha: 0.68),
-    );
-
-    // Front crossing ribbon: Bottom-Left -> Top-Right (Electric Cyan / Emerald)
-    drawRibbonArrow(
-      start: Offset(s * 0.14, s * 0.72),
-      c1: Offset(s * 0.44, s * 0.72),
-      c2: Offset(s * 0.48, s * 0.28),
-      end: Offset(s * 0.72, s * 0.28),
-      tip: Offset(s * 0.90, s * 0.28),
-      wingA: Offset(s * 0.67, s * 0.12),
-      wingB: Offset(s * 0.67, s * 0.44),
-      gradientColors: const [
-        Color(0xFFA5F3FC),
-        Color(0xFF00E5FF),
-        Color(0xFF0284C7),
-      ],
-      highlightColor: Colors.white.withValues(alpha: 0.78),
-    );
-
-    // 4-point cartoon sparkle star at top-left & center-top
-    _drawMiniSparkle(canvas, Offset(s * 0.30, s * 0.14), s * 0.085);
-    _drawMiniSparkle(canvas, Offset(s * 0.84, s * 0.50), s * 0.062);
-
-    canvas.restore();
-  }
-
-  void _drawMiniSparkle(Canvas canvas, Offset c, double r) {
-    final p = Path()
-      ..moveTo(c.dx, c.dy - r)
-      ..quadraticBezierTo(c.dx + r * 0.18, c.dy - r * 0.18, c.dx + r, c.dy)
-      ..quadraticBezierTo(c.dx + r * 0.18, c.dy + r * 0.18, c.dx, c.dy + r)
-      ..quadraticBezierTo(c.dx - r * 0.18, c.dy + r * 0.18, c.dx - r, c.dy)
-      ..quadraticBezierTo(c.dx - r * 0.18, c.dy - r * 0.18, c.dx, c.dy - r)
-      ..close();
-    canvas.drawPath(p, Paint()..color = Colors.white);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShuffleBoosterIconPainter oldDelegate) => false;
-}
-
-class _HammerBoosterIconPainter extends CustomPainter {
-  const _HammerBoosterIconPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = math.min(size.width, size.height);
-    if (s <= 1.0) return;
-
-    canvas.save();
-    canvas.translate(size.width * 0.5, size.height * 0.52);
-
-    // Soft drop shadow behind whole angled mallet
-    canvas.save();
-    canvas.translate(0, s * 0.04);
-    canvas.rotate(-0.72);
-    final shadowPaint = Paint()..color = const Color(0x5508041C);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(0, s * 0.14),
-          width: s * 0.21,
-          height: s * 0.66,
-        ),
-        Radius.circular(s * 0.10),
-      ),
-      shadowPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(0, -s * 0.22),
-          width: s * 0.64,
-          height: s * 0.34,
-        ),
-        Radius.circular(s * 0.11),
-      ),
-      shadowPaint,
-    );
-    canvas.restore();
-
-    canvas.rotate(-0.72);
-
-    const outlineColor = Color(0xFF1A1048);
-    final outlineStroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = s * 0.055
-      ..strokeJoin = StrokeJoin.round
-      ..color = outlineColor;
-
-    // 1. Warm Wooden Handle
-    final handleRect = Rect.fromCenter(
-      center: Offset(0, s * 0.14),
-      width: s * 0.165,
-      height: s * 0.60,
-    );
-    final handleRRect =
-        RRect.fromRectAndRadius(handleRect, Radius.circular(s * 0.082));
-    canvas.drawRRect(handleRRect, outlineStroke);
-    canvas.drawRRect(
-      handleRRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            Color(0xFFFFD08A),
-            Color(0xFFD9772B),
-            Color(0xFF7C2D12),
-          ],
-          stops: [0.0, 0.52, 1.0],
-        ).createShader(handleRect),
-    );
-    // Handle specular streak
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          handleRect.left + s * 0.028,
-          handleRect.top + s * 0.08,
-          s * 0.032,
-          handleRect.height * 0.68,
-        ),
-        Radius.circular(s * 0.02),
-      ),
-      Paint()..color = Colors.white.withValues(alpha: 0.42),
-    );
-
-    // Golden handle pommel ring at bottom
-    final pommelRect = Rect.fromCenter(
-      center: Offset(0, s * 0.40),
-      width: s * 0.21,
-      height: s * 0.095,
-    );
-    final pommelRRect =
-        RRect.fromRectAndRadius(pommelRect, Radius.circular(s * 0.045));
-    canvas.drawRRect(pommelRRect, outlineStroke);
-    canvas.drawRRect(
-      pommelRRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFFF59D), Color(0xFFFFB300), Color(0xFFB45309)],
-        ).createShader(pommelRect),
-    );
-
-    // 2. Chunky Metallic-Silver & Crimson-Gold Mallet Head
-    final headRect = Rect.fromCenter(
-      center: Offset(0, -s * 0.22),
-      width: s * 0.58,
-      height: s * 0.30,
-    );
-    final headRRect =
-        RRect.fromRectAndRadius(headRect, Radius.circular(s * 0.09));
-    canvas.drawRRect(headRRect, outlineStroke);
-    canvas.drawRRect(
-      headRRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFFF8A65),
-            Color(0xFFE53935),
-            Color(0xFF991B1B),
-          ],
-          stops: [0.0, 0.52, 1.0],
-        ).createShader(headRect),
-    );
-
-    // Metallic silver-steel striking caps on left & right ends
-    for (final side in [-1.0, 1.0]) {
-      final capRect = Rect.fromCenter(
-        center: Offset(side * s * 0.255, -s * 0.22),
-        width: s * 0.13,
-        height: s * 0.335,
-      );
-      final capRRect =
-          RRect.fromRectAndRadius(capRect, Radius.circular(s * 0.055));
-      canvas.drawRRect(capRRect, outlineStroke);
-      canvas.drawRRect(
-        capRRect,
-        Paint()
-          ..shader = const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFF8FAFC),
-              Color(0xFF93C5FD),
-              Color(0xFF3B5998),
-            ],
-            stops: [0.0, 0.5, 1.0],
-          ).createShader(capRect),
-      );
-      // Tiny highlight bar on steel cap
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            capRect.left + s * 0.025,
-            capRect.top + s * 0.032,
-            capRect.width - s * 0.05,
-            s * 0.052,
-          ),
-          Radius.circular(s * 0.025),
-        ),
-        Paint()..color = Colors.white.withValues(alpha: 0.85),
-      );
-    }
-
-    // Central golden band wrapping the mallet barrel
-    final bandRect = Rect.fromCenter(
-      center: Offset(0, -s * 0.22),
-      width: s * 0.155,
-      height: s * 0.315,
-    );
-    final bandRRect =
-        RRect.fromRectAndRadius(bandRect, Radius.circular(s * 0.04));
-    canvas.drawRRect(bandRRect, outlineStroke);
-    canvas.drawRRect(
-      bandRRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFFFF59D),
-            Color(0xFFFFB703),
-            Color(0xFFD97706),
-          ],
-        ).createShader(bandRect),
-    );
-
-    // Glossy white highlight across top of head
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(0, -s * 0.315),
-          width: s * 0.32,
-          height: s * 0.052,
-        ),
-        Radius.circular(s * 0.026),
-      ),
-      Paint()..color = Colors.white.withValues(alpha: 0.65),
-    );
-
-    canvas.restore();
-
-    // Golden impact sparkle near top-right striking cap
-    final cx = size.width * 0.82;
-    final cy = size.height * 0.24;
-    final r = s * 0.088;
-    final star = Path()
-      ..moveTo(cx, cy - r)
-      ..quadraticBezierTo(cx + r * 0.2, cy - r * 0.2, cx + r, cy)
-      ..quadraticBezierTo(cx + r * 0.2, cy + r * 0.2, cx, cy + r)
-      ..quadraticBezierTo(cx - r * 0.2, cy + r * 0.2, cx - r, cy)
-      ..quadraticBezierTo(cx - r * 0.2, cy - r * 0.2, cx, cy - r)
-      ..close();
-    canvas.drawPath(star, Paint()..color = const Color(0xFFFFF59D));
-  }
-
-  @override
-  bool shouldRepaint(covariant _HammerBoosterIconPainter oldDelegate) => false;
 }
 
 /// Circular Booster HUD Button (`Play_Scene.png` & `Play_Scene 2.png`):
@@ -994,10 +629,17 @@ class _MechanicUnlockDialogState extends State<MechanicUnlockDialog>
                                             size: ux(context, 228),
                                           ),
                                         )
-                                      : Image.asset(
-                                          info.iconAsset,
-                                          fit: BoxFit.contain,
-                                        ),
+                                      : (info.iconAsset.isNotEmpty
+                                            ? Image.asset(
+                                                info.iconAsset,
+                                                fit: BoxFit.contain,
+                                              )
+                                            : Center(
+                                                child: MechanicVectorIconWidget(
+                                                  mechanicId: info.id,
+                                                  size: ux(context, 228),
+                                                ),
+                                              )),
                                 ),
                               ),
 
@@ -1559,3 +1201,228 @@ class _PowerUpHudArrowHintState extends State<PowerUpHudArrowHint>
     );
   }
 }
+
+/// Glossy vector icon badge for procedural mechanic unlock modals
+/// (`clock_bonus`, `mystery`, `key_lock`, `toggle_walls`, `dispenser`,
+/// `swap`, `one_way_arrow`, `limited_move`).
+class MechanicVectorIconWidget extends StatelessWidget {
+  final String mechanicId;
+  final double size;
+
+  const MechanicVectorIconWidget({
+    super.key,
+    required this.mechanicId,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _MechanicVectorIconPainter(mechanicId),
+      ),
+    );
+  }
+}
+
+class _MechanicVectorIconPainter extends CustomPainter {
+  final String mechanicId;
+
+  const _MechanicVectorIconPainter(this.mechanicId);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = math.min(size.width, size.height);
+    if (s <= 2.0) return;
+    canvas.save();
+    canvas.translate((size.width - s) * 0.5, (size.height - s) * 0.5);
+
+    if (mechanicId == 'clock_bonus') {
+      drawEmeraldStopwatchIcon(
+        canvas,
+        Offset(s * 0.46, s * 0.45),
+        s * 0.78,
+      );
+      final fs = (s * 0.28).clamp(14.0, 72.0);
+      final sw = (fs * 0.24).clamp(2.5, 11.0);
+      final base = TextStyle(
+        fontFamily: 'PoetsenOne',
+        fontSize: fs,
+        fontWeight: FontWeight.w400,
+        height: 1.0,
+      );
+      final tpStroke = TextPainter(
+        text: TextSpan(
+          text: '+15s',
+          style: base.copyWith(
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = sw
+              ..strokeJoin = StrokeJoin.round
+              ..color = const Color(0xFF033426),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final tpFill = TextPainter(
+        text: TextSpan(
+          text: '+15s',
+          style: base.copyWith(
+            foreground: Paint()
+              ..shader = ui.Gradient.linear(
+                Offset.zero,
+                Offset(0, fs),
+                const [Color(0xFFFFFFFF), Color(0xFFA7F3D0)],
+              ),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final pos = Offset(s * 0.94 - tpFill.width, s * 0.88 - tpFill.height);
+      tpStroke.paint(canvas, pos + Offset(0, fs * 0.06));
+      tpStroke.paint(canvas, pos);
+      tpFill.paint(canvas, pos);
+      canvas.restore();
+      return;
+    }
+
+    final (topColor, botColor, borderColor, glyph) = switch (mechanicId) {
+      'clock_bonus' => (
+          const Color(0xFF34F5A4),
+          const Color(0xFF047857),
+          const Color(0xFF064E3B),
+          '+15s',
+        ),
+      'mystery' => (
+          const Color(0xFFA78BFA),
+          const Color(0xFF5B21B6),
+          const Color(0xFF2E1065),
+          '?',
+        ),
+      'key_lock' => (
+          const Color(0xFFFDE047),
+          const Color(0xFFD97706),
+          const Color(0xFF78350F),
+          'KEY',
+        ),
+      'toggle_walls' => (
+          const Color(0xFFFB7185),
+          const Color(0xFF2563EB),
+          const Color(0xFF1E1B4B),
+          'R/B',
+        ),
+      'dispenser' => (
+          const Color(0xFF38BDF8),
+          const Color(0xFF0369A1),
+          const Color(0xFF0C4A6E),
+          'PIPE',
+        ),
+      'swap' => (
+          const Color(0xFF22D3EE),
+          const Color(0xFF0E7490),
+          const Color(0xFF164E63),
+          '⇄',
+        ),
+      'one_way_arrow' => (
+          const Color(0xFFFBBF24),
+          const Color(0xFFEA580C),
+          const Color(0xFF7C2D12),
+          '➔',
+        ),
+      'limited_move' => (
+          const Color(0xFFF87171),
+          const Color(0xFFB91C1C),
+          const Color(0xFF450A0A),
+          '2x',
+        ),
+      _ => (
+          const Color(0xFF60A5FA),
+          const Color(0xFF1D4ED8),
+          const Color(0xFF1E3A8A),
+          'NEW',
+        ),
+    };
+
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(s * 0.10, s * 0.10, s * 0.80, s * 0.80),
+      Radius.circular(s * 0.22),
+    );
+    // Drop shadow
+    canvas.drawRRect(
+      rect.shift(Offset(0, s * 0.05)),
+      Paint()..color = borderColor.withValues(alpha: 0.45),
+    );
+    // Glossy 3D tile gradient
+    canvas.drawRRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [topColor, botColor],
+        ).createShader(rect.outerRect),
+    );
+    // Top specular glass highlight
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(s * 0.16, s * 0.15, s * 0.68, s * 0.26),
+        Radius.circular(s * 0.14),
+      ),
+      Paint()..color = Colors.white.withValues(alpha: 0.28),
+    );
+    // Bold border
+    canvas.drawRRect(
+      rect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (s * 0.055).clamp(2.5, 10.0)
+        ..color = borderColor,
+    );
+
+    final fontSize = glyph.length <= 2 ? s * 0.42 : s * 0.25;
+    final tpOutline = TextPainter(
+      text: TextSpan(
+        text: glyph,
+        style: TextStyle(
+          fontFamily: 'Baloo2',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (fontSize * 0.18).clamp(2.0, 9.0)
+            ..strokeJoin = StrokeJoin.round
+            ..color = borderColor,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final tpFill = TextPainter(
+      text: TextSpan(
+        text: glyph,
+        style: TextStyle(
+          fontFamily: 'Baloo2',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final textOffset = Offset(
+      (s - tpFill.width) * 0.5,
+      (s - tpFill.height) * 0.5,
+    );
+    tpOutline.paint(canvas, textOffset + Offset(0, s * 0.02));
+    tpFill.paint(canvas, textOffset);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _MechanicVectorIconPainter oldDelegate) =>
+      oldDelegate.mechanicId != mechanicId;
+}
+

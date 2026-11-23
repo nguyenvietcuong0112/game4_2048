@@ -273,6 +273,8 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
                                   children: [
                                     _buildLevelJumpSection(context),
                                     SizedBox(height: ux(context, 24)),
+                                    _buildMechanicsJumpSection(context),
+                                    SizedBox(height: ux(context, 24)),
                                     _buildBoardAndOutcomeSection(context),
                                     SizedBox(height: ux(context, 24)),
                                     _buildTimerSection(context),
@@ -486,6 +488,10 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
                 label: 'Lv 50',
                 onTap: () => _jumpToCampaignLevel(50),
               ),
+              _CheatChip(
+                label: 'Lv $_maxCampaignLevel (Last)',
+                onTap: () => _jumpToCampaignLevel(_maxCampaignLevel),
+              ),
             ],
           ),
           if (bonusLevels.isNotEmpty) ...[
@@ -584,9 +590,193 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
     );
   }
 
+  void _jumpToNextMechanicLevel(bool Function(LevelDefinition lv) matcher) {
+    final matches = [
+      for (final lv in widget.repository.campaignLevels)
+        if (matcher(lv)) lv,
+    ];
+    if (matches.isEmpty) return;
+
+    final curNum = widget.activeLevel.isBonus ? -1 : widget.activeLevel.number;
+    final curIdx = matches.indexWhere((lv) => lv.number == curNum);
+    final nextLv = curIdx >= 0
+        ? matches[(curIdx + 1) % matches.length]
+        : matches.first;
+    _levelInputCtrl.text = '${nextLv.number}';
+    widget.onJumpToLevel(nextLv);
+  }
+
+  Widget _buildMechanicsJumpSection(BuildContext context) {
+    final campaign = widget.repository.campaignLevels;
+    final activeLv = widget.activeLevel;
+
+    final specs = <({
+      String key,
+      String label,
+      Color accent,
+      bool Function(LevelDefinition) matcher,
+    })>[
+      (
+        key: 'cheat_mech_special',
+        label: '★ Special Hard',
+        accent: const Color(0xFFB91C1C),
+        matcher: (l) => l.isSpecial,
+      ),
+      (
+        key: 'cheat_mech_mystery',
+        label: 'Mystery (?)',
+        accent: const Color(0xFF7C3AED),
+        matcher: (l) => l.hasMystery,
+      ),
+      (
+        key: 'cheat_mech_one_way',
+        label: 'One-Way (➔)',
+        accent: const Color(0xFFEA580C),
+        matcher: (l) => l.hasOneWayArrow,
+      ),
+      (
+        key: 'cheat_mech_key_lock',
+        label: 'Key & Lock',
+        accent: const Color(0xFFD97706),
+        matcher: (l) => l.hasKeyLock,
+      ),
+      (
+        key: 'cheat_mech_swap',
+        label: 'Swap (⇄)',
+        accent: const Color(0xFF0891B2),
+        matcher: (l) => l.hasSwap,
+      ),
+      (
+        key: 'cheat_mech_limited_move',
+        label: 'Limited-Move',
+        accent: const Color(0xFFDC2626),
+        matcher: (l) => l.hasLimitedMove,
+      ),
+      (
+        key: 'cheat_mech_clock_bonus',
+        label: 'Clock +15s',
+        accent: const Color(0xFF059669),
+        matcher: (l) => l.hasClockBonus,
+      ),
+      (
+        key: 'cheat_mech_dispenser',
+        label: 'Dispenser Pipe',
+        accent: const Color(0xFF0284C7),
+        matcher: (l) => l.hasDispensers,
+      ),
+      (
+        key: 'cheat_mech_toggle_walls',
+        label: 'Toggle Walls',
+        accent: const Color(0xFFE11D48),
+        matcher: (l) => l.hasToggleWalls,
+      ),
+      (
+        key: 'cheat_mech_ice',
+        label: 'Ice',
+        accent: const Color(0xFF2563EB),
+        matcher: (l) => l.hasIce,
+      ),
+      (
+        key: 'cheat_mech_dud',
+        label: 'Dud',
+        accent: const Color(0xFF475569),
+        matcher: (l) => l.hasDud,
+      ),
+      (
+        key: 'cheat_mech_arrows',
+        label: 'Arrows',
+        accent: const Color(0xFF4F46E5),
+        matcher: (l) => l.hasArrows,
+      ),
+      (
+        key: 'cheat_mech_pinned',
+        label: 'Pinned',
+        accent: const Color(0xFF64748B),
+        matcher: (l) => l.hasPinned,
+      ),
+    ];
+
+    return _CheatSectionCard(
+      title: '2. Mechanics Quick-Jump (Tap to Jump / Cycle Next)',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: ux(context, 12),
+            runSpacing: ux(context, 12),
+            children: [
+              for (final spec in specs)
+                Builder(
+                  builder: (context) {
+                    int? firstLv;
+                    int count = 0;
+                    for (final lv in campaign) {
+                      if (spec.matcher(lv)) {
+                        firstLv ??= lv.number;
+                        count++;
+                      }
+                    }
+                    final isCurrentActive = spec.matcher(activeLv);
+                    final text = firstLv != null
+                        ? '${spec.label} · Lv $firstLv ($count)'
+                        : '${spec.label} (0)';
+                    return Material(
+                      color: isCurrentActive
+                          ? spec.accent
+                          : spec.accent.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(ux(context, 20)),
+                      child: InkWell(
+                        key: ValueKey(spec.key),
+                        borderRadius: BorderRadius.circular(ux(context, 20)),
+                        onTap: firstLv == null
+                            ? null
+                            : () => _jumpToNextMechanicLevel(spec.matcher),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ux(context, 18),
+                            vertical: ux(context, 11),
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(ux(context, 20)),
+                            border: Border.all(
+                              color: isCurrentActive
+                                  ? const Color(0xFFFFD233)
+                                  : spec.accent.withValues(alpha: 0.85),
+                              width: isCurrentActive ? ux(context, 3.0) : 1.2,
+                            ),
+                          ),
+                          child: Text(
+                            text,
+                            style: TextStyle(
+                              fontFamily: 'Baloo2',
+                              fontSize: ux(context, 27),
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              height: 1.05,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+          SizedBox(height: ux(context, 14)),
+          _CheatActionBtn(
+            key: const ValueKey('cheat_reset_mechanic_popups_btn'),
+            label: 'Reset Mechanic Intro Popups (Re-show on Jump)',
+            color: const Color(0xFF334155),
+            onTap: widget.progress.cheatResetSeenMechanics,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBoardAndOutcomeSection(BuildContext context) {
     return _CheatSectionCard(
-      title: '2. Board & Level Outcome',
+      title: '3. Board & Level Outcome',
       child: Wrap(
         spacing: ux(context, 14),
         runSpacing: ux(context, 14),
@@ -634,7 +824,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
 
   Widget _buildTimerSection(BuildContext context) {
     return _CheatSectionCard(
-      title: '3. Timer (Current: ${widget.remainingSeconds}s)',
+      title: '4. Timer (Current: ${widget.remainingSeconds}s)',
       child: Wrap(
         spacing: ux(context, 14),
         runSpacing: ux(context, 14),
@@ -669,7 +859,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
     final p = widget.progress;
     return _CheatSectionCard(
       title:
-          '4. Economy (Coins: ${p.coins} | LvUp: ${p.levelUpCount} | Freeze: ${p.timeFreezeCount} | Shuf: ${p.shuffleCount} | Ham: ${p.hammerCount} | Lives: ${p.lives})',
+          '5. Economy (Coins: ${p.coins} | LvUp: ${p.levelUpCount} | Freeze: ${p.timeFreezeCount} | Shuf: ${p.shuffleCount} | Ham: ${p.hammerCount} | Lives: ${p.lives})',
       child: Wrap(
         spacing: ux(context, 14),
         runSpacing: ux(context, 14),
@@ -738,7 +928,7 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
 
   Widget _buildSystemSection(BuildContext context) {
     return _CheatSectionCard(
-      title: '5. System & Display',
+      title: '6. System & Display',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

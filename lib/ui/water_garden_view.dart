@@ -890,16 +890,29 @@ class _WaterGardenViewState extends State<WaterGardenView>
     final BoosterType? featureBooster =
         mechanicId != null ? BoosterType.fromId(mechanicId) : null;
 
+    const proceduralMechanicIds = <String>{
+      'mystery',
+      'one_way_arrow',
+      'key_lock',
+      'swap',
+      'limited_move',
+      'clock_bonus',
+      'dispenser',
+      'toggle_walls',
+    };
+    final bool isProceduralMechanic =
+        mechanicId != null && proceduralMechanicIds.contains(mechanicId);
+
     final String? featureAsset = switch (mechanicId) {
       'ice' => 'assets/images/Icon_Mechanic_Ice.png',
       'dud' => 'assets/images/Icon_Mechanic_Blocker.png',
       'pu_level_up' => 'assets/images/PowerUp_LevelUp.png',
       'arrows' => 'assets/images/Icon_Mechanic_SingleAxis.png',
       'pu_time_freeze' => 'assets/images/PowerUp_TimeFreeze.png',
-      'pu_shuffle' => null,
-      'pu_hammer' => null,
+      'pu_shuffle' => 'assets/images/PowerUp_Shuffle.png',
+      'pu_hammer' => 'assets/images/PowerUp_Hammer.png',
       'pinned' => 'assets/images/Icon_Mechanic_Cage.png',
-      _ => isNewVaseMystery
+      _ => (isNewVaseMystery || isProceduralMechanic)
           ? null
           : 'assets/images/Level Complete/Icon_coin_reward.png',
     };
@@ -1037,26 +1050,31 @@ class _WaterGardenViewState extends State<WaterGardenView>
                       type: featureBooster,
                       size: 130.0 * s,
                     )
-                  : featureAsset != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(20.0 * s),
-                          child: Image.asset(
-                            featureAsset,
-                            width: 132.0 * s,
-                            height: 132.0 * s,
-                            fit: BoxFit.contain,
-                          ),
+                  : isProceduralMechanic
+                      ? MechanicVectorIconWidget(
+                          mechanicId: mechanicId,
+                          size: 128.0 * s,
                         )
-                      : Text(
-                          '?',
-                          style: TextStyle(
-                            fontFamily: 'Baloo2',
-                            fontSize: 82.0 * s,
-                            fontWeight: FontWeight.w900,
-                            height: 1.0,
-                            color: const Color(0xFF5A270B),
-                          ),
-                        ),
+                      : featureAsset != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(20.0 * s),
+                              child: Image.asset(
+                                featureAsset,
+                                width: 132.0 * s,
+                                height: 132.0 * s,
+                                fit: BoxFit.contain,
+                              ),
+                            )
+                          : Text(
+                              '?',
+                              style: TextStyle(
+                                fontFamily: 'Baloo2',
+                                fontSize: 82.0 * s,
+                                fontWeight: FontWeight.w900,
+                                height: 1.0,
+                                color: const Color(0xFF5A270B),
+                              ),
+                            ),
             ),
           ),
 

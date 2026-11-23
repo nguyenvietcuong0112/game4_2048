@@ -5,16 +5,23 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flame/components.dart';
 import 'package:flame/flame.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart'
     show
         BlendMode,
+        Canvas,
         Color,
         ColorFilter,
         Colors,
         Curves,
         FilterQuality,
         FontWeight,
+        Offset,
         PaintingStyle,
+        RRect,
+        Radius,
+        Rect,
+        StrokeCap,
         StrokeJoin,
         TextDirection,
         TextPainter,
@@ -1552,9 +1559,12 @@ class _ComboBadgeLayoutCache {
     double cellSize,
   ) {
     final sizeBucket = (cellSize * 2.0).round().clamp(40, 440);
-    final key = (math.min(tier.comboCount, 12) << 16) ^ sizeBucket;
-    final cached = _cache[key];
-    if (cached != null) return cached;
+    final key = (tier.comboCount << 16) | sizeBucket;
+    final cached = _cache.remove(key);
+    if (cached != null) {
+      _cache[key] = cached;
+      return cached;
+    }
 
     try {
       final comboFontSize =
@@ -1722,6 +1732,11 @@ class ComboPraiseCalloutVfx extends PositionComponent {
   double _elapsed = 0.0;
 
   _ComboBadgeLayout? _badgeLayout;
+
+  @visibleForTesting
+  String? get debugRenderedComboLabel =>
+      _badgeLayout?.comboFillTp.text?.toPlainText();
+
   final List<_VfxParticle> _burstParticles = <_VfxParticle>[];
   final List<ui.RSTransform> _scratchTransforms = <ui.RSTransform>[];
   final List<ui.Rect> _scratchRects = <ui.Rect>[];
@@ -2098,51 +2113,72 @@ class ShuffleSparkVfx extends PositionComponent {
   }
 }
 
-/// Animated 3D cartoon mallet swinging down and smashing an obstacle block (`Ice`, `Dud`, `Pinned`, `Arrows`),
-/// spawning radial shockwave + golden/stone impact debris right at strike time (`impactTime = 0.14s`).
+/// Animated 3D Hammer (`PowerUp_Hammer.png`) booster VFX:
+/// - Optional Beat 1 (`startPos != null`): flies along an upward arc from the bottom Hammer HUD button
+/// - Beat 2: lifts high & cocks back with a golden glint
+/// - Beat 3: high-speed downward slam (`resolvedImpactTime`) triggering shockwave + split shatter
+/// - Beat 4: elastic recoil bounce & graceful fade out
 class HammerSwingSmashVfx extends PositionComponent {
   final double cellSize;
   final Color debrisPrimary;
   final Color debrisSecondary;
+  final Vector2? startPos;
   final List<_VfxParticle> _debris = [];
   double _elapsed = 0.0;
   bool _impactSpawned = false;
-  static const double impactTime = 0.14;
-  static const double _duration = 0.64;
+
+  static const double impactTime = 0.22;
+  static const double _flyDurWithStart = 0.26;
+  static const double _windUpDurWithStart = 0.20;
+  static const double _slamDurWithStart = 0.10;
+  static const double _windUpDurLocal = 0.14;
+  static const double _slamDurLocal = 0.08;
+  static const double _reboundDur = 0.34;
+
+  double get _flyDur => startPos != null ? _flyDurWithStart : 0.0;
+  double get _windUpDur =>
+      startPos != null ? _windUpDurWithStart : _windUpDurLocal;
+  double get _slamDur => startPos != null ? _slamDurWithStart : _slamDurLocal;
+  double get windUpStartTime => _flyDur;
+  double get resolvedImpactTime => _flyDur + _windUpDur + _slamDur;
+  double get _totalDuration => resolvedImpactTime + 0.50;
 
   ui.Image? _haloImg;
+  ui.Image? _hammerImg;
   final ui.Paint _additivePaint = ui.Paint()..blendMode = BlendMode.plus;
 
   HammerSwingSmashVfx({
     required Vector2 centerPos,
     required this.cellSize,
+    this.startPos,
     this.debrisPrimary = const Color(0xFFFFCA3A),
     this.debrisSecondary = const Color(0xFF8C9BCE),
   }) : super(position: centerPos, priority: 225) {
     _haloImg = _safeFlameImage('Explosion_Halo.png');
+    _hammerImg = _safeFlameImage('PowerUp_Hammer.png');
   }
 
   void _spawnImpactDebris() {
     final rng = math.Random();
-    for (int i = 0; i < 18; i++) {
+    for (int i = 0; i < 16; i++) {
       final angle = -math.pi * 0.92 + rng.nextDouble() * math.pi * 1.84;
-      final speed = cellSize * (1.8 + rng.nextDouble() * 3.4);
+      final speed = cellSize * (1.7 + rng.nextDouble() * 3.1);
       _debris.add(
         _VfxParticle(
           pos: ui.Offset(
-            (rng.nextDouble() - 0.5) * cellSize * 0.45,
-            (rng.nextDouble() - 0.5) * cellSize * 0.45,
+            (rng.nextDouble() - 0.5) * cellSize * 0.42,
+            (rng.nextDouble() - 0.5) * cellSize * 0.42,
           ),
           vel: ui.Offset(
             math.cos(angle) * speed,
-            math.sin(angle) * speed - cellSize * 1.4,
+            math.sin(angle) * speed - cellSize * 1.25,
           ),
-          size: cellSize * (0.16 + rng.nextDouble() * 0.18),
-          maxLife: 0.34 + rng.nextDouble() * 0.18,
+          size: cellSize * (0.14 + rng.nextDouble() * 0.16),
+          maxLife: 0.32 + rng.nextDouble() * 0.18,
           color: i % 3 == 0
               ? Colors.white
               : (i.isEven ? debrisPrimary : debrisSecondary),
-          gravity: cellSize * 9.5,
+          gravity: cellSize * 8.8,
           rotation: rng.nextDouble() * math.pi * 2.0,
           angularVel: (rng.nextDouble() - 0.5) * 14.0,
         ),
@@ -2154,7 +2190,7 @@ class HammerSwingSmashVfx extends PositionComponent {
   void update(double dt) {
     super.update(dt);
     _elapsed += dt;
-    if (!_impactSpawned && _elapsed >= impactTime) {
+    if (!_impactSpawned && _elapsed >= resolvedImpactTime) {
       _impactSpawned = true;
       _spawnImpactDebris();
     }
@@ -2167,23 +2203,42 @@ class HammerSwingSmashVfx extends PositionComponent {
         d.rotation += d.angularVel * dt;
       }
     }
-    if (_elapsed >= _duration) {
+    if (_elapsed >= _totalDuration) {
       removeFromParent();
     }
   }
 
+  void _drawFourPointGlint(ui.Canvas canvas, ui.Offset c, double r, double alpha) {
+    if (r <= 0.5 || alpha <= 0.01) return;
+    final p = ui.Path()
+      ..moveTo(c.dx, c.dy - r)
+      ..quadraticBezierTo(c.dx + r * 0.20, c.dy - r * 0.20, c.dx + r, c.dy)
+      ..quadraticBezierTo(c.dx + r * 0.20, c.dy + r * 0.20, c.dx, c.dy + r)
+      ..quadraticBezierTo(c.dx - r * 0.20, c.dy + r * 0.20, c.dx - r, c.dy)
+      ..quadraticBezierTo(c.dx - r * 0.20, c.dy - r * 0.20, c.dx, c.dy - r)
+      ..close();
+    canvas.drawPath(
+      p,
+      ui.Paint()..color = const Color(0xFFFFF7C2).withValues(alpha: alpha),
+    );
+  }
+
   @override
   void render(ui.Canvas canvas) {
+    final impactT = resolvedImpactTime;
+    final flyDur = _flyDur;
+    final windUpEnd = flyDur + _windUpDur;
+
     // 1. Shockwave halo & debris after impact
-    if (_elapsed >= impactTime) {
-      final postT = ((_elapsed - impactTime) / 0.28).clamp(0.0, 1.0);
+    if (_elapsed >= impactT) {
+      final postT = ((_elapsed - impactT) / 0.30).clamp(0.0, 1.0);
       if (postT < 1.0) {
-        final r = cellSize * (0.42 + postT * 1.35);
+        final r = cellSize * (0.42 + postT * 1.40);
         final fade = (1.0 - postT).clamp(0.0, 1.0);
         if (_haloImg != null) {
           _additivePaint.colorFilter = UnityChannelMaskFilters.redChannelTint(
             debrisPrimary,
-            opacity: fade * 0.90,
+            opacity: fade * 0.88,
           );
           canvas.drawImageRect(
             _haloImg!,
@@ -2199,9 +2254,9 @@ class HammerSwingSmashVfx extends PositionComponent {
         }
         final ringPaint = ui.Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = (cellSize * 0.075 * fade).clamp(1.5, 6.0)
-          ..color = Colors.white.withValues(alpha: fade * 0.88);
-        canvas.drawCircle(ui.Offset.zero, r * 0.78, ringPaint);
+          ..strokeWidth = (cellSize * 0.072 * fade).clamp(1.5, 5.5)
+          ..color = Colors.white.withValues(alpha: fade * 0.86);
+        canvas.drawCircle(ui.Offset.zero, r * 0.80, ringPaint);
       }
 
       for (final d in _debris) {
@@ -2212,116 +2267,200 @@ class HammerSwingSmashVfx extends PositionComponent {
         canvas.translate(d.pos.dx, d.pos.dy);
         canvas.rotate(d.rotation);
         final rect = ui.RRect.fromRectAndRadius(
-          ui.Rect.fromCenter(center: ui.Offset.zero, width: r * 2.0, height: r * 1.45),
+          ui.Rect.fromCenter(
+            center: ui.Offset.zero,
+            width: r * 2.0,
+            height: r * 1.45,
+          ),
           ui.Radius.circular(r * 0.3),
         );
         canvas.drawRRect(
           rect,
-          ui.Paint()..color = d.color.withValues(alpha: t * 0.95),
+          ui.Paint()..color = d.color.withValues(alpha: t * 0.92),
         );
         canvas.restore();
       }
     }
 
-    // 2. Animated 3D Cartoon Mallet (wind-up -> rapid slam -> quick rebound & fade)
-    if (_elapsed <= 0.44) {
+    // 2. Animated 3D Mallet: Fly-up arc -> Wind-up lift -> High-speed slam -> Rebound & fade
+    if (_elapsed <= impactT + _reboundDur) {
+      final strikePivot = ui.Offset(cellSize * 0.60, cellSize * 0.38);
+      ui.Offset curPivot = strikePivot;
       double angleRad;
       double alpha = 1.0;
       double scale = 1.0;
-      if (_elapsed < impactTime * 0.45) {
-        // Quick wind-up back
-        final u = (_elapsed / (impactTime * 0.45)).clamp(0.0, 1.0);
-        angleRad = ui.lerpDouble(0.45, 0.92, Curves.easeOut.transform(u))!;
-        scale = ui.lerpDouble(0.82, 1.08, u)!;
-      } else if (_elapsed < impactTime) {
-        // High-speed slam down onto target
-        final u = ((_elapsed - impactTime * 0.45) / (impactTime * 0.55))
-            .clamp(0.0, 1.0);
-        angleRad = ui.lerpDouble(0.92, -0.48, Curves.easeInCubic.transform(u))!;
-        scale = ui.lerpDouble(1.08, 1.15, u)!;
+      double liftGlint = 0.0;
+
+      if (flyDur > 0.0 && _elapsed < flyDur) {
+        // Beat 1: Fly up cleanly from bottom Hammer HUD button to strike perch!
+        final rawU = (_elapsed / flyDur).clamp(0.0, 1.0);
+        final u = Curves.easeOutCubic.transform(rawU);
+        final startLocal = ui.Offset(
+          startPos!.x - position.x,
+          startPos!.y - position.y,
+        );
+        final ctrl = ui.Offset(
+          ui.lerpDouble(startLocal.dx, strikePivot.dx, 0.52)! + cellSize * 0.95,
+          math.min(startLocal.dy, strikePivot.dy) - cellSize * 1.05,
+        );
+        final om = 1.0 - u;
+        curPivot = ui.Offset(
+          om * om * startLocal.dx + 2 * om * u * ctrl.dx + u * u * strikePivot.dx,
+          om * om * startLocal.dy + 2 * om * u * ctrl.dy + u * u * strikePivot.dy,
+        );
+        angleRad = ui.lerpDouble(-0.45, 0.32, u)!;
+        scale = ui.lerpDouble(0.58, 1.15, u)!;
+
+        // Soft luminous flight trail dots along the upward curve
+        for (int k = 1; k <= 4; k++) {
+          final tu = (rawU - k * 0.055).clamp(0.0, 1.0);
+          if (tu <= 0.01) continue;
+          final eu = Curves.easeOutCubic.transform(tu);
+          final omu = 1.0 - eu;
+          final tp = ui.Offset(
+            omu * omu * startLocal.dx +
+                2 * omu * eu * ctrl.dx +
+                eu * eu * strikePivot.dx,
+            omu * omu * startLocal.dy +
+                2 * omu * eu * ctrl.dy +
+                eu * eu * strikePivot.dy,
+          );
+          final trailAlpha = ((1.0 - k / 5.0) * 0.42 * (1.0 - rawU * 0.35))
+              .clamp(0.0, 1.0);
+          canvas.drawCircle(
+            tp + ui.Offset(-cellSize * 0.14, -cellSize * 0.42),
+            (cellSize * (0.13 - k * 0.02)).clamp(2.0, 12.0),
+            ui.Paint()
+              ..color = const Color(0xFF7AF5FF).withValues(alpha: trailAlpha)
+              ..maskFilter = ui.MaskFilter.blur(
+                ui.BlurStyle.normal,
+                (cellSize * 0.06).clamp(1.5, 5.0),
+              ),
+          );
+        }
+      } else if (_elapsed < windUpEnd) {
+        // Beat 2: Dramatic lift UP & cock back with anticipation swell + golden head glint
+        final u = ((_elapsed - flyDur) / _windUpDur).clamp(0.0, 1.0);
+        final ease = Curves.easeOutCubic.transform(u);
+        curPivot = strikePivot + ui.Offset(cellSize * 0.14 * ease, -cellSize * 0.38 * ease);
+        angleRad = ui.lerpDouble(0.32, 1.14, ease)!;
+        scale = ui.lerpDouble(1.15, 1.32, ease)!;
+        liftGlint = math.sin(u * math.pi).clamp(0.0, 1.0);
+      } else if (_elapsed < impactT) {
+        // Beat 3: High-speed slam straight down onto block center!
+        final u = ((_elapsed - windUpEnd) / _slamDur).clamp(0.0, 1.0);
+        final ease = Curves.easeInExpo.transform(u);
+        curPivot = strikePivot +
+            ui.Offset(
+              ui.lerpDouble(cellSize * 0.14, -cellSize * 0.04, ease)!,
+              ui.lerpDouble(-cellSize * 0.38, cellSize * 0.08, ease)!,
+            );
+        angleRad = ui.lerpDouble(1.14, -0.52, ease)!;
+        scale = ui.lerpDouble(1.32, 1.18, ease)!;
       } else {
-        // Recoil bounce & smooth fade out
-        final u = ((_elapsed - impactTime) / (0.44 - impactTime)).clamp(0.0, 1.0);
-        angleRad = ui.lerpDouble(-0.48, 0.12, Curves.easeOutBack.transform(u))!;
-        scale = ui.lerpDouble(1.15, 0.90, u)!;
-        alpha = (1.0 - Curves.easeIn.transform(((u - 0.35) / 0.65).clamp(0.0, 1.0)))
+        // Beat 4: Elastic recoil bounce & graceful fade out
+        final u = ((_elapsed - impactT) / _reboundDur).clamp(0.0, 1.0);
+        final bounce = Curves.easeOutBack.transform(u);
+        curPivot = strikePivot +
+            ui.Offset(
+              ui.lerpDouble(-cellSize * 0.04, cellSize * 0.12, u)!,
+              ui.lerpDouble(cellSize * 0.08, -cellSize * 0.14, u)!,
+            );
+        angleRad = ui.lerpDouble(-0.52, 0.16, bounce)!;
+        scale = ui.lerpDouble(1.18, 0.88, u)!;
+        alpha = (1.0 -
+                Curves.easeIn.transform(((u - 0.36) / 0.64).clamp(0.0, 1.0)))
             .clamp(0.0, 1.0);
       }
 
-      final pivot = ui.Offset(cellSize * 0.58, cellSize * 0.38);
       canvas.save();
       if (alpha < 0.99) {
         canvas.saveLayer(
-          ui.Rect.fromCircle(center: ui.Offset.zero, radius: cellSize * 2.2),
+          ui.Rect.fromCircle(center: curPivot, radius: cellSize * 2.4),
           ui.Paint()..color = Color.fromRGBO(255, 255, 255, alpha),
         );
       }
-      canvas.translate(pivot.dx, pivot.dy);
+      canvas.translate(curPivot.dx, curPivot.dy);
       canvas.rotate(angleRad);
       canvas.scale(scale, scale);
 
-      final s = cellSize * 0.96;
-      // Handle
-      final handleRect = ui.RRect.fromRectAndRadius(
-        ui.Rect.fromLTWH(-s * 0.11, -s * 0.85, s * 0.22, s * 0.98),
-        ui.Radius.circular(s * 0.10),
-      );
-      canvas.drawRRect(
-        handleRect,
-        ui.Paint()
-          ..shader = ui.Gradient.linear(
-            ui.Offset(-s * 0.11, 0),
-            ui.Offset(s * 0.11, 0),
-            const [Color(0xFF9C4F19), Color(0xFFE6943E), Color(0xFF7B380D)],
-            const [0.0, 0.45, 1.0],
-          ),
-      );
-      canvas.drawRRect(
-        handleRect,
-        ui.Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = (s * 0.045).clamp(1.5, 4.0)
-          ..color = const Color(0xFF451E05),
-      );
-
-      // Metallic Crimson-Gold Mallet Head
-      final headRect = ui.RRect.fromRectAndRadius(
-        ui.Rect.fromCenter(
-          center: ui.Offset(-s * 0.05, -s * 0.90),
-          width: s * 0.86,
-          height: s * 0.46,
-        ),
-        ui.Radius.circular(s * 0.14),
-      );
-      canvas.drawRRect(
-        headRect,
-        ui.Paint()
-          ..shader = ui.Gradient.linear(
-            ui.Offset(0, -s * 1.13),
-            ui.Offset(0, -s * 0.67),
-            const [Color(0xFFFFE066), Color(0xFFFF8811), Color(0xFFD63218)],
-            const [0.0, 0.42, 1.0],
-          ),
-      );
-      // Specular gleam bar
-      canvas.drawRRect(
-        ui.RRect.fromRectAndRadius(
+      final s = cellSize * 0.98;
+      if (_hammerImg != null) {
+        final img = _hammerImg!;
+        canvas.save();
+        canvas.translate(-s * 0.20, -s * 0.64);
+        canvas.scale(-1.0, 1.0);
+        canvas.rotate(0.45);
+        final drawSize = s * 1.40;
+        canvas.drawImageRect(
+          img,
+          ui.Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
           ui.Rect.fromCenter(
-            center: ui.Offset(-s * 0.05, -s * 1.02),
-            width: s * 0.62,
-            height: s * 0.10,
+            center: ui.Offset.zero,
+            width: drawSize,
+            height: drawSize,
           ),
-          ui.Radius.circular(s * 0.05),
-        ),
-        ui.Paint()..color = Colors.white.withValues(alpha: 0.62),
-      );
-      canvas.drawRRect(
-        headRect,
-        ui.Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = (s * 0.05).clamp(1.8, 4.5)
-          ..color = const Color(0xFF5A1606),
-      );
+          ui.Paint()..filterQuality = FilterQuality.high,
+        );
+        canvas.restore();
+      } else {
+        final handleRect = ui.RRect.fromRectAndRadius(
+          ui.Rect.fromLTWH(-s * 0.11, -s * 0.85, s * 0.22, s * 0.98),
+          ui.Radius.circular(s * 0.10),
+        );
+        canvas.drawRRect(
+          handleRect,
+          ui.Paint()
+            ..shader = ui.Gradient.linear(
+              ui.Offset(-s * 0.11, 0),
+              ui.Offset(s * 0.11, 0),
+              const [Color(0xFF9C4F19), Color(0xFFE6943E), Color(0xFF7B380D)],
+              const [0.0, 0.45, 1.0],
+            ),
+        );
+        canvas.drawRRect(
+          handleRect,
+          ui.Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (s * 0.045).clamp(1.5, 4.0)
+            ..color = const Color(0xFF451E05),
+        );
+
+        final headRect = ui.RRect.fromRectAndRadius(
+          ui.Rect.fromCenter(
+            center: ui.Offset(-s * 0.05, -s * 0.90),
+            width: s * 0.86,
+            height: s * 0.46,
+          ),
+          ui.Radius.circular(s * 0.14),
+        );
+        canvas.drawRRect(
+          headRect,
+          ui.Paint()
+            ..shader = ui.Gradient.linear(
+              ui.Offset(0, -s * 1.13),
+              ui.Offset(0, -s * 0.67),
+              const [Color(0xFFFFE066), Color(0xFFFF8811), Color(0xFFD63218)],
+              const [0.0, 0.42, 1.0],
+            ),
+        );
+        canvas.drawRRect(
+          headRect,
+          ui.Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (s * 0.05).clamp(1.8, 4.5)
+            ..color = const Color(0xFF5A1606),
+        );
+      }
+
+      if (liftGlint > 0.05) {
+        _drawFourPointGlint(
+          canvas,
+          ui.Offset(-s * 0.24, -s * 1.04),
+          s * 0.26 * liftGlint,
+          liftGlint * 0.92,
+        );
+      }
 
       if (alpha < 0.99) {
         canvas.restore();
@@ -2330,5 +2469,898 @@ class HammerSwingSmashVfx extends PositionComponent {
     }
   }
 }
+
+/// Visual split-in-half crack & shatter VFX spawned at the exact instant the Hammer
+/// smashes a block into two `1x1` halves:
+/// - Bright cleavage crack line slicing through the block center
+/// - Two colored glass-liquid shell halves physically cracking open & separating outward
+/// - Translucent water droplets & crystal glass shards bursting from the seam
+class HammerSplitCrackVfx extends PositionComponent {
+  final double blockWidth;
+  final double blockHeight;
+  final double cellSize;
+  final bool splitHorizontal;
+  final Color topBright;
+  final Color bottomLip;
+  final Color rimHighlight;
+
+  final List<_VfxParticle> _shards = [];
+  double _elapsed = 0.0;
+  static const double _duration = 0.48;
+
+  HammerSplitCrackVfx({
+    required Vector2 centerPos,
+    required this.blockWidth,
+    required this.blockHeight,
+    required this.cellSize,
+    required this.splitHorizontal,
+    required this.topBright,
+    required this.bottomLip,
+    required this.rimHighlight,
+  }) : super(position: centerPos, priority: 222) {
+    final rng = math.Random();
+    for (int i = 0; i < 16; i++) {
+      final isGlass = i % 3 == 0;
+      final baseAngle = splitHorizontal
+          ? (i.isEven ? 0.0 : math.pi) + (rng.nextDouble() - 0.5) * 1.35
+          : (i.isEven ? math.pi * 0.5 : -math.pi * 0.5) +
+              (rng.nextDouble() - 0.5) * 1.35;
+      final speed = cellSize * (1.4 + rng.nextDouble() * 2.6);
+      _shards.add(
+        _VfxParticle(
+          pos: ui.Offset(
+            (rng.nextDouble() - 0.5) * (splitHorizontal ? cellSize * 0.18 : blockWidth * 0.5),
+            (rng.nextDouble() - 0.5) * (splitHorizontal ? blockHeight * 0.5 : cellSize * 0.18),
+          ),
+          vel: ui.Offset(
+            math.cos(baseAngle) * speed,
+            math.sin(baseAngle) * speed - cellSize * 0.85,
+          ),
+          size: cellSize * (isGlass ? (0.14 + rng.nextDouble() * 0.14) : (0.10 + rng.nextDouble() * 0.10)),
+          maxLife: 0.28 + rng.nextDouble() * 0.18,
+          color: isGlass ? Colors.white : (i % 2 == 0 ? topBright : rimHighlight),
+          gravity: cellSize * 7.5,
+          rotation: rng.nextDouble() * math.pi * 2.0,
+          angularVel: (rng.nextDouble() - 0.5) * 15.0,
+        ),
+      );
+    }
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _elapsed += dt;
+    final damp = math.pow(0.94, dt * 60.0).toDouble();
+    for (final s in _shards) {
+      s.life -= dt;
+      s.vel = ui.Offset(s.vel.dx * damp, s.vel.dy + s.gravity * dt);
+      s.pos += s.vel * dt;
+      s.rotation += s.angularVel * dt;
+    }
+    if (_elapsed >= _duration) {
+      removeFromParent();
+    }
+  }
+
+  ui.Path _buildJaggedHalfPath({required bool firstHalf}) {
+    final hw = math.max(cellSize * 0.44, blockWidth * 0.46);
+    final hh = math.max(cellSize * 0.44, blockHeight * 0.46);
+    final jag = cellSize * 0.085;
+    final p = ui.Path();
+    if (splitHorizontal) {
+      final outerX = firstHalf ? -hw : hw;
+      p.moveTo(0, -hh);
+      p.lineTo(jag * 0.8, -hh * 0.50);
+      p.lineTo(-jag * 0.9, 0);
+      p.lineTo(jag * 0.7, hh * 0.50);
+      p.lineTo(0, hh);
+      p.lineTo(outerX, hh);
+      p.lineTo(outerX, -hh);
+      p.close();
+    } else {
+      final outerY = firstHalf ? -hh : hh;
+      p.moveTo(-hw, 0);
+      p.lineTo(-hw * 0.50, jag * 0.8);
+      p.lineTo(0, -jag * 0.9);
+      p.lineTo(hw * 0.50, jag * 0.7);
+      p.lineTo(hw, 0);
+      p.lineTo(hw, outerY);
+      p.lineTo(-hw, outerY);
+      p.close();
+    }
+    return p;
+  }
+
+  @override
+  void render(ui.Canvas canvas) {
+    final t = (_elapsed / _duration).clamp(0.0, 1.0);
+
+    // 1. Two glass-liquid block halves physically cracking open & separating outward
+    final halfT = (_elapsed / 0.34).clamp(0.0, 1.0);
+    if (halfT < 1.0) {
+      final ease = Curves.easeOutCubic.transform(halfT);
+      final alpha = (1.0 - Curves.easeIn.transform(halfT)).clamp(0.0, 1.0);
+      final sep = cellSize * 0.52 * ease;
+      final rot = 0.28 * ease;
+      final sc = ui.lerpDouble(1.0, 0.74, ease)!;
+      final halfW = math.max(cellSize * 0.44, blockWidth * 0.46);
+      final halfH = math.max(cellSize * 0.44, blockHeight * 0.46);
+
+      for (final firstHalf in [true, false]) {
+        final sign = firstHalf ? -1.0 : 1.0;
+        final shift = splitHorizontal
+            ? ui.Offset(sign * sep, -cellSize * 0.06 * math.sin(halfT * math.pi))
+            : ui.Offset(0, sign * sep);
+        final halfPath = _buildJaggedHalfPath(firstHalf: firstHalf);
+
+        canvas.save();
+        canvas.translate(shift.dx, shift.dy);
+        canvas.rotate(sign * rot);
+        canvas.scale(sc, sc);
+        canvas.drawPath(
+          halfPath,
+          ui.Paint()
+            ..shader = ui.Gradient.linear(
+              ui.Offset(0, -halfH),
+              ui.Offset(0, halfH),
+              [
+                topBright.withValues(alpha: alpha * 0.82),
+                bottomLip.withValues(alpha: alpha * 0.86),
+              ],
+            ),
+        );
+        canvas.drawPath(
+          halfPath,
+          ui.Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeJoin = StrokeJoin.round
+            ..strokeWidth = (cellSize * 0.045).clamp(1.6, 3.8)
+            ..color = Colors.white.withValues(alpha: alpha * 0.85),
+        );
+        canvas.restore();
+      }
+
+      // 2. Luminous white-gold fracture crack seam flash right down the center
+      final crackT = (_elapsed / 0.18).clamp(0.0, 1.0);
+      if (crackT < 1.0) {
+        final crackAlpha = (1.0 - crackT).clamp(0.0, 1.0);
+        final jag = cellSize * 0.085;
+        final seam = ui.Path();
+        if (splitHorizontal) {
+          seam
+            ..moveTo(0, -halfH * 1.08)
+            ..lineTo(jag * 0.8, -halfH * 0.50)
+            ..lineTo(-jag * 0.9, 0)
+            ..lineTo(jag * 0.7, halfH * 0.50)
+            ..lineTo(0, halfH * 1.08);
+        } else {
+          seam
+            ..moveTo(-halfW * 1.08, 0)
+            ..lineTo(-halfW * 0.50, jag * 0.8)
+            ..lineTo(0, -jag * 0.9)
+            ..lineTo(halfW * 0.50, jag * 0.7)
+            ..lineTo(halfW * 1.08, 0);
+        }
+        canvas.drawPath(
+          seam,
+          ui.Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..strokeWidth = (cellSize * 0.14 * crackAlpha).clamp(2.5, 11.0)
+            ..color = const Color(0xFFFFE57F).withValues(alpha: crackAlpha * 0.78)
+            ..maskFilter = ui.MaskFilter.blur(
+              ui.BlurStyle.normal,
+              (cellSize * 0.06).clamp(1.5, 5.0),
+            ),
+        );
+        canvas.drawPath(
+          seam,
+          ui.Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..strokeWidth = (cellSize * 0.055 * crackAlpha).clamp(1.4, 4.5)
+            ..color = Colors.white.withValues(alpha: crackAlpha),
+        );
+      }
+    }
+
+    // 3. Translucent liquid droplets & triangular crystal glass shards
+    for (int i = 0; i < _shards.length; i++) {
+      final s = _shards[i];
+      if (s.life <= 0) continue;
+      final st = (s.life / s.maxLife).clamp(0.0, 1.0);
+      final r = s.size * (0.45 + 0.55 * st) * 0.5;
+      canvas.save();
+      canvas.translate(s.pos.dx, s.pos.dy);
+      canvas.rotate(s.rotation);
+      if (i % 3 == 0) {
+        final tri = ui.Path()
+          ..moveTo(0, -r * 1.2)
+          ..lineTo(r * 0.95, r * 0.85)
+          ..lineTo(-r * 0.85, r * 0.65)
+          ..close();
+        canvas.drawPath(
+          tri,
+          ui.Paint()..color = Colors.white.withValues(alpha: st * 0.88),
+        );
+      } else {
+        canvas.drawCircle(
+          ui.Offset.zero,
+          r,
+          ui.Paint()..color = s.color.withValues(alpha: st * 0.88),
+        );
+        canvas.drawCircle(
+          ui.Offset(-r * 0.28, -r * 0.28),
+          r * 0.30,
+          ui.Paint()..color = Colors.white.withValues(alpha: st * 0.75),
+        );
+      }
+      canvas.restore();
+    }
+
+    if (t < 0.75) {
+      final rt = (t / 0.75).clamp(0.0, 1.0);
+      final ringR = cellSize * (0.35 + rt * 1.05);
+      canvas.drawCircle(
+        ui.Offset.zero,
+        ringR,
+        ui.Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (cellSize * 0.042 * (1.0 - rt)).clamp(1.0, 3.6)
+          ..color = topBright.withValues(alpha: (1.0 - rt) * 0.55),
+      );
+    }
+  }
+}
+
+/// Shared visual color palette for `Key & Lock` blocks (`gold`, `ruby`, `emerald`).
+({Color bright, Color mid, Color dark, Color outline}) keyLockColorsFor(
+  String? colorName,
+) {
+  switch ((colorName ?? 'gold').toLowerCase()) {
+    case 'ruby':
+    case 'red':
+      return (
+        bright: const Color(0xFFFF7A93),
+        mid: const Color(0xFFE8254B),
+        dark: const Color(0xFF940D2A),
+        outline: const Color(0xFF3E0512),
+      );
+    case 'emerald':
+    case 'green':
+      return (
+        bright: const Color(0xFF64FFB0),
+        mid: const Color(0xFF10B96B),
+        dark: const Color(0xFF066E3E),
+        outline: const Color(0xFF042D1A),
+      );
+    case 'gold':
+    default:
+      return (
+        bright: const Color(0xFFFFF08A),
+        mid: const Color(0xFFFFB818),
+        dark: const Color(0xFFB36B00),
+        outline: const Color(0xFF452400),
+      );
+  }
+}
+
+/// Floating emerald `+Ns` bonus time callout spawned when a Clock Bonus Block merges.
+class ClockBonusCalloutVfx extends PositionComponent {
+  final int bonusSeconds;
+  final double cellSize;
+  double _elapsed = 0.0;
+  static const double _duration = 0.95;
+
+  ClockBonusCalloutVfx({
+    required Vector2 anchorWorld,
+    required this.bonusSeconds,
+    required this.cellSize,
+  }) : super(
+          position: anchorWorld.clone(),
+          priority: 126,
+        );
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _elapsed += dt;
+    if (_elapsed >= _duration) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final t = (_elapsed / _duration).clamp(0.0, 1.0);
+    final rise = Curves.easeOutCubic.transform(t) * cellSize * 0.95;
+    final popScale = t < 0.16
+        ? Curves.easeOutBack.transform((t / 0.16).clamp(0.0, 1.0))
+        : 1.0;
+    final alpha = t > 0.72 ? (1.0 - (t - 0.72) / 0.28).clamp(0.0, 1.0) : 1.0;
+    if (alpha <= 0.01) return;
+
+    canvas.save();
+    canvas.translate(0, -rise);
+    canvas.scale(popScale, popScale);
+
+    final label = '+${bonusSeconds}s';
+    final fontSize = (cellSize * 0.42).clamp(16.0, 42.0);
+    final strokeW = (fontSize * 0.24).clamp(2.5, 8.5);
+    final watchDiam = (cellSize * 0.68).clamp(26.0, 68.0);
+    final baseStyle = TextStyle(
+      fontFamily: 'PoetsenOne',
+      fontSize: fontSize,
+      fontWeight: FontWeight.w400,
+      height: 1.0,
+      letterSpacing: -fontSize * 0.02,
+    );
+
+    final tpOutline = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: baseStyle.copyWith(
+          foreground: ui.Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = strokeW
+            ..strokeJoin = StrokeJoin.round
+            ..color = const Color(0xFF033426),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final tpFill = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: baseStyle.copyWith(
+          foreground: ui.Paint()
+            ..shader = ui.Gradient.linear(
+              Offset.zero,
+              Offset(0, fontSize),
+              const [Color(0xFFFFFFFF), Color(0xFFA7F3D0)],
+            ),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final gap = watchDiam * 0.08;
+    final totalW = watchDiam + gap + tpFill.width;
+    final left = -totalW * 0.5;
+
+    if (alpha < 0.995) {
+      canvas.saveLayer(
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: totalW + watchDiam,
+          height: watchDiam * 2.0,
+        ),
+        ui.Paint()..color = Colors.white.withValues(alpha: alpha),
+      );
+    }
+
+    drawEmeraldStopwatchIcon(
+      canvas,
+      Offset(left + watchDiam * 0.5, -watchDiam * 0.03),
+      watchDiam,
+    );
+    final textOrigin = Offset(left + watchDiam + gap, -tpFill.height * 0.48);
+    tpOutline.paint(canvas, textOrigin + Offset(0, fontSize * 0.06));
+    tpOutline.paint(canvas, textOrigin);
+    tpFill.paint(canvas, textOrigin);
+
+    if (alpha < 0.995) {
+      canvas.restore();
+    }
+    canvas.restore();
+  }
+}
+
+/// Mystic sparkle burst spawned when a `?` Mystery Block flips open after an adjacent merge.
+class MysteryRevealVfx extends PositionComponent {
+  final Color accentColor;
+  final double cellSize;
+  double _elapsed = 0.0;
+  static const double _duration = 0.46;
+
+  MysteryRevealVfx({
+    required Vector2 centerPos,
+    required this.accentColor,
+    required this.cellSize,
+  }) : super(
+          position: centerPos.clone(),
+          priority: 120,
+        );
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _elapsed += dt;
+    if (_elapsed >= _duration) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final t = (_elapsed / _duration).clamp(0.0, 1.0);
+    final ease = Curves.easeOutCubic.transform(t);
+    final alpha = (1.0 - t).clamp(0.0, 1.0);
+    if (alpha <= 0.01) return;
+
+    final ringR = cellSize * (0.24 + 0.68 * ease);
+    canvas.drawCircle(
+      Offset.zero,
+      ringR,
+      ui.Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.08 * (1.0 - t * 0.65)).clamp(1.5, 8.0)
+        ..color = const Color(0xFFD8B4FE).withValues(alpha: alpha * 0.9),
+    );
+
+    for (int i = 0; i < 8; i++) {
+      final angle = (math.pi * 2.0 * i) / 8.0 + t * 0.8;
+      final dist = cellSize * (0.18 + 0.62 * ease);
+      final pos = Offset(math.cos(angle) * dist, math.sin(angle) * dist);
+      final r = cellSize * 0.075 * (1.0 - t * 0.6);
+      canvas.drawCircle(
+        pos,
+        r,
+        ui.Paint()
+          ..color = (i.isEven ? accentColor : const Color(0xFFFFF08A))
+              .withValues(alpha: alpha),
+      );
+    }
+  }
+}
+
+/// Animated colored Key flying along a curved arc from a merged Key Block to its
+/// matching locked block, bursting into unlock sparks upon impact!
+class FlyingKeyUnlockVfx extends PositionComponent {
+  final Vector2 startWorld;
+  final Vector2 endWorld;
+  final String keyColor;
+  final double cellSize;
+  double _elapsed = 0.0;
+  static const double _flightDur = 0.34;
+  static const double _burstDur = 0.24;
+
+  FlyingKeyUnlockVfx({
+    required this.startWorld,
+    required this.endWorld,
+    required this.keyColor,
+    required this.cellSize,
+  }) : super(priority: 125);
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _elapsed += dt;
+    if (_elapsed >= _flightDur + _burstDur) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final c = keyLockColorsFor(keyColor);
+    if (_elapsed <= _flightDur) {
+      final t = (_elapsed / _flightDur).clamp(0.0, 1.0);
+      final eased = Curves.easeInOutCubic.transform(t);
+      final mid = (startWorld + endWorld) * 0.5 + Vector2(0, -cellSize * 0.95);
+      final om = 1.0 - eased;
+      final pos =
+          startWorld * (om * om) + mid * (2.0 * om * eased) + endWorld * (eased * eased);
+
+      // Trail glow dots
+      for (int i = 1; i <= 3; i++) {
+        final tt = (eased - i * 0.06).clamp(0.0, 1.0);
+        final omm = 1.0 - tt;
+        final tp =
+            startWorld * (omm * omm) + mid * (2.0 * omm * tt) + endWorld * (tt * tt);
+        canvas.drawCircle(
+          Offset(tp.x, tp.y),
+          cellSize * (0.11 - i * 0.02),
+          ui.Paint()..color = c.bright.withValues(alpha: 0.45 - i * 0.1),
+        );
+      }
+
+      canvas.save();
+      canvas.translate(pos.x, pos.y);
+      canvas.rotate(-0.4 + eased * math.pi * 2.0);
+      final kScale = 1.0 + math.sin(eased * math.pi) * 0.38;
+      canvas.scale(kScale, kScale);
+      drawVectorKeyIcon(canvas, Offset.zero, cellSize * 0.46, keyColor);
+      canvas.restore();
+    } else {
+      final bt = ((_elapsed - _flightDur) / _burstDur).clamp(0.0, 1.0);
+      final ease = Curves.easeOutCubic.transform(bt);
+      final alpha = (1.0 - bt).clamp(0.0, 1.0);
+      canvas.save();
+      canvas.translate(endWorld.x, endWorld.y);
+      canvas.drawCircle(
+        Offset.zero,
+        cellSize * (0.20 + 0.65 * ease),
+        ui.Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (cellSize * 0.09 * (1.0 - bt * 0.6)).clamp(1.6, 8.0)
+          ..color = c.bright.withValues(alpha: alpha),
+      );
+      for (int i = 0; i < 8; i++) {
+        final ang = (math.pi * 2.0 * i) / 8.0;
+        final dist = cellSize * (0.16 + 0.58 * ease);
+        canvas.drawCircle(
+          Offset(math.cos(ang) * dist, math.sin(ang) * dist),
+          cellSize * 0.075 * (1.0 - bt * 0.5),
+          ui.Paint()..color = (i.isEven ? c.bright : Colors.white).withValues(alpha: alpha),
+        );
+      }
+      canvas.restore();
+    }
+  }
+}
+
+/// Shared crisp glossy vector Key icon used on Key Blocks, FlyingKeyUnlockVfx, and Unlock Dialog.
+void drawVectorKeyIcon(
+  Canvas canvas,
+  Offset center,
+  double size,
+  String? colorName,
+) {
+  final c = keyLockColorsFor(colorName);
+  canvas.save();
+  canvas.translate(center.dx, center.dy);
+  canvas.rotate(-0.45);
+
+  final bowR = size * 0.25;
+  final bowCenter = Offset(-size * 0.22, 0);
+  final shaftStart = Offset(-size * 0.02, 0);
+  final shaftEnd = Offset(size * 0.38, 0);
+  final strokeW = (size * 0.14).clamp(2.0, 14.0);
+  final outlineW = strokeW + (size * 0.10).clamp(1.8, 10.0);
+
+  void paintKey(ui.Paint p, {bool fillBow = false}) {
+    canvas.drawCircle(bowCenter, bowR, p);
+    canvas.drawLine(shaftStart, shaftEnd, p);
+    canvas.drawLine(
+      Offset(size * 0.18, 0),
+      Offset(size * 0.18, size * 0.16),
+      p,
+    );
+    canvas.drawLine(
+      Offset(size * 0.34, 0),
+      Offset(size * 0.34, size * 0.20),
+      p,
+    );
+    if (fillBow) {
+      canvas.drawCircle(
+        bowCenter,
+        bowR * 0.44,
+        ui.Paint()..color = c.outline,
+      );
+    }
+  }
+
+  // Dark outline
+  paintKey(
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = outlineW
+      ..color = c.outline,
+  );
+  // Metallic colored body
+  paintKey(
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = strokeW
+      ..color = c.mid,
+  );
+  // Top-left bright specular highlight
+  canvas.drawCircle(
+    bowCenter + Offset(-bowR * 0.25, -bowR * 0.25),
+    bowR * 0.28,
+    ui.Paint()..color = c.bright,
+  );
+  canvas.drawLine(
+    shaftStart + Offset(0, -strokeW * 0.22),
+    shaftEnd + Offset(0, -strokeW * 0.22),
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = (strokeW * 0.32).clamp(1.0, 4.0)
+      ..color = c.bright,
+  );
+  canvas.restore();
+}
+
+/// Draws a lush 3D glossy emerald-and-ivory Stopwatch charm matching the game's
+/// crystal-candy art style (`Icon_Clock.png` / `IceLock.png`), shared across
+/// `PieceComponent`, `MechanicUnlockDialog`, and `ClockBonusFlyVfx`.
+void drawEmeraldStopwatchIcon(
+  Canvas canvas,
+  Offset center,
+  double diameter, {
+  bool drawDropShadow = true,
+}) {
+  if (diameter <= 2.0) return;
+  final r = diameter * 0.42;
+  // Slightly lower dial center so the top plunger crown fits snugly inside `diameter`
+  final dialC = Offset(center.dx, center.dy + diameter * 0.065);
+  final outlineW = (r * 0.16).clamp(1.1, 4.2);
+
+  canvas.save();
+
+  // 1. Soft grounded drop shadow underneath the stopwatch body
+  if (drawDropShadow) {
+    canvas.drawCircle(
+      dialC + Offset(0, r * 0.16),
+      r * 1.04,
+      ui.Paint()
+        ..color = const Color(0x6602241B)
+        ..maskFilter = ui.MaskFilter.blur(
+          ui.BlurStyle.normal,
+          (r * 0.18).clamp(1.0, 5.0),
+        ),
+    );
+  }
+
+  // 2. Angled side stopwatch pusher (at ~42 deg clockwise from 12 o'clock)
+  canvas.save();
+  canvas.translate(dialC.dx, dialC.dy);
+  canvas.rotate(0.74);
+  final lugRect = RRect.fromRectAndRadius(
+    Rect.fromCenter(
+      center: Offset(0, -r * 1.08),
+      width: r * 0.34,
+      height: r * 0.28,
+    ),
+    Radius.circular(r * 0.09),
+  );
+  canvas.drawRRect(
+    lugRect,
+    ui.Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(-r * 0.18, -r * 1.22),
+        Offset(r * 0.18, -r * 0.94),
+        const [Color(0xFFFDE68A), Color(0xFF10B981), Color(0xFF047857)],
+        const [0.0, 0.45, 1.0],
+      ),
+  );
+  canvas.drawRRect(
+    lugRect,
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (outlineW * 0.78).clamp(0.9, 3.0)
+      ..color = const Color(0xFF032D23),
+  );
+  canvas.restore();
+
+  // 3. Top crown stem + plump rounded plunger button
+  final stemRect = RRect.fromRectAndRadius(
+    Rect.fromCenter(
+      center: Offset(dialC.dx, dialC.dy - r * 1.03),
+      width: r * 0.32,
+      height: r * 0.30,
+    ),
+    Radius.circular(r * 0.06),
+  );
+  canvas.drawRRect(
+    stemRect,
+    ui.Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(dialC.dx - r * 0.16, dialC.dy - r * 1.15),
+        Offset(dialC.dx + r * 0.16, dialC.dy - r * 1.15),
+        const [Color(0xFF6EE7B7), Color(0xFF059669), Color(0xFF064E3B)],
+        const [0.0, 0.55, 1.0],
+      ),
+  );
+  canvas.drawRRect(
+    stemRect,
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (outlineW * 0.78).clamp(0.9, 3.0)
+      ..color = const Color(0xFF032D23),
+  );
+
+  final capRect = RRect.fromRectAndRadius(
+    Rect.fromCenter(
+      center: Offset(dialC.dx, dialC.dy - r * 1.24),
+      width: r * 0.62,
+      height: r * 0.28,
+    ),
+    Radius.circular(r * 0.14),
+  );
+  canvas.drawRRect(
+    capRect,
+    ui.Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(dialC.dx, capRect.top),
+        Offset(dialC.dx, capRect.bottom),
+        const [Color(0xFFFEF08A), Color(0xFFF59E0B)],
+      ),
+  );
+  // Specular glint on golden top crown button
+  canvas.drawRRect(
+    RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(dialC.dx - r * 0.06, dialC.dy - r * 1.29),
+        width: r * 0.34,
+        height: r * 0.08,
+      ),
+      Radius.circular(r * 0.04),
+    ),
+    ui.Paint()..color = const Color(0xCCFFFFFF),
+  );
+  canvas.drawRRect(
+    capRect,
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (outlineW * 0.82).clamp(0.9, 3.2)
+      ..color = const Color(0xFF032D23),
+  );
+
+  // 4. Sculpted 3D emerald bezel casing
+  canvas.drawCircle(
+    dialC,
+    r,
+    ui.Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(dialC.dx - r * 0.35, dialC.dy - r),
+        Offset(dialC.dx + r * 0.35, dialC.dy + r),
+        const [
+          Color(0xFFA7F3D0),
+          Color(0xFF22E59B),
+          Color(0xFF059669),
+          Color(0xFF046347),
+        ],
+        const [0.0, 0.28, 0.72, 1.0],
+      ),
+  );
+
+  // Glossy top-left outer rim specular highlight arc
+  canvas.drawArc(
+    Rect.fromCircle(center: dialC, radius: r * 0.90),
+    -math.pi * 0.86,
+    math.pi * 0.56,
+    false,
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = (r * 0.11).clamp(0.9, 3.0)
+      ..color = const Color(0xB8FFFFFF),
+  );
+
+  // Crisp deep-emerald outer contour
+  canvas.drawCircle(
+    dialC,
+    r,
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = outlineW
+      ..color = const Color(0xFF032D23),
+  );
+
+  // 5. Recessed luminous warm-ivory dial face (high contrast even on green blocks!)
+  final dialR = r * 0.73;
+  canvas.drawCircle(
+    dialC,
+    dialR,
+    ui.Paint()
+      ..shader = ui.Gradient.radial(
+        Offset(dialC.dx - dialR * 0.18, dialC.dy - dialR * 0.22),
+        dialR * 1.25,
+        const [Color(0xFFFFFFFF), Color(0xFFF2FDF8), Color(0xFFCAEFE0)],
+        const [0.0, 0.65, 1.0],
+      ),
+  );
+
+  // Subtle inner bezel cast shadow around top edge of dial
+  canvas.drawArc(
+    Rect.fromCircle(center: dialC, radius: dialR * 0.94),
+    -math.pi * 0.92,
+    math.pi * 0.84,
+    false,
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (dialR * 0.14).clamp(0.8, 3.0)
+      ..color = const Color(0x3304523D),
+  );
+
+  // Vibrant emerald 15-second bonus wedge (12 o'clock -> 3 o'clock)
+  final wedgePath = ui.Path()
+    ..moveTo(dialC.dx, dialC.dy)
+    ..arcTo(
+      Rect.fromCircle(center: dialC, radius: dialR * 0.82),
+      -math.pi * 0.5,
+      math.pi * 0.52,
+      false,
+    )
+    ..close();
+  canvas.drawPath(
+    wedgePath,
+    ui.Paint()
+      ..shader = ui.Gradient.radial(
+        dialC,
+        dialR * 0.85,
+        const [Color(0xBB34D399), Color(0xDD10B981)],
+      ),
+  );
+
+  // Crisp cardinal dial tick dots (12, 3, 6, 9)
+  final tickR = (dialR * 0.085).clamp(0.7, 2.2);
+  final tickDist = dialR * 0.77;
+  final tickPaint = ui.Paint()..color = const Color(0xFF0F766E);
+  for (int i = 0; i < 4; i++) {
+    final a = i * math.pi * 0.5;
+    canvas.drawCircle(
+      dialC + Offset(math.cos(a) * tickDist, math.sin(a) * tickDist),
+      tickR,
+      tickPaint,
+    );
+  }
+
+  // Bold rounded clock hands (12 o'clock & ~3 o'clock)
+  final handPaint = ui.Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..strokeWidth = (dialR * 0.19).clamp(1.1, 3.8)
+    ..color = const Color(0xFF043B2E);
+  canvas.drawLine(dialC, dialC + Offset(0, -dialR * 0.56), handPaint);
+  canvas.drawLine(
+    dialC,
+    dialC + Offset(dialR * 0.45, -dialR * 0.06),
+    handPaint..strokeWidth = (dialR * 0.16).clamp(1.0, 3.2),
+  );
+
+  // Golden center pin dot
+  canvas.drawCircle(
+    dialC,
+    (dialR * 0.16).clamp(1.1, 3.4),
+    ui.Paint()..color = const Color(0xFF043B2E),
+  );
+  canvas.drawCircle(
+    dialC,
+    (dialR * 0.10).clamp(0.7, 2.2),
+    ui.Paint()..color = const Color(0xFFFDE047),
+  );
+
+  // Inner dial crisp ring
+  canvas.drawCircle(
+    dialC,
+    dialR,
+    ui.Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (outlineW * 0.52).clamp(0.7, 2.0)
+      ..color = const Color(0xAA04523D),
+  );
+
+  // Glossy curved crystal-glass dome sheen across top-left of watch face
+  canvas.save();
+  canvas.clipPath(ui.Path()..addOval(Rect.fromCircle(center: dialC, radius: dialR * 0.96)));
+  canvas.drawOval(
+    Rect.fromCenter(
+      center: Offset(dialC.dx - dialR * 0.12, dialC.dy - dialR * 0.52),
+      width: dialR * 1.48,
+      height: dialR * 0.78,
+    ),
+    ui.Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(dialC.dx, dialC.dy - dialR * 0.92),
+        Offset(dialC.dx, dialC.dy - dialR * 0.10),
+        const [Color(0x99FFFFFF), Color(0x00FFFFFF)],
+      ),
+  );
+  canvas.restore();
+
+  canvas.restore();
+}
+
+
 
 

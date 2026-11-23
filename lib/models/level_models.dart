@@ -8,26 +8,69 @@ enum MovementConstraint {
   free,
   horizontalOnly,
   verticalOnly,
-  pinned;
+  pinned,
+  leftOnly,
+  rightOnly,
+  upOnly,
+  downOnly;
 
-  bool get allowsHorizontal =>
-      this == MovementConstraint.free || this == MovementConstraint.horizontalOnly;
+  bool get allowsLeft =>
+      this == MovementConstraint.free ||
+      this == MovementConstraint.horizontalOnly ||
+      this == MovementConstraint.leftOnly;
 
-  bool get allowsVertical =>
-      this == MovementConstraint.free || this == MovementConstraint.verticalOnly;
+  bool get allowsRight =>
+      this == MovementConstraint.free ||
+      this == MovementConstraint.horizontalOnly ||
+      this == MovementConstraint.rightOnly;
+
+  bool get allowsUp =>
+      this == MovementConstraint.free ||
+      this == MovementConstraint.verticalOnly ||
+      this == MovementConstraint.upOnly;
+
+  bool get allowsDown =>
+      this == MovementConstraint.free ||
+      this == MovementConstraint.verticalOnly ||
+      this == MovementConstraint.downOnly;
+
+  bool get allowsHorizontal => allowsLeft || allowsRight;
+
+  bool get allowsVertical => allowsUp || allowsDown;
 
   bool get canMove => allowsHorizontal || allowsVertical;
 
   bool get isPinned => this == MovementConstraint.pinned;
 
-  /// Exact match of `MovementComponent.ResolveMergedWith`:
-  /// Combines allowed movement axes of both merged pieces.
+  bool get isOneWay =>
+      this == MovementConstraint.leftOnly ||
+      this == MovementConstraint.rightOnly ||
+      this == MovementConstraint.upOnly ||
+      this == MovementConstraint.downOnly;
+
+  bool allowsDir(int dx, int dy) {
+    if (dx < 0) return allowsLeft;
+    if (dx > 0) return allowsRight;
+    if (dy < 0) return allowsUp;
+    if (dy > 0) return allowsDown;
+    return false;
+  }
+
+  /// Combines allowed movement directions of both merged pieces.
   MovementConstraint resolveMergedWith(MovementConstraint other) {
-    final h = allowsHorizontal || other.allowsHorizontal;
-    final v = allowsVertical || other.allowsVertical;
+    final l = allowsLeft || other.allowsLeft;
+    final r = allowsRight || other.allowsRight;
+    final u = allowsUp || other.allowsUp;
+    final d = allowsDown || other.allowsDown;
+    final h = l || r;
+    final v = u || d;
     if (h && v) return MovementConstraint.free;
-    if (h) return MovementConstraint.horizontalOnly;
-    if (v) return MovementConstraint.verticalOnly;
+    if (l && r) return MovementConstraint.horizontalOnly;
+    if (u && d) return MovementConstraint.verticalOnly;
+    if (l) return MovementConstraint.leftOnly;
+    if (r) return MovementConstraint.rightOnly;
+    if (u) return MovementConstraint.upOnly;
+    if (d) return MovementConstraint.downOnly;
     return MovementConstraint.pinned;
   }
 
@@ -36,6 +79,10 @@ enum MovementConstraint {
     final mov = (json['movement'] as String?)?.toLowerCase();
     if (mov == 'horizontal') return MovementConstraint.horizontalOnly;
     if (mov == 'vertical') return MovementConstraint.verticalOnly;
+    if (mov == 'left') return MovementConstraint.leftOnly;
+    if (mov == 'right') return MovementConstraint.rightOnly;
+    if (mov == 'up') return MovementConstraint.upOnly;
+    if (mov == 'down') return MovementConstraint.downOnly;
     if (mov == 'none') return MovementConstraint.pinned;
     return MovementConstraint.free;
   }
@@ -50,6 +97,12 @@ class PieceModel {
   int? number; // null => Dud blocker
   int? iceTarget; // non-null => frozen until any merge produces mergedValue == iceTarget
   MovementConstraint movement;
+  int? clockBonusSeconds; // >0 => merging awards +N seconds to level timer
+  bool isMystery; // true => hides number & color behind '?' until an adjacent merge happens
+  String? keyColor; // non-null => merging unlocks all blocks with matching lockColor
+  String? lockColor; // non-null => padlocked until a matching keyColor block is merged
+  int swapUses; // >0 => dragging onto a different-number block swaps their numbers
+  int? movesLeft; // >0 => nails into Pinned after N completed cell moves
 
   PieceModel({
     required this.id,
@@ -60,12 +113,23 @@ class PieceModel {
     this.number,
     this.iceTarget,
     this.movement = MovementConstraint.free,
+    this.clockBonusSeconds,
+    this.isMystery = false,
+    this.keyColor,
+    this.lockColor,
+    this.swapUses = 0,
+    this.movesLeft,
   });
 
   bool get isDud => number == null;
   bool get isFrozen => iceTarget != null;
-  bool get canBeDragged => !isFrozen && movement.canMove;
-  bool get canMerge => !isDud && !isFrozen;
+  bool get isLocked => lockColor != null;
+  bool get hasKey => keyColor != null;
+  bool get hasClockBonus => (clockBonusSeconds ?? 0) > 0;
+  bool get hasSwap => swapUses > 0;
+  bool get hasLimitedMoves => (movesLeft ?? 0) > 0;
+  bool get canBeDragged => !isFrozen && !isLocked && movement.canMove;
+  bool get canMerge => !isDud && !isFrozen && !isLocked && !isMystery;
 
   Set<GridCell> worldCellsAt(int originCol, int originRow) {
     return {
@@ -216,19 +280,77 @@ class PieceModel {
       number: number,
       iceTarget: iceTarget,
       movement: movement,
+      clockBonusSeconds: clockBonusSeconds,
+      isMystery: isMystery,
+      keyColor: keyColor,
+      lockColor: lockColor,
+      swapUses: swapUses,
+      movesLeft: movesLeft,
     );
   }
+}
+
+/// Water-Pipe Dispenser mounted on a wall cell `(col, row)` pointing toward
+/// its adjacent playable `mouthCell = (col + dir.$1, row + dir.$2)`, holding
+/// a FIFO [queue] of `1x1` block numbers (e.g. `[4, 8, 16]`).
+class DispenserSpec {
+  final int col;
+  final int row;
+  final GridCell dir;
+  final List<int> queue;
+
+  const DispenserSpec({
+    required this.col,
+    required this.row,
+    required this.dir,
+    required this.queue,
+  });
+
+  GridCell get cell => (col, row);
+  GridCell get mouthCell => (col + dir.$1, row + dir.$2);
+
+  String get dirName {
+    if (dir == (0, 1)) return 'down';
+    if (dir == (0, -1)) return 'up';
+    if (dir == (1, 0)) return 'right';
+    return 'left';
+  }
+
+  static GridCell parseDir(String? raw) {
+    switch ((raw ?? 'down').trim().toLowerCase()) {
+      case 'up':
+        return (0, -1);
+      case 'left':
+        return (-1, 0);
+      case 'right':
+        return (1, 0);
+      case 'down':
+      default:
+        return (0, 1);
+    }
+  }
+
+  DispenserSpec clone() => DispenserSpec(
+        col: col,
+        row: row,
+        dir: dir,
+        queue: List<int>.from(queue),
+      );
 }
 
 class LevelDefinition {
   final int number;
   final String title;
   final bool isBonus;
+  final bool isSpecial;
   final int cols;
   final int rows;
   final int timeSeconds;
   final bool timerDisabled;
   final Set<GridCell> walls;
+  final Set<GridCell> redWalls;
+  final Set<GridCell> blueWalls;
+  final List<DispenserSpec> dispensers;
   final List<PieceModel> initialPieces;
   final int coinReward;
 
@@ -236,11 +358,15 @@ class LevelDefinition {
     required this.number,
     required this.title,
     this.isBonus = false,
+    this.isSpecial = false,
     required this.cols,
     required this.rows,
     required this.timeSeconds,
     required this.timerDisabled,
     required this.walls,
+    this.redWalls = const {},
+    this.blueWalls = const {},
+    this.dispensers = const [],
     required this.initialPieces,
     this.coinReward = 25,
   });
@@ -253,8 +379,16 @@ class LevelDefinition {
             p.movement == MovementConstraint.horizontalOnly ||
             p.movement == MovementConstraint.verticalOnly,
       );
+  bool get hasClockBonus => initialPieces.any((p) => p.hasClockBonus);
+  bool get hasMystery => initialPieces.any((p) => p.isMystery);
+  bool get hasKeyLock => initialPieces.any((p) => p.hasKey || p.isLocked);
+  bool get hasToggleWalls => redWalls.isNotEmpty || blueWalls.isNotEmpty;
+  bool get hasDispensers => dispensers.any((d) => d.queue.isNotEmpty);
+  bool get hasSwap => initialPieces.any((p) => p.hasSwap);
+  bool get hasOneWayArrow => initialPieces.any((p) => p.movement.isOneWay);
+  bool get hasLimitedMove => initialPieces.any((p) => p.hasLimitedMoves);
 
-  /// Exact final merged number when all numbered blocks on the board merge into one:
+  /// Exact final merged number when all numbered blocks on the board + dispensers merge into one:
   /// Since every 2048 merge (`n + n -> 2n`) conserves the sum of all numbered pieces,
   /// the maximum/final number of the level equals `sum(p.number)` snapped to a power of 2.
   int get targetWinNumber {
@@ -265,6 +399,14 @@ class LevelDefinition {
       if (n != null && n > 0) {
         sum += n;
         if (n > maxInit) maxInit = n;
+      }
+    }
+    for (final d in dispensers) {
+      for (final n in d.queue) {
+        if (n > 0) {
+          sum += n;
+          if (n > maxInit) maxInit = n;
+        }
       }
     }
     if (sum <= 2) return 2;
@@ -331,12 +473,50 @@ class LevelDefinition {
     final rows = (map['rows'] as num?)?.toInt() ?? 8;
     final timeSeconds = (map['time'] as num?)?.toInt() ?? 120;
     final timerDisabled = map['timerDisabled'] == true;
+    final isSpecial = map['isSpecial'] == true;
 
     final walls = <GridCell>{};
     for (final w in (map['walls'] as List<dynamic>? ?? [])) {
       if (w is List && w.length >= 2) {
         walls.add(((w[0] as num).toInt(), (w[1] as num).toInt()));
       }
+    }
+
+    final redWalls = <GridCell>{};
+    for (final w in (map['redWalls'] as List<dynamic>? ?? [])) {
+      if (w is List && w.length >= 2) {
+        redWalls.add(((w[0] as num).toInt(), (w[1] as num).toInt()));
+      }
+    }
+
+    final blueWalls = <GridCell>{};
+    for (final w in (map['blueWalls'] as List<dynamic>? ?? [])) {
+      if (w is List && w.length >= 2) {
+        blueWalls.add(((w[0] as num).toInt(), (w[1] as num).toInt()));
+      }
+    }
+
+    final dispensers = <DispenserSpec>[];
+    for (final d in (map['dispensers'] as List<dynamic>? ?? [])) {
+      if (d is! Map<String, dynamic>) continue;
+      final dc = (d['col'] as num?)?.toInt();
+      final dr = (d['row'] as num?)?.toInt();
+      if (dc == null || dr == null) continue;
+      final q = <int>[
+        for (final v in (d['queue'] as List<dynamic>? ?? []))
+          if (v is num && v.toInt() > 0) v.toInt(),
+      ];
+      if (q.isEmpty) continue;
+      dispensers.add(
+        DispenserSpec(
+          col: dc,
+          row: dr,
+          dir: DispenserSpec.parseDir(d['dir'] as String?),
+          queue: q,
+        ),
+      );
+      // Ensure pipe body cell is treated as a static wall so blocks cannot slide into the pipe housing
+      walls.add((dc, dr));
     }
 
     final pieces = <PieceModel>[];
@@ -368,6 +548,23 @@ class LevelDefinition {
       final number = (rawNumber != null && rawNumber > 0) ? rawNumber : null;
       final rawIce = (s['iceTarget'] as num?)?.toInt();
       final iceTarget = (rawIce != null && rawIce > 0) ? rawIce : null;
+      final rawClock = (s['clockBonus'] as num?)?.toInt();
+      final clockBonusSeconds =
+          (rawClock != null && rawClock > 0 && number != null) ? rawClock : null;
+      final isMystery = s['mystery'] == true && number != null;
+      final rawKeyColor = (s['keyColor'] as String?)?.trim().toLowerCase();
+      final keyColor = (rawKeyColor != null && rawKeyColor.isNotEmpty && number != null)
+          ? rawKeyColor
+          : null;
+      final rawLockColor = (s['lockColor'] as String?)?.trim().toLowerCase();
+      final lockColor =
+          (rawLockColor != null && rawLockColor.isNotEmpty) ? rawLockColor : null;
+      final rawSwap = (s['swapUses'] as num?)?.toInt() ??
+          (s['swap'] == true ? 1 : 0);
+      final swapUses = (rawSwap > 0 && number != null) ? rawSwap : 0;
+      final rawMovesLeft = (s['movesLeft'] as num?)?.toInt();
+      final movesLeft =
+          (rawMovesLeft != null && rawMovesLeft > 0) ? rawMovesLeft : null;
 
       pieces.add(
         PieceModel(
@@ -379,6 +576,12 @@ class LevelDefinition {
           number: number,
           iceTarget: iceTarget,
           movement: MovementConstraint.fromShapeJson(s),
+          clockBonusSeconds: clockBonusSeconds,
+          isMystery: isMystery,
+          keyColor: keyColor,
+          lockColor: lockColor,
+          swapUses: swapUses,
+          movesLeft: movesLeft,
         ),
       );
     }
@@ -387,11 +590,15 @@ class LevelDefinition {
       number: number,
       title: title,
       isBonus: isBonus,
+      isSpecial: isSpecial,
       cols: cols,
       rows: rows,
       timeSeconds: timeSeconds,
       timerDisabled: timerDisabled,
       walls: walls,
+      redWalls: redWalls,
+      blueWalls: blueWalls,
+      dispensers: dispensers,
       initialPieces: pieces,
     );
   }
@@ -456,8 +663,8 @@ class LevelRepository {
   }
 
   /// Mirrors live chapter_set 150 behavior:
-  /// Levels 1..122 play directly (Level 1 = Spotlight Tutorial + Levels 2..122 = Campaign);
-  /// Level 123+ loops Chapter 2 (Levels 12..122).
+  /// Levels 1..N (currently 300) play directly (Level 1 = Spotlight Tutorial + Levels 2..N = Campaign);
+  /// Levels > N loop Chapter 2+ (Levels 12..N).
   LevelDefinition getCampaignLevel(int displayLevelNumber) {
     if (campaignLevels.isEmpty) {
       throw StateError('No campaign levels loaded');
@@ -466,7 +673,7 @@ class LevelRepository {
       final idx = (displayLevelNumber - 1).clamp(0, campaignLevels.length - 1);
       return campaignLevels[idx];
     }
-    // Loop levels 12..122 (indices 11..121, length 111)
+    // Loop levels 12..N (indices 11..N-1)
     if (campaignLevels.length > 11) {
       final loopLen = campaignLevels.length - 11;
       final loopIdx = 11 + ((displayLevelNumber - 12) % loopLen);
@@ -474,11 +681,15 @@ class LevelRepository {
       return LevelDefinition(
         number: displayLevelNumber,
         title: 'Level $displayLevelNumber',
+        isSpecial: base.isSpecial,
         cols: base.cols,
         rows: base.rows,
         timeSeconds: base.timeSeconds,
         timerDisabled: base.timerDisabled,
         walls: base.walls,
+        redWalls: base.redWalls,
+        blueWalls: base.blueWalls,
+        dispensers: base.dispensers.map((d) => d.clone()).toList(),
         initialPieces: base.initialPieces.map((p) => p.clone()).toList(),
       );
     }

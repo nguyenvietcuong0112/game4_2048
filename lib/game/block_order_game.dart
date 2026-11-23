@@ -677,10 +677,15 @@ class _SpotlightDimVeilComponent extends PositionComponent {
 
 class _HammerStrikeAnim {
   final PieceComponent target;
-  final double impactTime = HammerSwingSmashVfx.impactTime;
+  final double windUpStartTime;
+  final double impactTime;
   double elapsed = 0.0;
 
-  _HammerStrikeAnim({required this.target});
+  _HammerStrikeAnim({
+    required this.target,
+    required this.windUpStartTime,
+    required this.impactTime,
+  });
 }
 
 class BlockOrderGame extends FlameGame with DragCallbacks {
@@ -721,6 +726,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   bool isModalPaused = false;
   bool allowEngineSleepBehindModal = false;
   bool isTimeFreezeIntroInFlight = false;
+  bool isShuffleIntroInFlight = false;
   bool _isReady = false;
   bool _hasWon = false;
   bool _hasLost = false;
@@ -815,6 +821,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   // Active Hold-to-Merge candidate & `MergeColorTransition` controllers
   PieceComponent? _mergeCandidate;
   PieceComponent? _mergeSurvivor;
+  PieceComponent? _swapCandidate;
   GridCell _mergePushDir = (0, 0);
   GridCell _mergeContactOrigin = (0, 0);
   double _mergeArmMagnitude = 0.0;
@@ -827,6 +834,36 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   _LevelUpFlightAnim? _levelUpFlight;
   _HammerStrikeAnim? _hammerStrike;
   bool _pendingHammerIsFree = false;
+  Vector2? _pendingHammerOriginWorld;
+
+  // Wave 2 runtime state: Toggle Walls (Red/Blue alternating) & Pipe Dispensers
+  int _toggleWallPhase = 0; // 0 = Red UP / Blue DOWN, 1 = Blue UP / Red DOWN
+  bool _toggleWallsCheatDisabled = false;
+  final Set<GridCell> _raisedToggleWalls = <GridCell>{};
+  final Set<GridCell> _pendingRaiseToggleWalls = <GridCell>{};
+  List<List<int>> _activeDispenserQueues = <List<int>>[];
+
+  int get _remainingDispenserBlockCount {
+    int total = 0;
+    for (final q in _activeDispenserQueues) {
+      total += q.length;
+    }
+    return total;
+  }
+
+  @visibleForTesting
+  int get debugToggleWallPhase => _toggleWallPhase;
+
+  @visibleForTesting
+  Set<GridCell> get debugRaisedToggleWalls =>
+      Set<GridCell>.unmodifiable(_raisedToggleWalls);
+
+  @visibleForTesting
+  Set<GridCell> get debugPendingToggleWalls =>
+      Set<GridCell>.unmodifiable(_pendingRaiseToggleWalls);
+
+  @visibleForTesting
+  int get debugRemainingDispenserCount => _remainingDispenserBlockCount;
 
   BlockOrderGame({
     required LevelDefinition initialLevel,
@@ -848,13 +885,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   Color backgroundColor() => const Color(0x00000000);
 
   bool get isBusyWithPowerUp =>
-      _levelUpFlight != null || _hammerStrike != null || isTimeFreezeIntroInFlight;
+      _levelUpFlight != null ||
+      _hammerStrike != null ||
+      isTimeFreezeIntroInFlight ||
+      isShuffleIntroInFlight;
 
   bool get isResolving =>
       _levelUpFlight != null ||
       _hammerStrike != null ||
       _absorbingAnims.isNotEmpty ||
-      isTimeFreezeIntroInFlight;
+      isTimeFreezeIntroInFlight ||
+      isShuffleIntroInFlight;
 
   bool get isTimeFrozen => _timeFreezeRemaining > 0.05;
 
@@ -932,7 +973,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     for (int r = 0; r < _gridRows; r++) {
       final rowBase = r * _gridCols;
       for (int c = 0; c < _gridCols; c++) {
-        _playableGrid[rowBase + c] = _level.isPlayableCell(c, r) ? 1 : 0;
+        final blockedByToggle = _raisedToggleWalls.contains((c, r));
+        _playableGrid[rowBase + c] =
+            (_level.isPlayableCell(c, r) && !blockedByToggle) ? 1 : 0;
       }
     }
   }
@@ -969,6 +1012,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       !_level.timerDisabled &&
       !isTimeFrozen &&
       !isTimeFreezeIntroInFlight &&
+      !isShuffleIntroInFlight &&
       !_hasWon &&
       !_hasLost;
 
@@ -1121,6 +1165,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     await ScrewTextureCleaner.ensureCleanedScrewsLoaded();
     await SparkleAtlas.ensureLoaded();
 
+    // Non-blocking background preload for Hammer smash VFX sprite
+    Flame.images.load('PowerUp_Hammer.png').then<void>((_) {}, onError: (_) {});
+
     add(_boardStage);
     _isReady = true;
     if (size.x > 10 && size.y > 10) {
@@ -1165,6 +1212,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _tutorialMergeStep = 0;
     isTimerStartedNotifier.value = false;
     isTimeFreezeIntroInFlight = false;
+    isShuffleIntroInFlight = false;
     _countdownFrac = 0.0;
     remainingSecondsNotifier.value = newLevel.timeSeconds;
     _setTimeFreezeRemaining(0.0, forceNotify: true);
@@ -1345,6 +1393,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       level: _level,
       cellSize: _cellSize,
       position: _boardOrigin.clone(),
+      palette: palette,
     );
     _boardComponent = board;
     _addToBoardStage(board);
@@ -1387,6 +1436,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _syncOccupancyGrid();
 
     if (!preserveModels) {
+      _toggleWallPhase = 0;
+      _toggleWallsCheatDisabled = false;
+      _raisedToggleWalls.clear();
+      _pendingRaiseToggleWalls.clear();
+      _activeDispenserQueues = [
+        for (final d in _level.dispensers) List<int>.from(d.queue),
+      ];
+      _syncToggleWalls(flipPhase: false);
+      _tryDispenseAllPipes(playSfx: false);
+      _boardComponent?.syncDispenserQueues(_activeDispenserQueues);
+
       final framedOrtho = (0.5 * size.y / _cellSize).clamp(2.5, 30.0);
       _introStartZoom = (framedOrtho /
               (framedOrtho + math.max(0.0, visualSettings.cameraIntroSizeOffset)))
@@ -1395,6 +1455,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       _winZoomTimer = -1.0;
       _stageZoom = _introStartZoom;
       _boardStage.scale = Vector2.all(_stageZoom);
+    } else {
+      _rebuildPlayableGrid();
+      _boardComponent?.syncToggleWalls(
+        raisedWalls: _raisedToggleWalls,
+        pendingWalls: _pendingRaiseToggleWalls,
+      );
+      _boardComponent?.syncDispenserQueues(_activeDispenserQueues);
     }
     _syncSpotlightTutorialState();
 
@@ -1638,7 +1705,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   Color _dragTrailColorForPiece(PieceComponent piece) {
     if (piece.model.isDud) return const Color(0xFF8C9BCE);
     return palette
-        .styleFor(number: piece.model.number, isFrozen: false)
+        .styleFor(
+          number: piece.model.number,
+          isFrozen: false,
+          isMystery: piece.model.isMystery,
+        )
         .topBright;
   }
 
@@ -1784,11 +1855,24 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
           pushDir: pushDir,
           target: candidate,
         )) {
+      _forgetSwapCandidate();
       _commitMerge(dragged: dragged, target: candidate, pushDir: pushDir);
       return;
     }
 
+    final swapTarget = _swapCandidate;
+    if (dragged != null &&
+        swapTarget != null &&
+        dragged.model.hasSwap &&
+        dragged.model.canMerge &&
+        swapTarget.model.canMerge &&
+        dragged.model.number != swapTarget.model.number) {
+      _commitSwap(dragged: dragged, target: swapTarget);
+      return;
+    }
+
     _forgetMergeCandidate();
+    _forgetSwapCandidate();
     _draggedPiece = null;
     _activePointerId = null;
     _isTapCandidate = false;
@@ -1802,6 +1886,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       if (moved) {
         movesCount++;
         _notifyFirstAction();
+        _consumeLimitedMoveIfNeeded(dragged);
+        _syncToggleWalls(flipPhase: false);
+        _tryDispenseAllPipes(playSfx: true);
         audio.playPut();
       } else if (wasTap) {
         dragged.triggerTapSquish();
@@ -1834,6 +1921,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   void _cancelDrag({required bool silent}) {
     final dragged = _draggedPiece;
     _forgetMergeCandidate();
+    _forgetSwapCandidate();
     _draggedPiece = null;
     _activePointerId = null;
     _isTapCandidate = false;
@@ -1849,9 +1937,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   }
 
   bool _allowsDirection(MovementConstraint movement, GridCell dir) {
-    if (dir.$1 != 0) return movement.allowsHorizontal;
-    if (dir.$2 != 0) return movement.allowsVertical;
-    return false;
+    return movement.allowsDir(dir.$1, dir.$2);
   }
 
   bool _canOccupy(
@@ -1886,9 +1972,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
   /// Exact `Board.TryFindMergeTarget` + `BlockOrderGame.CanCompleteMerge`:
   /// Stepping `dragged` from `(contactCol, contactRow)` by `pushDir` to `desiredOrigin`
-  /// must touch matching mergeable `target` and must NOT collide with any 3rd piece.
-  /// We do not reject merges if non-contact extremities of `dragged` touch wall cells,
-  /// because one piece is absorbed/swallowed into the survivor.
+  /// must keep EVERY cell of `dragged` inside the board on playable cells (no walls,
+  /// cutouts, or raised toggle walls), free of any 3rd piece, and contacting `target`.
   bool _canCompleteMerge({
     required PieceComponent dragged,
     required int contactCol,
@@ -1900,47 +1985,30 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (dragged.model.number != target.model.number) return false;
     if (!_allowsDirection(dragged.model.movement, pushDir)) return false;
 
-    final outcome = _resolveMergeOutcome(
-      dragged: dragged,
-      target: target,
-      pushDir: pushDir,
-    );
-
-    // If survivor is dragged and it needs to step forward:
-    // It MUST be able to occupy the forward position without hitting walls or other pieces.
-    if (outcome.survivor == dragged && outcome.survivorMoves) {
-      if (!_canOccupy(
-        dragged.model,
-        outcome.survivorNextCol,
-        outcome.survivorNextRow,
-        ignorePieceId: target.model.id,
-      )) {
-        return false;
-      }
-    }
-
     final desiredCol = contactCol + pushDir.$1;
     final desiredRow = contactRow + pushDir.$2;
-    final draggedId = dragged.model.id;
-    final targetId = target.model.id;
+    if (!_canOccupy(
+      dragged.model,
+      desiredCol,
+      desiredRow,
+      ignorePieceId: target.model.id,
+    )) {
+      return false;
+    }
 
+    final targetId = target.model.id;
     for (final cell in dragged.model.localCells) {
       final c = desiredCol + cell.$1;
       final r = desiredRow + cell.$2;
-      if (c >= 0 && c < _gridCols && r >= 0 && r < _gridRows) {
-        final idx = r * _gridCols + c;
-        final occ = _occupancyGrid[idx];
-        if (occ >= 0 && occ < _pieces.length) {
-          final other = _pieces[occ];
-          if (!other.isFlyingOrSwallowed &&
-              other.model.id != draggedId &&
-              other.model.id != targetId) {
-            return false;
-          }
+      final occ = _occupancyGrid[r * _gridCols + c];
+      if (occ >= 0 && occ < _pieces.length) {
+        final other = _pieces[occ];
+        if (!other.isFlyingOrSwallowed && other.model.id == targetId) {
+          return true;
         }
       }
     }
-    return true;
+    return false;
   }
 
   (PieceComponent target, PieceComponent survivor)? _tryGetMergeCandidate({
@@ -1963,8 +2031,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       final cell = local[i];
       final c = desiredCol + cell.$1;
       final r = desiredRow + cell.$2;
-      if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) continue;
+      // Any cell stepping out of the board or into a wall/cutout/raised toggle wall
+      // physically blocks the piece from sliding in `dir` — reject merge!
+      if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) return null;
       final idx = r * _gridCols + c;
+      if (_playableGrid[idx] == 0) return null;
 
       final occIdx = _occupancyGrid[idx];
       if (occIdx < 0 || occIdx >= _pieces.length) continue;
@@ -1983,43 +2054,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       return null;
     }
 
-    // Stepping must not collide with any 3rd active piece
-    for (int i = 0; i < local.length; i++) {
-      final cell = local[i];
-      final c = desiredCol + cell.$1;
-      final r = desiredRow + cell.$2;
-      if (c >= 0 && c < _gridCols && r >= 0 && r < _gridRows) {
-        final idx = r * _gridCols + c;
-        final occIdx = _occupancyGrid[idx];
-        if (occIdx >= 0 && occIdx < _pieces.length) {
-          final other = _pieces[occIdx];
-          if (!other.isFlyingOrSwallowed &&
-              other.model.id != draggedId &&
-              other.model.id != matched.model.id) {
-            return null;
-          }
-        }
-      }
-    }
-
     final outcome = _resolveMergeOutcome(
       dragged: dragged,
       target: matched,
       pushDir: dir,
+      contactCol: originCol,
+      contactRow: originRow,
     );
-
-    // If survivor is dragged and it must move forward into target,
-    // ensure it can occupy the destination cell.
-    if (outcome.survivor == dragged && outcome.survivorMoves) {
-      if (!_canOccupy(
-        dragged.model,
-        outcome.survivorNextCol,
-        outcome.survivorNextRow,
-        ignorePieceId: matched.model.id,
-      )) {
-        return null;
-      }
-    }
 
     return (matched, outcome.survivor);
   }
@@ -2093,14 +2134,16 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       if (dx.abs() >= dy.abs()) {
         if (allowsH && dx.abs() > stepThreshold) {
           final sc = dx > 0 ? 1 : -1;
-          if (_canOccupy(model, model.col + sc, model.row)) {
+          if (_allowsDirection(model.movement, (sc, 0)) &&
+              _canOccupy(model, model.col + sc, model.row)) {
             model.col += sc;
             advanced = true;
           }
         }
         if (!advanced && allowsV && dy.abs() > stepThreshold) {
           final sr = dy > 0 ? 1 : -1;
-          if (_canOccupy(model, model.col, model.row + sr)) {
+          if (_allowsDirection(model.movement, (0, sr)) &&
+              _canOccupy(model, model.col, model.row + sr)) {
             model.row += sr;
             advanced = true;
           }
@@ -2108,14 +2151,16 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       } else {
         if (allowsV && dy.abs() > stepThreshold) {
           final sr = dy > 0 ? 1 : -1;
-          if (_canOccupy(model, model.col, model.row + sr)) {
+          if (_allowsDirection(model.movement, (0, sr)) &&
+              _canOccupy(model, model.col, model.row + sr)) {
             model.row += sr;
             advanced = true;
           }
         }
         if (!advanced && allowsH && dx.abs() > stepThreshold) {
           final sc = dx > 0 ? 1 : -1;
-          if (_canOccupy(model, model.col + sc, model.row)) {
+          if (_allowsDirection(model.movement, (sc, 0)) &&
+              _canOccupy(model, model.col + sc, model.row)) {
             model.col += sc;
             advanced = true;
           }
@@ -2305,8 +2350,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     final contact = _tryFindMergeContact(dragged);
     if (contact == null) {
       _forgetMergeCandidate();
+      _updateSwapCandidate(dragged);
       return;
     }
+    _forgetSwapCandidate();
 
     final isNewCandidate =
         _mergeCandidate == null || _mergeCandidate!.model.id != contact.target.model.id;
@@ -2534,6 +2581,201 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _currentMergePushAmount = 0.0;
   }
 
+  void _forgetSwapCandidate() {
+    if (_swapCandidate != null) {
+      _swapCandidate!.isSwapTargetHighlighted = false;
+      _swapCandidate = null;
+    }
+    if (_draggedPiece != null) {
+      _draggedPiece!.isSwapTargetHighlighted = false;
+    }
+  }
+
+  /// Detects when a Swap Block (`swapUses > 0`) is pushed against a single
+  /// unlocked, non-mystery, non-dud block of a different number.
+  void _updateSwapCandidate(PieceComponent dragged) {
+    if (!dragged.model.hasSwap || !dragged.model.canMerge) {
+      _forgetSwapCandidate();
+      return;
+    }
+    final minPush = _cellSize * 0.10;
+    final candidates = <(double, GridCell)>[];
+    if (_lastOverlap.x.abs() >= minPush) {
+      candidates.add((_lastOverlap.x.abs(), _lastOverlap.x > 0 ? (1, 0) : (-1, 0)));
+    }
+    if (_lastOverlap.y.abs() >= minPush) {
+      candidates.add((_lastOverlap.y.abs(), _lastOverlap.y > 0 ? (0, 1) : (0, -1)));
+    }
+    candidates.sort((a, b) => b.$1.compareTo(a.$1));
+
+    PieceComponent? found;
+    for (final (_, dir) in candidates) {
+      if (!_allowsDirection(dragged.model.movement, dir)) continue;
+      final testCol = dragged.model.col + dir.$1;
+      final testRow = dragged.model.row + dir.$2;
+      PieceComponent? hit;
+      bool blocked = false;
+      for (final (dc, dr) in dragged.model.localCells) {
+        final c = testCol + dc;
+        final r = testRow + dr;
+        if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) {
+          blocked = true;
+          break;
+        }
+        final idx = r * _gridCols + c;
+        if (_playableGrid[idx] == 0) {
+          blocked = true;
+          break;
+        }
+        final occIdx = _occupancyGrid[idx];
+        if (occIdx >= 0 && occIdx < _pieces.length) {
+          final other = _pieces[occIdx];
+          if (other.isFlyingOrSwallowed || other.model.id == dragged.model.id) {
+            continue;
+          }
+          if (hit == null) {
+            hit = other;
+          } else if (hit.model.id != other.model.id) {
+            blocked = true;
+            break;
+          }
+        }
+      }
+      if (!blocked &&
+          hit != null &&
+          hit.model.canMerge &&
+          hit.model.number != dragged.model.number) {
+        found = hit;
+        break;
+      }
+    }
+
+    if (found == null) {
+      _forgetSwapCandidate();
+      return;
+    }
+    if (_swapCandidate != null && _swapCandidate!.model.id != found.model.id) {
+      _swapCandidate!.isSwapTargetHighlighted = false;
+    }
+    _swapCandidate = found;
+    dragged.isSwapTargetHighlighted = true;
+    found.isSwapTargetHighlighted = true;
+  }
+
+  /// Commits a one-time Number Swap between [dragged] (carrying `swapUses > 0`)
+  /// and [target] (different number), preserving polyomino footprints safely.
+  void _commitSwap({
+    required PieceComponent dragged,
+    required PieceComponent target,
+  }) {
+    final numA = dragged.model.number;
+    final numB = target.model.number;
+    if (numA == null || numB == null || numA == numB) {
+      _forgetSwapCandidate();
+      return;
+    }
+
+    _forgetMergeCandidate();
+    _forgetSwapCandidate();
+    _draggedPiece = null;
+    _activePointerId = null;
+    _isTapCandidate = false;
+    _boardComponent?.clearActiveDragFootprint();
+    _lastDragTrailWakeOrigin = null;
+
+    final moved = dragged.model.col != _dragStartCol ||
+        dragged.model.row != _dragStartRow;
+
+    dragged.model.number = numB;
+    target.model.number = numA;
+    dragged.model.swapUses = math.max(0, dragged.model.swapUses - 1);
+    dragged.snapDragTargetToModelGrid();
+
+    final styleA = palette.styleFor(number: numB, isFrozen: false);
+    final styleB = palette.styleFor(number: numA, isFrozen: false);
+    dragged.triggerShuffleRefresh(newStyle: styleA);
+    target.triggerShuffleRefresh(newStyle: styleB);
+    _pendingNumberPrewarms.add((dragged, numB * 2));
+    _pendingNumberPrewarms.add((target, numA * 2));
+
+    _addToBoardStage(
+      ShuffleSparkVfx(
+        centerPos: dragged.worldCenter,
+        accentColor: const Color(0xFF22D3EE),
+        cellSize: _cellSize,
+      ),
+    );
+    _addToBoardStage(
+      ShuffleSparkVfx(
+        centerPos: target.worldCenter,
+        accentColor: const Color(0xFF22D3EE),
+        cellSize: _cellSize,
+      ),
+    );
+
+    movesCount++;
+    _notifyFirstAction();
+    if (moved) {
+      _consumeLimitedMoveIfNeeded(dragged);
+    }
+    _syncToggleWalls(flipPhase: false);
+    _tryDispenseAllPipes(playSfx: true);
+    audio.playAttract();
+    audio.hapticMergeImpact();
+    _refreshCanLevelUp();
+  }
+
+  /// Decrements `movesLeft` on a Limited-Move / Fragile Block after a completed
+  /// drag to a new grid cell; when reaching 0, nails it permanently as `pinned`.
+  void _consumeLimitedMoveIfNeeded(PieceComponent piece) {
+    if (!piece.model.hasLimitedMoves) return;
+    final nextRem = piece.model.movesLeft! - 1;
+    if (nextRem <= 0) {
+      piece.model.movesLeft = null;
+      piece.model.movement = MovementConstraint.pinned;
+      piece.syncAppearanceImmediate();
+      piece.triggerBlockedShake();
+      audio.playIceBreakSmall();
+    } else {
+      piece.model.movesLeft = nextRem;
+    }
+  }
+
+  @visibleForTesting
+  bool debugPerformSwap(PieceComponent swapPiece, PieceComponent targetPiece) {
+    if (!swapPiece.model.hasSwap ||
+        !swapPiece.model.canMerge ||
+        !targetPiece.model.canMerge ||
+        swapPiece.model.number == targetPiece.model.number) {
+      return false;
+    }
+    _dragStartCol = swapPiece.model.col;
+    _dragStartRow = swapPiece.model.row;
+    _commitSwap(dragged: swapPiece, target: targetPiece);
+    return true;
+  }
+
+  @visibleForTesting
+  bool debugMovePieceByStep(PieceComponent piece, int dx, int dy) {
+    if (!piece.model.canBeDragged) return false;
+    if (!_allowsDirection(piece.model.movement, (dx, dy))) return false;
+    final nextCol = piece.model.col + dx;
+    final nextRow = piece.model.row + dy;
+    if (!_canOccupy(piece.model, nextCol, nextRow)) return false;
+    _dragStartCol = piece.model.col;
+    _dragStartRow = piece.model.row;
+    piece.model.col = nextCol;
+    piece.model.row = nextRow;
+    piece.snapDragTargetToModelGrid();
+    _syncOccupancyGrid();
+    movesCount++;
+    _notifyFirstAction();
+    _consumeLimitedMoveIfNeeded(piece);
+    _syncToggleWalls(flipPhase: false);
+    _tryDispenseAllPipes(playSfx: false);
+    return true;
+  }
+
   void _clearBoardMergeCandidateVisuals({required bool wasCommitted}) {
     if (_mergeCandidate != null) {
       _mergeCandidate!.clearMergeCandidateState(wasCommitted: wasCommitted);
@@ -2594,6 +2836,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     required PieceComponent dragged,
     required PieceComponent target,
     required GridCell pushDir,
+    int? contactCol,
+    int? contactRow,
   }) {
     final draggedCells = dragged.model.localCells.length;
     final targetCells = target.model.localCells.length;
@@ -2608,8 +2852,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       ignorePieceId: dragged.model.id,
     );
 
-    final forwardCol = dragged.model.col + pushDir.$1;
-    final forwardRow = dragged.model.row + pushDir.$2;
+    final forwardCol = (contactCol ?? dragged.model.col) + pushDir.$1;
+    final forwardRow = (contactRow ?? dragged.model.row) + pushDir.$2;
 
     final draggedSurvives = (target.model.movement.isPinned && targetCells < draggedCells) ||
         (targetMobility == 0 && targetCells < draggedCells) ||
@@ -2733,6 +2977,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _activePointerId = null;
     _isTapCandidate = false;
 
+    final bonusClockSeconds = (survivor.model.clockBonusSeconds ?? 0) +
+        (consumed.model.clockBonusSeconds ?? 0);
+    final triggeredKeyColors = <String>[
+      if (survivor.model.keyColor != null) survivor.model.keyColor!,
+      if (consumed.model.keyColor != null) consumed.model.keyColor!,
+    ];
+
     final oldStyle = palette.styleFor(
       number: survivor.model.number,
       isFrozen: false,
@@ -2748,6 +2999,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     }
     survivor.model.number = newNumber;
     survivor.model.movement = combinedMovement;
+    survivor.model.clockBonusSeconds = null;
+    survivor.model.keyColor = null;
+    survivor.model.swapUses = 0;
+    survivor.model.movesLeft = null;
     survivor.snapDragTargetToModelGrid();
 
     // Expand `MergeColorTransition` across survivor & consumed (`0.30s`, `t^2` curve)
@@ -2840,7 +3095,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _triggerHighTierMergeImpact(survivor, newNumber, shoveOffset);
     _advanceMergeComboAndSpawnPraise(survivor);
 
-    _unlockEligibleIceBlocks(newNumber);
+    final mergeFootprintCells = <GridCell>{
+      ...survivor.model.worldCells,
+      ...consumedOldCells,
+    };
+    _applyPostMergeMechanicEffects(
+      survivor: survivor,
+      mergeFootprintCells: mergeFootprintCells,
+      mergedNumber: newNumber,
+      bonusClockSeconds: bonusClockSeconds,
+      triggeredKeyColors: triggeredKeyColors,
+    );
     _refreshCanLevelUp();
     _checkWinCondition();
     _syncSpotlightTutorialState();
@@ -2932,6 +3197,236 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     audio.playHighTierMergeBoost(mergedNumber);
   }
 
+  /// Central hook invoked after any merge (manual drag OR `Level Up` booster):
+  /// 1. Awards `+Ns` Clock Bonus time (if either merged block had `clockBonusSeconds`)
+  /// 2. Reveals any `?` Mystery Blocks edge-adjacent to the merge footprint
+  /// 3. Flies colored Key(s) to unlock matching `lockColor` blocks
+  /// 4. Unlocks Ice blocks whose `iceTarget == mergedNumber`
+  void _applyPostMergeMechanicEffects({
+    required PieceComponent survivor,
+    required Set<GridCell> mergeFootprintCells,
+    required int mergedNumber,
+    required int bonusClockSeconds,
+    required List<String> triggeredKeyColors,
+  }) {
+    if (bonusClockSeconds > 0) {
+      _awardClockBonus(bonusClockSeconds, survivor.worldCenter);
+    }
+    _revealAdjacentMysteryBlocks(mergeFootprintCells);
+    for (final keyColor in triggeredKeyColors) {
+      _unlockKeyLockColor(keyColor, survivor.worldCenter);
+    }
+    _unlockEligibleIceBlocks(mergedNumber);
+    _syncToggleWalls(flipPhase: true);
+    _tryDispenseAllPipes(playSfx: true);
+  }
+
+  /// Synchronizes Red/Blue Toggle Walls. On merge (`flipPhase == true`), alternates
+  /// phase (`0 <-> 1`). Any newly-UP wall cell currently occupied by a piece stays
+  /// safely held down in `_pendingRaiseToggleWalls` and pops UP the moment the cell
+  /// is vacated!
+  void _syncToggleWalls({required bool flipPhase}) {
+    if (_toggleWallsCheatDisabled || !_level.hasToggleWalls) {
+      if (_raisedToggleWalls.isNotEmpty || _pendingRaiseToggleWalls.isNotEmpty) {
+        _raisedToggleWalls.clear();
+        _pendingRaiseToggleWalls.clear();
+        _rebuildPlayableGrid();
+        _boardComponent?.syncToggleWalls(
+          raisedWalls: _raisedToggleWalls,
+          pendingWalls: _pendingRaiseToggleWalls,
+        );
+      }
+      return;
+    }
+
+    if (flipPhase) {
+      _toggleWallPhase ^= 1;
+    }
+
+    final activeSet =
+        _toggleWallPhase == 0 ? _level.redWalls : _level.blueWalls;
+    final inactiveSet =
+        _toggleWallPhase == 0 ? _level.blueWalls : _level.redWalls;
+
+    _raisedToggleWalls.removeAll(inactiveSet);
+    _pendingRaiseToggleWalls.removeAll(inactiveSet);
+
+    for (final cell in activeSet) {
+      final c = cell.$1;
+      final r = cell.$2;
+      if (c < 0 || c >= _gridCols || r < 0 || r >= _gridRows) continue;
+      final idx = r * _gridCols + c;
+      final isOccupied = idx < _occupancyGrid.length && _occupancyGrid[idx] >= 0;
+      if (isOccupied) {
+        _raisedToggleWalls.remove(cell);
+        _pendingRaiseToggleWalls.add(cell);
+      } else {
+        _pendingRaiseToggleWalls.remove(cell);
+        _raisedToggleWalls.add(cell);
+      }
+    }
+
+    _rebuildPlayableGrid();
+    _boardComponent?.syncToggleWalls(
+      raisedWalls: _raisedToggleWalls,
+      pendingWalls: _pendingRaiseToggleWalls,
+    );
+  }
+
+  /// Checks every Pipe Dispenser; whenever a dispenser still has queued numbers
+  /// and its `mouthCell` is playable and unoccupied, pops the next `1x1` block
+  /// out of the pipe nozzle onto `mouthCell`.
+  void _tryDispenseAllPipes({bool playSfx = true}) {
+    if (_level.dispensers.isEmpty || _activeDispenserQueues.isEmpty) return;
+    bool anyDispensed = false;
+
+    for (int i = 0; i < _level.dispensers.length; i++) {
+      if (i >= _activeDispenserQueues.length) break;
+      final queue = _activeDispenserQueues[i];
+      if (queue.isEmpty) continue;
+
+      final spec = _level.dispensers[i];
+      final (mc, mr) = spec.mouthCell;
+      if (mc < 0 || mc >= _gridCols || mr < 0 || mr >= _gridRows) continue;
+      final idx = mr * _gridCols + mc;
+      if (idx >= _playableGrid.length || _playableGrid[idx] == 0) continue;
+      if (idx < _occupancyGrid.length && _occupancyGrid[idx] >= 0) continue;
+
+      final nextNum = queue.removeAt(0);
+      final newId = _allocateNextPieceId();
+      final spawnedModel = PieceModel(
+        id: newId,
+        key: 'D${i}_$newId',
+        col: mc,
+        row: mr,
+        localCells: const [(0, 0)],
+        number: nextNum,
+        movement: MovementConstraint.free,
+      );
+      final spawnedComp = PieceComponent(
+        model: spawnedModel,
+        cellSize: _cellSize,
+        palette: palette,
+        visualSettings: visualSettings,
+        boardOrigin: _boardOrigin,
+      );
+      _pieces.add(spawnedComp);
+      _addToBoardStage(spawnedComp);
+      _syncPieceRestPriority(spawnedComp);
+
+      final pipeOriginCenter = Vector2(
+        _boardOrigin.x + (spec.col + 0.5) * _cellSize,
+        _boardOrigin.y + (spec.row + 0.5) * _cellSize,
+      );
+      spawnedComp.triggerHammerSplitSpawn(fromCenter: pipeOriginCenter);
+      _pendingNumberPrewarms.add((spawnedComp, nextNum * 2));
+
+      final style = palette.styleFor(number: nextNum, isFrozen: false);
+      _addToBoardStage(
+        ShuffleSparkVfx(
+          centerPos: Vector2(
+            _boardOrigin.x + (mc + 0.5) * _cellSize,
+            _boardOrigin.y + (mr + 0.5) * _cellSize,
+          ),
+          accentColor: style.topBright,
+          cellSize: _cellSize,
+        ),
+      );
+      _syncOccupancyGrid();
+      anyDispensed = true;
+    }
+
+    if (anyDispensed) {
+      _boardComponent?.syncDispenserQueues(_activeDispenserQueues);
+      if (playSfx) {
+        audio.playAttract();
+      }
+      _refreshCanLevelUp();
+    }
+  }
+
+  void _awardClockBonus(int bonusSeconds, Vector2 anchorWorld) {
+    if (bonusSeconds <= 0) return;
+    if (!_level.timerDisabled) {
+      remainingSecondsNotifier.value =
+          (remainingSecondsNotifier.value + bonusSeconds).clamp(1, 3600);
+    }
+    _addToBoardStage(
+      ClockBonusCalloutVfx(
+        anchorWorld: anchorWorld,
+        bonusSeconds: bonusSeconds,
+        cellSize: _cellSize,
+      ),
+    );
+    audio.playAttract();
+  }
+
+  void _revealAdjacentMysteryBlocks(Set<GridCell> mergeFootprintCells) {
+    if (mergeFootprintCells.isEmpty) return;
+    bool anyRevealed = false;
+    for (final p in _pieces) {
+      if (p.isFlyingOrSwallowed || !p.model.isMystery) continue;
+      bool adjacent = false;
+      for (final (c, r) in p.model.worldCells) {
+        if (mergeFootprintCells.contains((c + 1, r)) ||
+            mergeFootprintCells.contains((c - 1, r)) ||
+            mergeFootprintCells.contains((c, r + 1)) ||
+            mergeFootprintCells.contains((c, r - 1))) {
+          adjacent = true;
+          break;
+        }
+      }
+      if (!adjacent) continue;
+
+      p.model.isMystery = false;
+      final revealedStyle = palette.styleFor(
+        number: p.model.number,
+        isFrozen: p.model.isFrozen,
+      );
+      p.triggerMysteryReveal(revealedStyle: revealedStyle);
+      if (p.model.number != null) {
+        _pendingNumberPrewarms.add((p, p.model.number! * 2));
+      }
+      _addToBoardStage(
+        MysteryRevealVfx(
+          centerPos: p.worldCenter,
+          accentColor: revealedStyle.topBright,
+          cellSize: _cellSize,
+        ),
+      );
+      anyRevealed = true;
+    }
+    if (anyRevealed) {
+      audio.playAttract();
+    }
+  }
+
+  void _unlockKeyLockColor(String keyColor, Vector2 sourceWorld) {
+    bool anyUnlocked = false;
+    for (final p in _pieces) {
+      if (p.isFlyingOrSwallowed) continue;
+      if (p.model.lockColor == keyColor) {
+        p.model.lockColor = null;
+        p.triggerKeyLockUnlock();
+        if (p.model.number != null) {
+          _pendingNumberPrewarms.add((p, p.model.number! * 2));
+        }
+        _addToBoardStage(
+          FlyingKeyUnlockVfx(
+            startWorld: sourceWorld,
+            endWorld: p.worldCenter,
+            keyColor: keyColor,
+            cellSize: _cellSize,
+          ),
+        );
+        anyUnlocked = true;
+      }
+    }
+    if (anyUnlocked) {
+      audio.playIceBreak();
+    }
+  }
+
   /// Exact `IceComponent` rule (`target == mergedNumber`, NOT `<=`!):
   /// Clears `model.iceTarget = null` immediately in gameplay state while playing
   /// `IceComponentView.PopThenBreakAsync` (`0.10s` badge `Pop` -> shatter VFX & SFX -> `1.5x` shake).
@@ -2999,7 +3494,11 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     final eligible = <PieceComponent>[];
     for (final p in _pieces) {
       if (p.isFlyingOrSwallowed) continue;
-      if (!p.model.isDud && !p.model.isFrozen && p.model.number != null) {
+      if (!p.model.isDud &&
+          !p.model.isFrozen &&
+          !p.model.isLocked &&
+          !p.model.isMystery &&
+          p.model.number != null) {
         eligible.add(p);
       }
     }
@@ -3060,6 +3559,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       final g = (c, r);
       if (g == cellA) return false;
       if (_level.walls.contains(g)) return false;
+      if (_raisedToggleWalls.contains(g)) return false;
       if (occupied.contains(g)) return false;
       return true;
     }
@@ -3109,7 +3609,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   bool isValidHammerTarget(PieceComponent p) {
     if (p.isFlyingOrSwallowed) return false;
     final n = p.model.number;
-    if (n == null || p.model.isFrozen) return false;
+    if (n == null || p.model.isFrozen || p.model.isLocked || p.model.isMystery) {
+      return false;
+    }
     if (n < 4 || n.isOdd) return false;
     return _pickHammerSplitCells(p) != null;
   }
@@ -3229,13 +3731,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
   /// Enters interactive `Hammer` targeting mode, highlighting every splittable block (`>= 4`)
   /// on the board. Does NOT spend the booster until a valid target is tapped!
-  bool enterHammerTargeting({required bool isFree}) {
+  bool enterHammerTargeting({
+    required bool isFree,
+    Vector2? hammerOriginWorld,
+  }) {
     if (!_canInteract) return false;
     if (!_hasValidHammerTarget) return false;
     if (paused) resumeEngine();
 
     _cancelDrag(silent: true);
     _pendingHammerIsFree = isFree;
+    _pendingHammerOriginWorld = hammerOriginWorld?.clone();
     isHammerTargetingNotifier.value = true;
     for (final p in _pieces) {
       p.isHammerTargetHighlighted = isValidHammerTarget(p);
@@ -3249,6 +3755,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (!isHammerTargetingNotifier.value && !_pendingHammerIsFree) return;
     isHammerTargetingNotifier.value = false;
     _pendingHammerIsFree = false;
+    _pendingHammerOriginWorld = null;
     for (final p in _pieces) {
       p.isHammerTargetHighlighted = false;
     }
@@ -3261,6 +3768,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     if (paused) resumeEngine();
 
     final wasFree = _pendingHammerIsFree;
+    final hammerOrigin = _pendingHammerOriginWorld?.clone();
     cancelHammerTargeting();
     _cancelDrag(silent: true);
     _notifyFirstAction();
@@ -3270,15 +3778,19 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       isFrozen: false,
     );
 
-    _hammerStrike = _HammerStrikeAnim(target: target);
-    _addToBoardStage(
-      HammerSwingSmashVfx(
-        centerPos: target.worldCenter,
-        cellSize: _cellSize,
-        debrisPrimary: targetStyle.topBright,
-        debrisSecondary: targetStyle.rimHighlight,
-      ),
+    final smashVfx = HammerSwingSmashVfx(
+      centerPos: target.worldCenter,
+      cellSize: _cellSize,
+      startPos: hammerOrigin,
+      debrisPrimary: targetStyle.topBright,
+      debrisSecondary: targetStyle.rimHighlight,
     );
+    _hammerStrike = _HammerStrikeAnim(
+      target: target,
+      windUpStartTime: smashVfx.windUpStartTime,
+      impactTime: smashVfx.resolvedImpactTime,
+    );
+    _addToBoardStage(smashVfx);
 
     audio.playLevelUpArrow();
     onHammerApplied?.call(wasFree);
@@ -3306,14 +3818,34 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     final halfNum = originalNum ~/ 2;
     final originCenter = target.worldCenter.clone();
+    final origWidthPx = target.model.widthCols * _cellSize;
+    final origHeightPx = target.model.heightRows * _cellSize;
+    final origStyle = palette.styleFor(number: originalNum, isFrozen: false);
+    final smashedClockBonus = target.model.clockBonusSeconds ?? 0;
+    final smashedKeyColor = target.model.keyColor;
     final (cellA, cellB) = splitCells;
+    final splitHorizontal =
+        (cellA.$1 - cellB.$1).abs() >= (cellA.$2 - cellB.$2).abs();
     final baseId = _allocateNextPieceId();
     final baseKey = target.model.key;
 
-    // Remove smashed parent piece and spawn TWO fresh 1x1 half-value free blocks!
+    // Remove smashed parent piece and spawn split-in-half crack shatter VFX!
     _pieces.remove(target);
     target.isSuperseded = true;
     target.removeFromParent();
+
+    _addToBoardStage(
+      HammerSplitCrackVfx(
+        centerPos: originCenter,
+        blockWidth: origWidthPx,
+        blockHeight: origHeightPx,
+        cellSize: _cellSize,
+        splitHorizontal: splitHorizontal,
+        topBright: origStyle.topBright,
+        bottomLip: origStyle.bottomLip,
+        rimHighlight: origStyle.rimHighlight,
+      ),
+    );
 
     final halfStyle = palette.styleFor(number: halfNum, isFrozen: false);
     final spawnedSpecs = <(int, String, GridCell)>[
@@ -3356,6 +3888,14 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     }
 
     _syncOccupancyGrid();
+    _syncToggleWalls(flipPhase: false);
+    _tryDispenseAllPipes(playSfx: true);
+    if (smashedClockBonus > 0) {
+      _awardClockBonus(smashedClockBonus, originCenter);
+    }
+    if (smashedKeyColor != null) {
+      _unlockKeyLockColor(smashedKeyColor, originCenter);
+    }
     audio.playIceBreak();
     audio.hapticMergeImpact();
 
@@ -3438,7 +3978,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         finalPiece = p;
       }
     }
-    if (numberedRemaining <= 1) {
+    if (numberedRemaining <= 1 && _remainingDispenserBlockCount == 0) {
       cancelHammerTargeting();
       _hasWon = true;
       _winZoomTimer = 0.0;
@@ -3868,10 +4408,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
       }
     }
 
-    // 6b. `Hammer` Power-Up strike timing (`0.14s` swing -> obstacle smash!)
+    // 6b. `Hammer` Power-Up strike timing (fly-up -> lift anticipation -> high-speed slam!)
     final hammer = _hammerStrike;
     if (hammer != null) {
       hammer.elapsed += clampedDt;
+      if (hammer.elapsed >= hammer.windUpStartTime &&
+          hammer.elapsed < hammer.impactTime &&
+          hammer.target.isMounted) {
+        final denom = math.max(0.01, hammer.impactTime - hammer.windUpStartTime);
+        final u = ((hammer.elapsed - hammer.windUpStartTime) / denom).clamp(0.0, 1.0);
+        hammer.target.levelUpTargetGlow = math.max(hammer.target.levelUpTargetGlow, 0.45 + 0.50 * u);
+      }
       if (hammer.elapsed >= hammer.impactTime) {
         _completeHammerStrike(hammer);
       }
@@ -3880,6 +4427,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     // 7. Countdown Timer, Time Freeze (`GameplayTimer.IsStarted`), & Merge Combo Window (`3.5s`)
     if (!isModalPaused &&
         !isTimeFreezeIntroInFlight &&
+      !isShuffleIntroInFlight &&
         !_hasWon &&
         !_hasLost) {
       if (_comboRemainingSeconds > 0.0) {
@@ -3936,6 +4484,17 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     kept.levelUpTargetGlow = 0.95;
     kept.clearMergeCandidateState(wasCommitted: true);
 
+    final bonusClockSeconds = (kept.model.clockBonusSeconds ?? 0) +
+        (spent.model.clockBonusSeconds ?? 0);
+    final triggeredKeyColors = <String>[
+      if (kept.model.keyColor != null) kept.model.keyColor!,
+      if (spent.model.keyColor != null) spent.model.keyColor!,
+    ];
+    final mergeFootprintCells = <GridCell>{
+      ...kept.model.worldCells,
+      ...spent.model.worldCells,
+    };
+
     final oldStyle = palette.styleFor(
       number: kept.model.number,
       isFrozen: false,
@@ -3945,6 +4504,10 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     kept.model.number = newNumber;
     kept.model.movement =
         kept.model.movement.resolveMergedWith(spent.model.movement);
+    kept.model.clockBonusSeconds = null;
+    kept.model.keyColor = null;
+    kept.model.swapUses = 0;
+    kept.model.movesLeft = null;
     _pendingNumberPrewarms.add((kept, newNumber * 2));
 
     final center = kept.visualCenterWorld;
@@ -3999,7 +4562,13 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _triggerHighTierMergeImpact(kept, newNumber, const Offset(0, 1));
     _advanceMergeComboAndSpawnPraise(kept);
 
-    _unlockEligibleIceBlocks(newNumber);
+    _applyPostMergeMechanicEffects(
+      survivor: kept,
+      mergeFootprintCells: mergeFootprintCells,
+      mergedNumber: newNumber,
+      bonusClockSeconds: bonusClockSeconds,
+      triggeredKeyColors: triggeredKeyColors,
+    );
     _refreshCanLevelUp();
     _checkWinCondition();
     _syncSpotlightTutorialState();
@@ -4023,6 +4592,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _hammerStrike = null;
     cancelHammerTargeting();
     isTimeFreezeIntroInFlight = false;
+    isShuffleIntroInFlight = false;
 
     PieceComponent? survivor;
     for (final p in _pieces) {
@@ -4044,9 +4614,15 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     if (survivor != null) {
       survivor.model.iceTarget = null;
+      survivor.model.isMystery = false;
+      survivor.model.lockColor = null;
       survivor.model.number = _level.targetWinNumber;
       survivor.syncAppearanceImmediate();
     }
+    for (final q in _activeDispenserQueues) {
+      q.clear();
+    }
+    _boardComponent?.syncDispenserQueues(_activeDispenserQueues);
     _syncOccupancyGrid();
     _checkWinCondition();
   }
@@ -4074,6 +4650,18 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         p.model.iceTarget = null;
         changed = true;
       }
+      if (p.model.isMystery) {
+        p.model.isMystery = false;
+        changed = true;
+      }
+      if (p.model.lockColor != null) {
+        p.model.lockColor = null;
+        changed = true;
+      }
+      if (p.model.movesLeft != null) {
+        p.model.movesLeft = null;
+        changed = true;
+      }
       if (p.model.movement != MovementConstraint.free) {
         p.model.movement = MovementConstraint.free;
         changed = true;
@@ -4082,6 +4670,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         unlockedCount++;
         p.syncAppearanceImmediate();
       }
+    }
+    if (_level.hasToggleWalls && !_toggleWallsCheatDisabled) {
+      _toggleWallsCheatDisabled = true;
+      unlockedCount += _raisedToggleWalls.length + _pendingRaiseToggleWalls.length;
+      _syncToggleWalls(flipPhase: false);
+      _tryDispenseAllPipes(playSfx: false);
     }
     if (unlockedCount > 0) {
       audio.playIceBreak();

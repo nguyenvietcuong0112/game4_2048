@@ -5,6 +5,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../geometry/polyomino_path_builder.dart';
 import '../models/level_models.dart';
+import '../models/palette.dart';
 
 /// Authentic 2.5D Carved Recessed Board Cavity (`BackdropBuilder` + `TileMaterial_A/B`)
 /// matching `ref_gameplay.png` and `ref_settings.png` pixel-for-pixel:
@@ -52,10 +53,19 @@ class BoardComponent extends PositionComponent {
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.6;
 
+  // Wave 2: Toggle Walls & Dispenser Pipes live render state
+  final BlockOrderPalette? palette;
+  Set<GridCell> _raisedToggleWalls = const {};
+  Set<GridCell> _pendingToggleWalls = const {};
+  final Map<GridCell, double> _toggleLiftProgress = <GridCell, double>{};
+  List<List<int>> _dispenserQueues = const [];
+  double _mechanicClock = 0.0;
+
   BoardComponent({
     required this.level,
     required this.cellSize,
     required Vector2 position,
+    this.palette,
   }) : super(
           position: position,
           size: Vector2(level.cols * cellSize, level.rows * cellSize),
@@ -68,7 +78,26 @@ class BoardComponent extends PositionComponent {
     _cellTrailHold = Uint8List(totalCells);
     _cellTrailColor = List<Color>.filled(totalCells, Colors.transparent);
     _wakeAge.fillRange(0, _maxWakeStamps, -1.0);
+    for (final cell in level.redWalls) {
+      _toggleLiftProgress[cell] = 1.0;
+    }
+    for (final cell in level.blueWalls) {
+      _toggleLiftProgress[cell] = 0.0;
+    }
+    _dispenserQueues = [for (final d in level.dispensers) List<int>.from(d.queue)];
     _bakeBoardToGpuImageSync();
+  }
+
+  void syncToggleWalls({
+    required Set<GridCell> raisedWalls,
+    required Set<GridCell> pendingWalls,
+  }) {
+    _raisedToggleWalls = Set<GridCell>.from(raisedWalls);
+    _pendingToggleWalls = Set<GridCell>.from(pendingWalls);
+  }
+
+  void syncDispenserQueues(List<List<int>> queues) {
+    _dispenserQueues = [for (final q in queues) List<int>.from(q)];
   }
 
   @visibleForTesting
@@ -145,9 +174,30 @@ class BoardComponent extends PositionComponent {
   @override
   void update(double dt) {
     super.update(dt);
-    if (isSuperseded || !_hasActiveTrails) return;
-
+    if (isSuperseded) return;
     final clampedDt = dt.clamp(0.0, 0.05);
+
+    if (level.hasToggleWalls || level.hasDispensers) {
+      _mechanicClock = (_mechanicClock + clampedDt * 5.0) % (math.pi * 200.0);
+      final liftStep = clampedDt * 7.5;
+      for (final cell in level.redWalls) {
+        final target = _raisedToggleWalls.contains(cell) ? 1.0 : 0.0;
+        final cur = _toggleLiftProgress[cell] ?? target;
+        _toggleLiftProgress[cell] = cur < target
+            ? math.min(target, cur + liftStep)
+            : math.max(target, cur - liftStep);
+      }
+      for (final cell in level.blueWalls) {
+        final target = _raisedToggleWalls.contains(cell) ? 1.0 : 0.0;
+        final cur = _toggleLiftProgress[cell] ?? target;
+        _toggleLiftProgress[cell] = cur < target
+            ? math.min(target, cur + liftStep)
+            : math.max(target, cur - liftStep);
+      }
+    }
+
+    if (!_hasActiveTrails) return;
+
     _holdPulseClock = (_holdPulseClock + clampedDt * 6.5) % (math.pi * 200.0);
 
     bool anyAlive = false;
@@ -420,8 +470,262 @@ class BoardComponent extends PositionComponent {
     if (img != null) {
       canvas.drawImageRect(img, _bakedSrcRect, _bakedDstRect, _imagePaint);
     }
+    if (level.hasToggleWalls) {
+      _drawToggleWalls(canvas);
+    }
+    if (level.dispensers.isNotEmpty) {
+      _drawDispenserPipes(canvas);
+    }
     if (_hasActiveTrails) {
       _drawBoardCellTrailsAndWake(canvas);
+    }
+  }
+
+  void _drawToggleWalls(Canvas canvas) {
+    void paintCell(GridCell cell, {required bool isRed}) {
+      final lift = (_toggleLiftProgress[cell] ?? 0.0).clamp(0.0, 1.0);
+      final isPending = _pendingToggleWalls.contains(cell);
+      final bright = isRed ? const Color(0xFFFF6B8A) : const Color(0xFF4CC9FF);
+      final mid = isRed ? const Color(0xFFE11D48) : const Color(0xFF2563EB);
+      final dark = isRed ? const Color(0xFF881337) : const Color(0xFF1E3A8A);
+      final inset = cellSize * 0.055;
+      final baseRect = Rect.fromLTWH(
+        cell.$1 * cellSize + inset,
+        cell.$2 * cellSize + inset,
+        cellSize - inset * 2.0,
+        cellSize - inset * 2.0,
+      );
+      final r = Radius.circular(cellSize * 0.14);
+
+      // 1. Recessed slot plate (always visible when DOWN so player reads alternating lanes!)
+      final slotRRect = RRect.fromRectAndRadius(baseRect, r);
+      canvas.drawRRect(
+        slotRRect,
+        Paint()..color = dark.withValues(alpha: 0.32),
+      );
+      final pulse = isPending ? (0.55 + 0.45 * math.sin(_mechanicClock * 2.2)) : 0.62;
+      canvas.drawRRect(
+        slotRRect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (cellSize * (isPending ? 0.055 : 0.036)).clamp(1.6, 4.0)
+          ..color = bright.withValues(alpha: pulse),
+      );
+
+      // Recessed center diamond/dot marker
+      if (lift < 0.85) {
+        final dotR = cellSize * 0.10 * (1.0 - lift * 0.7);
+        canvas.drawCircle(
+          baseRect.center,
+          dotR,
+          Paint()..color = bright.withValues(alpha: (1.0 - lift) * 0.55),
+        );
+      }
+
+      // 2. Extruded 2.5D raised gate pillar when UP (lift > 0.02)
+      if (lift > 0.02) {
+        final risePx = cellSize * 0.14 * lift;
+        final lipRect = RRect.fromRectAndRadius(
+          baseRect.shift(Offset(0, cellSize * 0.03 * lift)),
+          r,
+        );
+        final topRect = RRect.fromRectAndRadius(
+          baseRect.shift(Offset(0, -risePx * 0.45)),
+          r,
+        );
+        canvas.drawRRect(
+          lipRect,
+          Paint()..color = dark.withValues(alpha: 0.95 * lift),
+        );
+        canvas.drawRRect(
+          topRect,
+          Paint()
+            ..shader = ui.Gradient.linear(
+              Offset(topRect.center.dx, topRect.top),
+              Offset(topRect.center.dx, topRect.bottom),
+              [
+                bright.withValues(alpha: lift),
+                mid.withValues(alpha: lift),
+              ],
+            ),
+        );
+        canvas.drawRRect(
+          topRect.deflate(cellSize * 0.04),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (cellSize * 0.032).clamp(1.3, 3.0)
+            ..color = Colors.white.withValues(alpha: 0.42 * lift),
+        );
+        // Crossed barrier X mark on raised gate
+        final s = cellSize * 0.17 * lift;
+        final xPaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = (cellSize * 0.06).clamp(2.0, 5.5)
+          ..color = Colors.white.withValues(alpha: 0.88 * lift);
+        canvas.drawLine(
+          topRect.center + Offset(-s, -s),
+          topRect.center + Offset(s, s),
+          xPaint,
+        );
+        canvas.drawLine(
+          topRect.center + Offset(s, -s),
+          topRect.center + Offset(-s, s),
+          xPaint,
+        );
+      }
+    }
+
+    for (final c in level.redWalls) {
+      paintCell(c, isRed: true);
+    }
+    for (final c in level.blueWalls) {
+      paintCell(c, isRed: false);
+    }
+  }
+
+  void _drawDispenserPipes(Canvas canvas) {
+    for (int i = 0; i < level.dispensers.length; i++) {
+      final spec = level.dispensers[i];
+      final queue = i < _dispenserQueues.length ? _dispenserQueues[i] : const <int>[];
+      final hasNext = queue.isNotEmpty;
+      final nextNum = hasNext ? queue.first : null;
+
+      final cx = (spec.col + 0.5) * cellSize;
+      final cy = (spec.row + 0.5) * cellSize;
+      final center = Offset(cx, cy);
+      final bodyW = cellSize * 0.82;
+      final bodyRect = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center, width: bodyW, height: bodyW),
+        Radius.circular(cellSize * 0.18),
+      );
+
+      // Directional brass/steel pipe nozzle pointing toward mouthCell
+      final dx = spec.dir.$1.toDouble();
+      final dy = spec.dir.$2.toDouble();
+      final nozzleCenter = Offset(
+        cx + dx * cellSize * 0.42,
+        cy + dy * cellSize * 0.42,
+      );
+      final nozzleW = dx != 0 ? cellSize * 0.28 : cellSize * 0.54;
+      final nozzleH = dy != 0 ? cellSize * 0.28 : cellSize * 0.54;
+      final nozzleRect = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: nozzleCenter, width: nozzleW, height: nozzleH),
+        Radius.circular(cellSize * 0.08),
+      );
+      canvas.drawRRect(
+        nozzleRect,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(nozzleRect.left, nozzleRect.top),
+            Offset(nozzleRect.right, nozzleRect.bottom),
+            const [Color(0xFF7DD3FC), Color(0xFF0369A1)],
+          ),
+      );
+      canvas.drawRRect(
+        nozzleRect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (cellSize * 0.032).clamp(1.4, 3.0)
+          ..color = const Color(0xFF082F49),
+      );
+
+      // Pipe housing cylinder
+      canvas.drawRRect(
+        bodyRect.shift(Offset(0, cellSize * 0.04)),
+        Paint()..color = const Color(0x88021024),
+      );
+      canvas.drawRRect(
+        bodyRect,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(bodyRect.center.dx, bodyRect.top),
+            Offset(bodyRect.center.dx, bodyRect.bottom),
+            hasNext
+                ? const [Color(0xFF38BDF8), Color(0xFF0284C7), Color(0xFF0C4A6E)]
+                : const [Color(0xFF64748B), Color(0xFF334155), Color(0xFF1E293B)],
+            const [0.0, 0.55, 1.0],
+          ),
+      );
+      canvas.drawRRect(
+        bodyRect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (cellSize * 0.042).clamp(1.8, 3.6)
+          ..color = hasNext ? const Color(0xFFE0F2FE) : const Color(0xFF94A3B8),
+      );
+
+      if (hasNext && nextNum != null) {
+        final nextStyle = palette?.styleFor(number: nextNum, isFrozen: false);
+        final bubbleR = cellSize * 0.27;
+        canvas.drawCircle(
+          center,
+          bubbleR,
+          Paint()..color = nextStyle?.topMid ?? const Color(0xFFF59E0B),
+        );
+        canvas.drawCircle(
+          center,
+          bubbleR,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (cellSize * 0.032).clamp(1.4, 3.0)
+            ..color = Colors.white,
+        );
+
+        final numFont =
+            (cellSize * (nextNum >= 100 ? 0.20 : 0.26)).clamp(9.0, 26.0);
+        final tp = TextPainter(
+          text: TextSpan(
+            text: '$nextNum',
+            style: TextStyle(
+              fontFamily: 'PoetsenOne',
+              fontSize: numFont,
+              color: Colors.white,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, center - Offset(tp.width * 0.5, tp.height * 0.5));
+
+        // Queue depth badge (`xN`) at bottom-right corner of housing
+        final qFont = (cellSize * 0.17).clamp(8.0, 17.0);
+        final qTp = TextPainter(
+          text: TextSpan(
+            text: 'x${queue.length}',
+            style: TextStyle(
+              fontFamily: 'Baloo2',
+              fontSize: qFont,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final qCenter = Offset(
+          cx + cellSize * 0.28,
+          cy + cellSize * 0.28,
+        );
+        final qPill = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: qCenter,
+            width: qTp.width + cellSize * 0.10,
+            height: qTp.height + cellSize * 0.03,
+          ),
+          Radius.circular(cellSize * 0.12),
+        );
+        canvas.drawRRect(qPill, Paint()..color = const Color(0xFF0F172A));
+        qTp.paint(canvas, qCenter - Offset(qTp.width * 0.5, qTp.height * 0.5));
+      } else {
+        // Empty pipe cap line
+        canvas.drawLine(
+          center + Offset(-cellSize * 0.18, 0),
+          center + Offset(cellSize * 0.18, 0),
+          Paint()
+            ..strokeCap = StrokeCap.round
+            ..strokeWidth = (cellSize * 0.06).clamp(2.0, 5.0)
+            ..color = const Color(0xFF94A3B8),
+        );
+      }
     }
   }
 

@@ -145,6 +145,8 @@ class PieceComponent extends PositionComponent {
       <String, _BakedGlyphSprite>{};
   static final Map<String, _BakedGlyphSprite> _frozenBadgeTextSpriteCache =
       <String, _BakedGlyphSprite>{};
+  static final Map<String, _BakedGlyphSprite> _clockBonusEmblemCache =
+      <String, _BakedGlyphSprite>{};
   static final Map<String, _SharedPieceGeometry> _sharedGeometryCache =
       <String, _SharedPieceGeometry>{};
   static final Map<String, _BakedStaticPieceSprite> _sharedStaticPieceCache =
@@ -356,6 +358,7 @@ class PieceComponent extends PositionComponent {
   bool isSpotlightHighlighted = false;
   bool isElevatedForSpotlight = false;
   bool isHammerTargetHighlighted = false;
+  bool isSwapTargetHighlighted = false;
   Path? _cachedSpotlightOutlinePath;
   double visualScale = 1.0;
   double visualScaleXMultiplier = 1.0;
@@ -456,6 +459,7 @@ class PieceComponent extends PositionComponent {
     _displayedAppearanceStyle = palette.styleFor(
       number: model.number,
       isFrozen: _isIceCovered,
+      isMystery: model.isMystery,
     );
     _railWorldPos = position.clone();
     _liquidWavePhase = (model.id * 1.93) % (math.pi * 2.0);
@@ -979,10 +983,36 @@ class PieceComponent extends PositionComponent {
   }
 
   void syncAppearanceImmediate() {
+    _isIceCovered = model.isFrozen;
+    _displayIceTarget = model.iceTarget;
     _displayedAppearanceStyle = palette.styleFor(
       number: model.number,
       isFrozen: _isIceCovered,
+      isMystery: model.isMystery,
     );
+  }
+
+  /// Juicy flip-reveal pulse when an adjacent merge unveils a `?` Mystery Block.
+  void triggerMysteryReveal({required BlockColorStyle revealedStyle}) {
+    _displayedAppearanceStyle = revealedStyle;
+    _mergePulseDuration = 0.32;
+    _mergePulsePeakScale = 1.18;
+    _mergePulseCurve = visualSettings.mergeSurvivorStaysPulseCurve;
+    _mergePulseElapsed = 0.0;
+    levelUpTargetGlow = math.max(levelUpTargetGlow, 0.72);
+    _waterSloshVel += 7.5;
+  }
+
+  /// Pop & unlock shimmer when a matching Key flies in and breaks a block's Padlock.
+  void triggerKeyLockUnlock() {
+    _mergePulseDuration = 0.28;
+    _mergePulsePeakScale = 1.15;
+    _mergePulseCurve = visualSettings.mergeSurvivorStaysPulseCurve;
+    _mergePulseElapsed = 0.0;
+    levelUpTargetGlow = math.max(levelUpTargetGlow, 0.65);
+    if (!model.isDud) {
+      _waterSloshVel += 6.2;
+    }
   }
 
   // --- Hold-to-Merge Candidate & MergeNumberPreview Choreography ---
@@ -1292,21 +1322,21 @@ class PieceComponent extends PositionComponent {
     final destOrigin = targetWorldOriginForGrid(model.col, model.row);
     final startOrigin = fromCenter - Vector2(cellSize * 0.5, cellSize * 0.5);
     position.setValues(
-      ui.lerpDouble(destOrigin.x, startOrigin.x, 0.58)!,
-      ui.lerpDouble(destOrigin.y, startOrigin.y, 0.58)!,
+      ui.lerpDouble(destOrigin.x, startOrigin.x, 0.84)!,
+      ui.lerpDouble(destOrigin.y, startOrigin.y, 0.84)!,
     );
     _visualGridPos.setValues(
       (position.x - boardOrigin.x) / cellSize,
       (position.y - boardOrigin.y) / cellSize,
     );
     beginSnapping(destOrigin);
-    _mergePulseDuration = 0.24;
-    _mergePulsePeakScale = 1.18;
+    _mergePulseDuration = 0.28;
+    _mergePulsePeakScale = 1.24;
     _mergePulseCurve = visualSettings.mergeSurvivorStaysPulseCurve;
     _mergePulseElapsed = 0.0;
-    levelUpTargetGlow = 0.85;
-    _sandReformFlash = 0.88;
-    _waterSloshVel = 8.0;
+    levelUpTargetGlow = 0.92;
+    _sandReformFlash = 0.95;
+    _waterSloshVel = 10.5;
   }
 
   /// Plays a lively squash-pop + glow + water slosh when `Shuffle` reassigns this piece's number.
@@ -1660,7 +1690,7 @@ class PieceComponent extends PositionComponent {
   bool get _isLiquidGlassBlock => !_isIceCovered && !model.isDud;
 
   String _computeStaticPieceCacheKey(BlockColorStyle baseStyle) {
-    final numKey = model.isDud ? -1 : (model.number ?? -2);
+    final numKey = model.isDud ? -1 : (model.isMystery ? -3 : (model.number ?? -2));
     final iceKey = _isIceCovered ? (_displayIceTarget ?? model.iceTarget ?? 4) : 0;
     final reflKey = (visualSettings.reflectionAlpha * 1000).round();
     final assetMask = (ScrewTextureCleaner.cleanedScrews.length << 5) |
@@ -1670,7 +1700,9 @@ class PieceComponent extends PositionComponent {
         (_arrowHorizCombinedImg != null ? 8 : 0) |
         (_blockerImg != null ? 16 : 0) |
         (_iceBlockImg != null ? 64 : 0);
-    return 'glassHalfLiquidV6|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$reflKey|$assetMask';
+    final mechKey =
+        '${model.isMystery ? 1 : 0}|${model.clockBonusSeconds ?? 0}|${model.keyColor ?? ''}|${model.lockColor ?? ''}|${model.swapUses}|${model.movesLeft ?? 0}';
+    return 'glassHalfLiquidV8|${_sharedGeom.key}|${baseStyle.topBright.toARGB32().toRadixString(16)}|${baseStyle.bottomLip.toARGB32().toRadixString(16)}|$numKey|${model.movement.index}|${_isIceCovered ? 1 : 0}|$iceKey|$mechKey|$reflKey|$assetMask';
   }
 
   _BakedStaticPieceSprite? _getOrBakeStaticPieceSprite(
@@ -1774,6 +1806,9 @@ class PieceComponent extends PositionComponent {
         }
         if (isHammerTargetHighlighted) {
           _drawHammerTargetHighlightBorder(canvas, 0.0, Offset.zero);
+        }
+        if (isSwapTargetHighlighted) {
+          _drawSwapTargetHighlightBorder(canvas, 0.0, Offset.zero);
         }
         return;
       }
@@ -2112,6 +2147,11 @@ class PieceComponent extends PositionComponent {
         !_areComponentsRemovedForAbsorb) {
       _drawHammerTargetHighlightBorder(canvas, liftPx, topJellyShift);
     }
+    if (isSwapTargetHighlighted &&
+        !_isBakingGlassShellOnly &&
+        !_areComponentsRemovedForAbsorb) {
+      _drawSwapTargetHighlightBorder(canvas, liftPx, topJellyShift);
+    }
 
     if (visualOpacity < 0.999) {
       canvas.restore();
@@ -2243,6 +2283,7 @@ class PieceComponent extends PositionComponent {
 
     // Compute vertical liquid-submersion offset so numbers & arrows sit comfortably inside the ~70% liquid!
     double liquidSubmergeDy = 0.0;
+    double numberShiftDx = 0.0;
     if (_isLiquidGlassBlock) {
       final arrowLayout = resolvedLayout.arrowLayout;
       final isSingleCellPinned = model.movement.isPinned &&
@@ -2261,11 +2302,26 @@ class PieceComponent extends PositionComponent {
             ? cellSize * 0.105
             : cellSize * 0.030;
       }
+
+      // Gentle breathing room when a Clock Bonus emblem shares a tight 1x1 or 2x1 tank
+      if (model.hasClockBonus && !model.isMystery && !model.isDud) {
+        if (model.widthCols == 1 && model.heightRows == 1) {
+          liquidSubmergeDy += cellSize * (model.movement.isPinned ? 0.115 : 0.105);
+        } else if (model.widthCols == 2 && model.heightRows == 1) {
+          if (model.movement.isPinned) {
+            liquidSubmergeDy += cellSize * 0.085;
+          } else if (!model.hasKey &&
+              !model.hasSwap &&
+              resolvedLayout.arrowLayout == null) {
+            numberShiftDx = -cellSize * 0.16;
+          }
+        }
+      }
     }
 
     canvas.save();
-    if (liquidSubmergeDy != 0.0) {
-      canvas.translate(0.0, liquidSubmergeDy);
+    if (liquidSubmergeDy != 0.0 || numberShiftDx != 0.0) {
+      canvas.translate(numberShiftDx, liquidSubmergeDy);
     }
 
     if (resolvedLayout.arrowLayout != null) {
@@ -2278,14 +2334,835 @@ class PieceComponent extends PositionComponent {
     }
 
     if (!model.isDud && model.number != null) {
-      _drawBlockNumbersWithPreview(canvas, baseStyle, resolvedLayout);
+      if (model.isMystery) {
+        _drawMysteryQuestionMark(canvas, resolvedLayout);
+      } else {
+        _drawBlockNumbersWithPreview(canvas, baseStyle, resolvedLayout);
+      }
     }
     canvas.restore();
+
+    if (model.hasClockBonus && !model.isMystery) {
+      _drawClockBonusBadge(
+        canvas,
+        model.clockBonusSeconds!,
+        resolvedLayout,
+        liquidSubmergeDy,
+      );
+    }
+    if (model.hasKey && !model.isMystery) {
+      _drawKeyCornerBadge(canvas, model.keyColor!);
+    }
+    if (model.hasSwap && !model.isMystery) {
+      _drawSwapBadge(canvas);
+    }
+    if (model.hasLimitedMoves) {
+      _drawLimitedMoveBadge(canvas, model.movesLeft!);
+    }
+    if (model.movement.isOneWay) {
+      _drawOneWayArrow(canvas, model.movement);
+    }
+    if (model.isLocked) {
+      _drawKeyLockChainsAndPadlock(canvas, model.lockColor!, resolvedLayout);
+    }
 
     if (_winFractureProgress > 0.01 && _winCrumbleProgress < 0.85) {
       _drawWinFractureCracks(canvas, baseStyle);
     }
 
+    canvas.restore();
+  }
+
+  /// Finds the local cell anchor for top-right / top-left corner mechanic badges.
+  GridCell _badgeCornerCell({required bool preferRight}) {
+    GridCell best = model.localCells.first;
+    for (final cell in model.localCells) {
+      if (cell.$2 < best.$2) {
+        best = cell;
+      } else if (cell.$2 == best.$2) {
+        if (preferRight ? cell.$1 > best.$1 : cell.$1 < best.$1) {
+          best = cell;
+        }
+      }
+    }
+    return best;
+  }
+
+  /// Draws a bold glowing 3D `?` glyph centered on a Mystery Block.
+  void _drawMysteryQuestionMark(
+    Canvas canvas,
+    _ResolvedPieceLabelLayout layout,
+  ) {
+    final fontSize = (cellSize * 0.62).clamp(18.0, 74.0);
+    final center = layout.labelCenterLocal;
+    final strokePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (fontSize * 0.16).clamp(2.4, 9.0)
+      ..strokeJoin = StrokeJoin.round
+      ..color = const Color(0xFF28104E);
+    final tpShadow = TextPainter(
+      text: TextSpan(
+        text: '?',
+        style: TextStyle(
+          fontFamily: 'PoetsenOne',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w400,
+          foreground: strokePaint,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final tpFill = TextPainter(
+      text: TextSpan(
+        text: '?',
+        style: TextStyle(
+          fontFamily: 'PoetsenOne',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w400,
+          color: const Color(0xFFFFF5C2),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final drawOffset = Offset(
+      center.dx - tpFill.width * 0.5,
+      center.dy - tpFill.height * 0.5,
+    );
+    tpShadow.paint(canvas, drawOffset + Offset(0, fontSize * 0.06));
+    tpFill.paint(canvas, drawOffset);
+
+    // Subtle twin mystic glints flanking '?'
+    final glintPaint = Paint()..color = const Color(0xCCFFF6B0);
+    canvas.drawCircle(
+      center + Offset(-fontSize * 0.42, -fontSize * 0.22),
+      (cellSize * 0.045).clamp(1.6, 4.5),
+      glintPaint,
+    );
+    canvas.drawCircle(
+      center + Offset(fontSize * 0.40, fontSize * 0.18),
+      (cellSize * 0.036).clamp(1.4, 3.8),
+      glintPaint,
+    );
+  }
+
+  /// Draws a glossy 3D emerald Stopwatch charm + bold stroked `PoetsenOne` `+Ns`
+  /// emblem cleanly integrated inside the liquid tank of a Clock Bonus Block.
+  void _drawClockBonusBadge(
+    Canvas canvas,
+    int bonusSeconds,
+    _ResolvedPieceLabelLayout resolvedLayout,
+    double liquidSubmergeDy,
+  ) {
+    final placement = _resolveClockBonusPlacement(
+      resolvedLayout,
+      liquidSubmergeDy,
+    );
+    final sprite = _getOrBakeClockBonusEmblem(
+      bonusSeconds: bonusSeconds,
+      watchDiam: placement.watchDiam,
+      fontSize: placement.fontSize,
+      stacked: placement.stacked,
+    );
+
+    canvas.save();
+    canvas.translate(placement.center.dx, placement.center.dy);
+    if (sprite != null) {
+      canvas.drawImageRect(
+        sprite.image,
+        sprite.srcRect,
+        sprite.dstRect,
+        _glyphSpritePaint,
+      );
+    } else {
+      _paintClockBonusEmblemDirect(
+        canvas,
+        bonusSeconds: bonusSeconds,
+        watchDiam: placement.watchDiam,
+        fontSize: placement.fontSize,
+        stacked: placement.stacked,
+      );
+    }
+    canvas.restore();
+  }
+
+  ({Offset center, double watchDiam, double fontSize, bool stacked})
+      _resolveClockBonusPlacement(
+    _ResolvedPieceLabelLayout resolvedLayout,
+    double liquidSubmergeDy,
+  ) {
+    final w = model.widthCols;
+    final h = model.heightRows;
+    final isRect = model.localCells.length == w * h;
+    final labelCenter = Offset(
+      resolvedLayout.labelCenterLocal.dx,
+      resolvedLayout.labelCenterLocal.dy + liquidSubmergeDy,
+    );
+    final hasVertArrows =
+        resolvedLayout.arrowLayout != null && !resolvedLayout.arrowLayout!.isHorizontal;
+
+    // 1. Non-rectangular polyominoes (L, T, Z, +): place a centered medallion inside the cleanest free arm cell.
+    if (!isRect && model.localCells.length >= 3) {
+      GridCell bestCell = model.localCells.first;
+      double bestScore = -1e9;
+      for (final c in model.localCells) {
+        final cc = Offset((c.$1 + 0.5) * cellSize, (c.$2 + 0.5) * cellSize);
+        final dist = (cc - labelCenter).distance / cellSize;
+        if (dist < 0.72) continue;
+        double score = dist * 2.0;
+        // Strongly prefer cells below row 0 so the medallion floats deep in the glowing liquid.
+        if (c.$2 > 0) score += 1.6;
+        // Prefer right-side cells when tied, and avoid cells carrying other corner badges.
+        score += c.$1 * 0.15;
+        if (model.hasLimitedMoves && c.$2 == h - 1 && c.$1 == 0) score -= 1.2;
+        if ((model.hasKey || model.hasSwap) && c.$2 == 0 && c.$1 == 0) {
+          score -= 1.2;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestCell = c;
+        }
+      }
+      final anchorY = bestCell.$2 == 0
+          ? (bestCell.$2 + 0.56) * cellSize
+          : (bestCell.$2 + 0.49) * cellSize;
+      return (
+        center: Offset((bestCell.$1 + 0.50) * cellSize, anchorY),
+        watchDiam: (cellSize * 0.52).clamp(20.0, 56.0),
+        fontSize: (cellSize * 0.25).clamp(10.0, 26.0),
+        stacked: true,
+      );
+    }
+
+    // 2. Roomy multi-row rectangles (3x3, 2x2, 2x3, 3x2): centered cleanly below the number inside liquid.
+    if (w >= 2 && h >= 2) {
+      if (!hasVertArrows) {
+        if (h >= 3) {
+          return (
+            center: Offset(labelCenter.dx, (h - 0.62) * cellSize),
+            watchDiam: (cellSize * 0.62).clamp(24.0, 68.0),
+            fontSize: (cellSize * 0.36).clamp(13.0, 38.0),
+            stacked: false,
+          );
+        }
+        return (
+          center: Offset(labelCenter.dx, (h - 0.43) * cellSize),
+          watchDiam: (cellSize * 0.44).clamp(18.0, 48.0),
+          fontSize: (cellSize * 0.26).clamp(10.5, 28.0),
+          stacked: false,
+        );
+      }
+      // Vertical arrows occupy center column: place medallion in the clean right flank.
+      return (
+        center: Offset((w - 0.46) * cellSize, labelCenter.dy),
+        watchDiam: (cellSize * 0.46).clamp(18.0, 48.0),
+        fontSize: (cellSize * 0.22).clamp(9.5, 24.0),
+        stacked: true,
+      );
+    }
+
+    // 3. Tall narrow strips (1x2, 1x3): centered medallion in the open liquid below the number.
+    if (w == 1 && h >= 2) {
+      if (!hasVertArrows) {
+        final anchorY = h >= 3
+            ? (h - 0.52) * cellSize
+            : (model.movement.isPinned ? 1.54 : 1.60) * cellSize;
+        return (
+          center: Offset(0.50 * cellSize, anchorY),
+          watchDiam: (cellSize * 0.48).clamp(18.0, 50.0),
+          fontSize: (cellSize * 0.235).clamp(9.5, 25.0),
+          stacked: true,
+        );
+      }
+      return (
+        center: Offset(0.50 * cellSize, 0.36 * cellSize),
+        watchDiam: (cellSize * 0.36).clamp(15.0, 38.0),
+        fontSize: (cellSize * 0.19).clamp(8.5, 20.0),
+        stacked: false,
+      );
+    }
+
+    // 4. Wide 1-row strips (3x1, 4x1): centered medallion inside the open rightmost cell.
+    if (h == 1 && w >= 3) {
+      final isPinned = model.movement.isPinned;
+      final insetFromRight = isPinned ? 0.72 : 0.48;
+      return (
+        center: Offset((w - insetFromRight) * cellSize, 0.60 * cellSize),
+        watchDiam: (cellSize * (isPinned ? 0.41 : 0.46)).clamp(17.0, 48.0),
+        fontSize: (cellSize * (isPinned ? 0.20 : 0.225)).clamp(9.0, 24.0),
+        stacked: true,
+      );
+    }
+
+    // 5. 2x1 bars: sleek medallion in the open right side (or centered top strip when pinned).
+    if (h == 1 && w == 2) {
+      if (model.movement.isPinned) {
+        return (
+          center: Offset(1.00 * cellSize, 0.26 * cellSize),
+          watchDiam: (cellSize * 0.29).clamp(13.0, 30.0),
+          fontSize: (cellSize * 0.18).clamp(8.0, 19.0),
+          stacked: false,
+        );
+      }
+      final isFourDigit = (model.number ?? 0) >= 1000;
+      return (
+        center: Offset((isFourDigit ? 1.69 : 1.62) * cellSize, 0.60 * cellSize),
+        watchDiam: (cellSize * (isFourDigit ? 0.39 : 0.44)).clamp(16.0, 46.0),
+        fontSize: (cellSize * (isFourDigit ? 0.185 : 0.215)).clamp(8.5, 22.0),
+        stacked: true,
+      );
+    }
+
+    // 6. Compact 1x1 block: crisp mini emblem in the top band (sits cleanly between bolts if pinned).
+    if (model.movement.isPinned) {
+      return (
+        center: Offset(0.50 * cellSize, 0.28 * cellSize),
+        watchDiam: (cellSize * 0.29).clamp(12.5, 30.0),
+        fontSize: (cellSize * 0.17).clamp(7.5, 18.0),
+        stacked: true,
+      );
+    }
+    return (
+      center: Offset(0.50 * cellSize, 0.26 * cellSize),
+      watchDiam: (cellSize * 0.29).clamp(13.0, 32.0),
+      fontSize: (cellSize * 0.185).clamp(8.0, 19.0),
+      stacked: false,
+    );
+  }
+
+  _BakedGlyphSprite? _getOrBakeClockBonusEmblem({
+    required int bonusSeconds,
+    required double watchDiam,
+    required double fontSize,
+    required bool stacked,
+  }) {
+    final key =
+        'clkV2|$bonusSeconds|${(watchDiam * 4).round()}|${(fontSize * 4).round()}|${stacked ? 1 : 0}';
+    final cached = _clockBonusEmblemCache[key];
+    if (cached != null) return cached;
+
+    try {
+      final layout = _measureClockBonusEmblem(
+        bonusSeconds: bonusSeconds,
+        watchDiam: watchDiam,
+        fontSize: fontSize,
+        stacked: stacked,
+      );
+      final pad = (watchDiam * 0.28).clamp(5.0, 14.0);
+      final logicalW = layout.totalW + pad * 2.0;
+      final logicalH = layout.totalH + pad * 2.0;
+      const ss = 2.5;
+      final imgW = (logicalW * ss).ceil().clamp(8, 512);
+      final imgH = (logicalH * ss).ceil().clamp(8, 512);
+
+      final rec = ui.PictureRecorder();
+      final c = Canvas(rec);
+      c.scale(imgW / logicalW, imgH / logicalH);
+      c.translate(logicalW * 0.5, logicalH * 0.5);
+      _paintClockBonusEmblemDirect(
+        c,
+        bonusSeconds: bonusSeconds,
+        watchDiam: watchDiam,
+        fontSize: fontSize,
+        stacked: stacked,
+      );
+
+      final pic = rec.endRecording();
+      final img = pic.toImageSync(imgW, imgH);
+      pic.dispose();
+
+      final sprite = _BakedGlyphSprite(
+        image: img,
+        srcRect: Rect.fromLTWH(0, 0, imgW.toDouble(), imgH.toDouble()),
+        dstRect: Rect.fromCenter(
+          center: Offset.zero,
+          width: logicalW,
+          height: logicalH,
+        ),
+      );
+      if (_clockBonusEmblemCache.length >= 48) {
+        final oldest =
+            _clockBonusEmblemCache.remove(_clockBonusEmblemCache.keys.first);
+        _deferDisposeImage(oldest?.image);
+      }
+      _clockBonusEmblemCache[key] = sprite;
+      return sprite;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  ({
+    TextPainter shadowTp,
+    TextPainter strokeTp,
+    TextPainter fillTp,
+    double totalW,
+    double totalH,
+    Offset watchCenter,
+    Offset textOrigin,
+  }) _measureClockBonusEmblem({
+    required int bonusSeconds,
+    required double watchDiam,
+    required double fontSize,
+    required bool stacked,
+  }) {
+    final text = '+${bonusSeconds}s';
+    final strokeW = (fontSize * 0.24).clamp(2.0, 7.5);
+    final baseStyle = TextStyle(
+      fontFamily: 'PoetsenOne',
+      fontSize: fontSize,
+      fontWeight: FontWeight.w400,
+      height: 1.0,
+      letterSpacing: -fontSize * 0.02,
+    );
+
+    final shadowTp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: baseStyle.copyWith(
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = strokeW * 1.15
+            ..strokeJoin = StrokeJoin.round
+            ..color = const Color(0x88022219),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final strokeTp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: baseStyle.copyWith(
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = strokeW
+            ..strokeJoin = StrokeJoin.round
+            ..color = const Color(0xFF033426),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final fillTp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: baseStyle.copyWith(
+          foreground: Paint()
+            ..shader = ui.Gradient.linear(
+              Offset.zero,
+              Offset(0, fontSize),
+              const [Color(0xFFFFFFFF), Color(0xFFA7F3D0)],
+            ),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    if (stacked) {
+      // Plush medallion: 3D Stopwatch on top, bold stroked `+15s` tucked right across its lower chin!
+      final totalW = math.max(watchDiam, fillTp.width + strokeW);
+      final textCenterY = watchDiam * 0.30;
+      final watchCenterY = -fontSize * 0.14;
+      final totalH = math.max(watchDiam * 1.15, (textCenterY + fillTp.height * 0.5) - (watchCenterY - watchDiam * 0.55));
+      return (
+        shadowTp: shadowTp,
+        strokeTp: strokeTp,
+        fillTp: fillTp,
+        totalW: totalW,
+        totalH: totalH,
+        watchCenter: Offset(0, watchCenterY),
+        textOrigin: Offset(
+          -fillTp.width * 0.5,
+          textCenterY - fillTp.height * 0.5,
+        ),
+      );
+    } else {
+      // Horizontal lockup: 3D Stopwatch on the left + bold stroked `+15s` immediately beside it!
+      final gap = (watchDiam * 0.08).clamp(1.2, 5.0);
+      final totalW = watchDiam + gap + fillTp.width;
+      final totalH = math.max(watchDiam, fillTp.height);
+      final leftEdge = -totalW * 0.5;
+      return (
+        shadowTp: shadowTp,
+        strokeTp: strokeTp,
+        fillTp: fillTp,
+        totalW: totalW,
+        totalH: totalH,
+        watchCenter: Offset(leftEdge + watchDiam * 0.5, -watchDiam * 0.03),
+        textOrigin: Offset(
+          leftEdge + watchDiam + gap,
+          -fillTp.height * 0.47,
+        ),
+      );
+    }
+  }
+
+  void _paintClockBonusEmblemDirect(
+    Canvas canvas, {
+    required int bonusSeconds,
+    required double watchDiam,
+    required double fontSize,
+    required bool stacked,
+  }) {
+    final m = _measureClockBonusEmblem(
+      bonusSeconds: bonusSeconds,
+      watchDiam: watchDiam,
+      fontSize: fontSize,
+      stacked: stacked,
+    );
+
+    drawEmeraldStopwatchIcon(
+      canvas,
+      m.watchCenter,
+      watchDiam,
+    );
+
+    final dropDy = (fontSize * 0.08).clamp(0.8, 3.0);
+    m.shadowTp.paint(canvas, m.textOrigin + Offset(0, dropDy));
+    m.strokeTp.paint(canvas, m.textOrigin);
+    m.fillTp.paint(canvas, m.textOrigin);
+  }
+
+  /// Draws a glossy colored Key badge on a Key-carrying Block.
+  void _drawKeyCornerBadge(Canvas canvas, String keyColor) {
+    final cell = _badgeCornerCell(preferRight: !model.hasClockBonus);
+    final cx = model.hasClockBonus
+        ? (cell.$1 + 0.25) * cellSize
+        : (cell.$1 + 0.77) * cellSize;
+    final cy = (cell.$2 + 0.24) * cellSize;
+    final badgeR = (cellSize * 0.20).clamp(9.0, 22.0);
+
+    canvas.drawCircle(
+      Offset(cx, cy + cellSize * 0.02),
+      badgeR,
+      Paint()..color = const Color(0x880B0820),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      badgeR,
+      Paint()..color = const Color(0xE6151B3A),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      badgeR,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.028).clamp(1.2, 2.5)
+        ..color = keyLockColorsFor(keyColor).bright,
+    );
+    drawVectorKeyIcon(canvas, Offset(cx, cy), badgeR * 1.45, keyColor);
+  }
+
+  /// Draws metallic cross-chains & colored Padlock across a Key-Locked block.
+  void _drawKeyLockChainsAndPadlock(
+    Canvas canvas,
+    String lockColor,
+    _ResolvedPieceLabelLayout layout,
+  ) {
+    final c = keyLockColorsFor(lockColor);
+    final center = layout.labelCenterLocal;
+    final spanX = math.min(cellSize * 0.44, _localBounds.width * 0.42);
+    final spanY = math.min(cellSize * 0.40, _localBounds.height * 0.40);
+
+    // Subtle dark veil & metallic diagonal chains
+    final chainOutline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = (cellSize * 0.095).clamp(3.0, 10.0)
+      ..color = c.outline.withValues(alpha: 0.88);
+    final chainMid = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = (cellSize * 0.052).clamp(1.8, 5.5)
+      ..color = const Color(0xFFB8C4D9);
+
+    for (final (p1, p2) in [
+      (center + Offset(-spanX, -spanY), center + Offset(spanX, spanY)),
+      (center + Offset(spanX, -spanY), center + Offset(-spanX, spanY)),
+    ]) {
+      canvas.drawLine(p1, p2, chainOutline);
+      canvas.drawLine(p1, p2, chainMid);
+    }
+
+    // Glossy Padlock in the center matching `lockColor`
+    final lockW = (cellSize * 0.36).clamp(15.0, 42.0);
+    final lockH = lockW * 0.84;
+    final shackleR = lockW * 0.28;
+    final shackleCenter = Offset(center.dx, center.dy - lockH * 0.36);
+
+    final shacklePath = Path()
+      ..addArc(
+        Rect.fromCircle(center: shackleCenter, radius: shackleR),
+        math.pi,
+        math.pi,
+      );
+    canvas.drawPath(
+      shacklePath,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = (lockW * 0.22).clamp(3.0, 9.0)
+        ..color = c.outline,
+    );
+    canvas.drawPath(
+      shacklePath,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = (lockW * 0.12).clamp(1.8, 5.0)
+        ..color = const Color(0xFFE2E8F0),
+    );
+
+    final bodyRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(center.dx, center.dy + lockH * 0.14),
+        width: lockW,
+        height: lockH,
+      ),
+      Radius.circular(lockW * 0.22),
+    );
+    canvas.drawRRect(
+      bodyRect.shift(Offset(0, lockW * 0.08)),
+      Paint()..color = const Color(0x88000000),
+    );
+    canvas.drawRRect(
+      bodyRect,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(center.dx, bodyRect.top),
+          Offset(center.dx, bodyRect.bottom),
+          [c.bright, c.mid, c.dark],
+          const [0.0, 0.55, 1.0],
+        ),
+    );
+    canvas.drawRRect(
+      bodyRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (lockW * 0.09).clamp(1.6, 3.8)
+        ..color = c.outline,
+    );
+
+    // Dark keyhole silhouette inside padlock
+    final khCenter = Offset(center.dx, center.dy + lockH * 0.08);
+    canvas.drawCircle(khCenter, lockW * 0.11, Paint()..color = c.outline);
+    final khSlot = Path()
+      ..moveTo(khCenter.dx - lockW * 0.06, khCenter.dy + lockW * 0.04)
+      ..lineTo(khCenter.dx + lockW * 0.06, khCenter.dy + lockW * 0.04)
+      ..lineTo(khCenter.dx + lockW * 0.09, khCenter.dy + lockH * 0.30)
+      ..lineTo(khCenter.dx - lockW * 0.09, khCenter.dy + lockH * 0.30)
+      ..close();
+    canvas.drawPath(khSlot, Paint()..color = c.outline);
+  }
+
+  /// Glowing cyan border when a Swap Block is primed to trade numbers with this block.
+  void _drawSwapTargetHighlightBorder(
+    Canvas canvas,
+    double zLiftPx,
+    Offset topJellyShift,
+  ) {
+    final fullSilhouette = _cachedSpotlightOutlinePath ??= Path.combine(
+      PathOperation.union,
+      _topPath,
+      _topPath.shift(Offset(0, _lipDepth)),
+    );
+    canvas.save();
+    canvas.translate(topJellyShift.dx * 0.5, topJellyShift.dy * 0.5 - zLiftPx);
+    canvas.drawPath(
+      fullSilhouette,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.11).clamp(3.2, 10.0)
+        ..color = const Color(0xCC22D3EE)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cellSize * 0.06),
+    );
+    canvas.drawPath(
+      fullSilhouette,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.055).clamp(2.0, 5.2)
+        ..color = const Color(0xFFE0F2FE),
+    );
+    canvas.restore();
+  }
+
+  /// Glossy cyan `⇄` Swap badge in the top-left corner of a Swap Block.
+  void _drawSwapBadge(Canvas canvas) {
+    final cell = _badgeCornerCell(preferRight: false);
+    final cx = (cell.$1 + 0.23) * cellSize;
+    final cy = (cell.$2 + 0.24) * cellSize;
+    final r = (cellSize * 0.19).clamp(8.5, 20.0);
+
+    canvas.drawCircle(
+      Offset(cx, cy + cellSize * 0.02),
+      r,
+      Paint()..color = const Color(0x88082F49),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      r,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, cy - r),
+          Offset(cx, cy + r),
+          const [Color(0xFF67E8F9), Color(0xFF0284C7)],
+        ),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.028).clamp(1.2, 2.6)
+        ..color = const Color(0xFF082F49),
+    );
+
+    final fontSize = (r * 1.18).clamp(9.0, 22.0);
+    final tp = TextPainter(
+      text: TextSpan(
+        text: '⇄',
+        style: TextStyle(
+          fontFamily: 'Baloo2',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(cx - tp.width * 0.5, cy - tp.height * 0.52));
+  }
+
+  /// Amber/Crimson remaining-moves counter badge on a Limited-Move / Fragile Block.
+  void _drawLimitedMoveBadge(Canvas canvas, int remaining) {
+    GridCell cell = model.localCells.first;
+    for (final c in model.localCells) {
+      if (c.$2 > cell.$2 || (c.$2 == cell.$2 && c.$1 < cell.$1)) {
+        cell = c;
+      }
+    }
+    final cx = (cell.$1 + 0.24) * cellSize;
+    final cy = (cell.$2 + 0.78) * cellSize;
+    final r = (cellSize * 0.19).clamp(8.5, 20.0);
+    final urgent = remaining <= 1;
+
+    // Subtle hairline warning cracks across the corner when only 1 move remains
+    if (urgent) {
+      final crackPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = (cellSize * 0.026).clamp(1.1, 2.4)
+        ..color = const Color(0xAAFFF1F2);
+      final crackOrigin = Offset(cx + r * 0.65, cy - r * 0.55);
+      final crackPath = Path()
+        ..moveTo(crackOrigin.dx, crackOrigin.dy)
+        ..lineTo(crackOrigin.dx + cellSize * 0.12, crackOrigin.dy - cellSize * 0.10)
+        ..lineTo(crackOrigin.dx + cellSize * 0.22, crackOrigin.dy - cellSize * 0.04);
+      canvas.drawPath(crackPath, crackPaint);
+    }
+
+    canvas.drawCircle(
+      Offset(cx, cy + cellSize * 0.02),
+      r,
+      Paint()..color = const Color(0x99350606),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      r,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(cx, cy - r),
+          Offset(cx, cy + r),
+          urgent
+              ? const [Color(0xFFFF7A7A), Color(0xFFDC2626)]
+              : const [Color(0xFFFDE047), Color(0xFFD97706)],
+        ),
+    );
+    canvas.drawCircle(
+      Offset(cx, cy),
+      r,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (cellSize * 0.03).clamp(1.2, 2.6)
+        ..color = urgent ? const Color(0xFF450A0A) : const Color(0xFF451A03),
+    );
+
+    final fontSize = (r * 1.15).clamp(9.0, 22.0);
+    final tp = TextPainter(
+      text: TextSpan(
+        text: '$remaining',
+        style: TextStyle(
+          fontFamily: 'Baloo2',
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(cx - tp.width * 0.5, cy - tp.height * 0.5));
+  }
+
+  /// Bold single-direction golden chevron arrow for One-Way Arrow blocks (`left/right/up/down`).
+  void _drawOneWayArrow(Canvas canvas, MovementConstraint movement) {
+    final (dx, dy, angle) = switch (movement) {
+      MovementConstraint.rightOnly => (1.0, 0.0, 0.0),
+      MovementConstraint.leftOnly => (-1.0, 0.0, math.pi),
+      MovementConstraint.downOnly => (0.0, 1.0, math.pi * 0.5),
+      MovementConstraint.upOnly => (0.0, -1.0, -math.pi * 0.5),
+      _ => (0.0, 0.0, 0.0),
+    };
+    if (dx == 0.0 && dy == 0.0) return;
+
+    // Anchor arrow near the leading edge cell in the allowed travel direction
+    GridCell lead = model.localCells.first;
+    for (final c in model.localCells) {
+      final score = c.$1 * dx + c.$2 * dy;
+      final bestScore = lead.$1 * dx + lead.$2 * dy;
+      if (score > bestScore) {
+        lead = c;
+      }
+    }
+    final cx = (lead.$1 + 0.5 + dx * 0.30) * cellSize;
+    final cy = (lead.$2 + 0.5 + dy * 0.30) * cellSize;
+    final sz = (cellSize * 0.22).clamp(9.0, 26.0);
+
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(angle);
+
+    final arrowPath = Path()
+      ..moveTo(sz * 0.65, 0)
+      ..lineTo(-sz * 0.15, -sz * 0.58)
+      ..lineTo(-sz * 0.15, -sz * 0.24)
+      ..lineTo(-sz * 0.68, -sz * 0.24)
+      ..lineTo(-sz * 0.68, sz * 0.24)
+      ..lineTo(-sz * 0.15, sz * 0.24)
+      ..lineTo(-sz * 0.15, sz * 0.58)
+      ..close();
+
+    canvas.drawPath(
+      arrowPath.shift(Offset(0, sz * 0.08)),
+      Paint()..color = const Color(0x993B1304),
+    );
+    canvas.drawPath(
+      arrowPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(0, -sz * 0.58),
+          Offset(0, sz * 0.58),
+          const [Color(0xFFFFF7AE), Color(0xFFFFA500)],
+        ),
+    );
+    canvas.drawPath(
+      arrowPath,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (sz * 0.14).clamp(1.4, 3.2)
+        ..strokeJoin = StrokeJoin.round
+        ..color = const Color(0xFF4A1800),
+    );
     canvas.restore();
   }
 

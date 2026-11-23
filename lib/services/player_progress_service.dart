@@ -788,10 +788,39 @@ class PlayerProgressService extends ChangeNotifier {
       'dud',
       'pinned',
       'arrows',
+      'clock_bonus',
+      'mystery',
+      'key_lock',
+      'toggle_walls',
+      'dispenser',
+      'swap',
+      'one_way_arrow',
+      'limited_move',
       'pu_level_up',
       'pu_time_freeze',
       'pu_shuffle',
       'pu_hammer',
+    ]);
+    _prefs?.setStringList(_kSeenMechanics, _seenMechanics.toList());
+    notifyListeners();
+  }
+
+  /// Clears seen tutorial flags for gameplay mechanics (preserving boosters)
+  /// so QA can re-trigger `MechanicUnlockDialog` popups when testing mechanic levels.
+  void cheatResetSeenMechanics() {
+    _seenMechanics.removeAll(const [
+      'ice',
+      'dud',
+      'pinned',
+      'arrows',
+      'clock_bonus',
+      'mystery',
+      'key_lock',
+      'toggle_walls',
+      'dispenser',
+      'swap',
+      'one_way_arrow',
+      'limited_move',
     ]);
     _prefs?.setStringList(_kSeenMechanics, _seenMechanics.toList());
     notifyListeners();
@@ -1189,9 +1218,12 @@ class MechanicUnlockMilestone {
     required this.note,
   });
 
-  /// Dynamic unlock schedule merging the 4 fixed campaign mechanics
-  /// (`ice: 7`, `dud: 14`, `arrows: 22`, `pinned: 42`) with Remote Config's
-  /// `booster_unlock_order` (default: `pu_level_up: 17`, `pu_time_freeze: 27`).
+  /// Dynamic unlock schedule merging the 12 campaign mechanics
+  /// (`ice: 7`, `dud: 14`, `arrows: 22`, `mystery: 33`, `pinned: 42`,
+  /// `one_way_arrow: 50`, `key_lock: 58`, `swap: 70`, `limited_move: 83`,
+  /// `clock_bonus: 95`, `dispenser: 108`, `toggle_walls: 133`) with Remote
+  /// Config's `booster_unlock_order` (default: `pu_level_up: 17`,
+  /// `pu_time_freeze: 27`, `pu_shuffle: 32`, `pu_hammer: 38`).
   static List<MechanicUnlockMilestone> get schedule {
     final raw = <({
       int unlockLevel,
@@ -1222,11 +1254,67 @@ class MechanicUnlockMilestone {
         note: 'Unlocks at Level 22!',
       ),
       const (
-        unlockLevel: 42,
+        unlockLevel: 33,
         sortTieOrder: 103,
+        mechanicId: 'mystery',
+        title: 'Mystery Blocks',
+        note: 'Unlocks at Level 33!',
+      ),
+      const (
+        unlockLevel: 42,
+        sortTieOrder: 104,
         mechanicId: 'pinned',
         title: 'Screwed Block',
         note: 'Unlocks at Level 42!',
+      ),
+      const (
+        unlockLevel: 50,
+        sortTieOrder: 105,
+        mechanicId: 'one_way_arrow',
+        title: 'One-Way Arrows',
+        note: 'Unlocks at Level 50!',
+      ),
+      const (
+        unlockLevel: 58,
+        sortTieOrder: 106,
+        mechanicId: 'key_lock',
+        title: 'Key & Lock',
+        note: 'Unlocks at Level 58!',
+      ),
+      const (
+        unlockLevel: 70,
+        sortTieOrder: 107,
+        mechanicId: 'swap',
+        title: 'Swap Blocks',
+        note: 'Unlocks at Level 70!',
+      ),
+      const (
+        unlockLevel: 83,
+        sortTieOrder: 108,
+        mechanicId: 'limited_move',
+        title: 'Fragile Blocks',
+        note: 'Unlocks at Level 83!',
+      ),
+      const (
+        unlockLevel: 95,
+        sortTieOrder: 109,
+        mechanicId: 'clock_bonus',
+        title: 'Clock Bonus',
+        note: 'Unlocks at Level 95!',
+      ),
+      const (
+        unlockLevel: 108,
+        sortTieOrder: 110,
+        mechanicId: 'dispenser',
+        title: 'Pipe Dispenser',
+        note: 'Unlocks at Level 108!',
+      ),
+      const (
+        unlockLevel: 133,
+        sortTieOrder: 111,
+        mechanicId: 'toggle_walls',
+        title: 'Toggle Walls',
+        note: 'Unlocks at Level 133!',
       ),
     ];
 

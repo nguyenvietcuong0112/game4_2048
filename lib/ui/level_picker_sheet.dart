@@ -4,7 +4,7 @@ import 'unity_ui_kit.dart';
 
 /// Native Unity-styled Level Selector Popup (`Background_Popup.png` + `Panel_Popup.png` +
 /// `Button_Close.png` + 9-slice `Button_CTA.png` / `Button_Blue.png` tiles) allowing instant
-/// jump across all 122 Campaign levels and 25 Bonus levels.
+/// jump across all Campaign levels (currently 300) and 25 Bonus levels.
 class LevelPickerSheet extends StatefulWidget {
   final LevelRepository repository;
   final int activeLevelNumber;
@@ -108,7 +108,7 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                       child: TabBarView(
                         controller: _tabCtrl,
                         children: [
-                          // 1. All 121 Campaign Levels
+                          // 1. All Campaign Levels
                           GridView.builder(
                             padding: EdgeInsets.all(ux(context, 10)),
                             gridDelegate:
@@ -132,37 +132,78 @@ class _LevelPickerSheetState extends State<LevelPickerSheet>
                                   Navigator.of(context).pop();
                                   widget.onSelectLevel(lv);
                                 },
-                                child: UnityNineSlice(
-                                  sprite: 'Button_CTA.png',
-                                  colorFilter: isCurrent
-                                      ? null
-                                      : UnityButtonColorFilters.blueWithGoldRim,
-                                  padding:
-                                      EdgeInsets.only(bottom: ux(context, 8)),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      UnitySdfText(
-                                        '${lv.number}',
-                                        unityFontSize: 56,
-                                        material: textMat,
-                                      ),
-                                      Text(
-                                        '${lv.cols}×${lv.rows}',
-                                        style: TextStyle(
-                                          fontFamily: 'Baloo2',
-                                          fontSize: ux(context, 28),
-                                          fontWeight: FontWeight.w700,
-                                          fontVariations: const [
-                                            FontVariation('wght', 700),
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Positioned.fill(
+                                      child: UnityNineSlice(
+                                        sprite: 'Button_CTA.png',
+                                        colorFilter: isCurrent
+                                            ? null
+                                            : UnityButtonColorFilters
+                                                .blueWithGoldRim,
+                                        padding: EdgeInsets.only(
+                                          bottom: ux(context, 8),
+                                        ),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            UnitySdfText(
+                                              '${lv.number}',
+                                              unityFontSize: 56,
+                                              material: textMat,
+                                            ),
+                                            Text(
+                                              lv.isSpecial
+                                                  ? '★ HARD'
+                                                  : '${lv.cols}×${lv.rows}',
+                                              style: TextStyle(
+                                                fontFamily: 'Baloo2',
+                                                fontSize: ux(
+                                                  context,
+                                                  lv.isSpecial ? 24 : 28,
+                                                ),
+                                                fontWeight: FontWeight.w800,
+                                                fontVariations: const [
+                                                  FontVariation('wght', 800),
+                                                ],
+                                                color: lv.isSpecial
+                                                    ? const Color(0xFFFDE047)
+                                                    : Colors.white.withValues(
+                                                        alpha: 0.9,
+                                                      ),
+                                                height: 1.0,
+                                              ),
+                                            ),
                                           ],
-                                          color: Colors.white
-                                              .withValues(alpha: 0.9),
-                                          height: 1.0,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    if (lv.isSpecial)
+                                      Positioned(
+                                        right: -ux(context, 6),
+                                        top: -ux(context, 6),
+                                        child: Container(
+                                          padding: EdgeInsets.all(
+                                            ux(context, 6),
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFDC2626),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: const Color(0xFFFDE047),
+                                              width: ux(context, 3),
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            Icons.local_fire_department_rounded,
+                                            size: ux(context, 24),
+                                            color: const Color(0xFFFDE047),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               );
                             },

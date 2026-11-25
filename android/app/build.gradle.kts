@@ -1,3 +1,15 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.io.FileInputStream
+import java.util.Properties
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -22,13 +34,27 @@ android {
         applicationId = "com.fw.water.block.number.merge"
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionCode = 101
+        versionName = "1.0.1"
+    }
+
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String?
+            keyPassword = keystoreProperties["keyPassword"] as String?
+            val storeFilePath = keystoreProperties["storeFile"] as String?
+            storeFile = if (storeFilePath != null) rootProject.file(storeFilePath) else null
+            storePassword = keystoreProperties["storePassword"] as String?
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -41,6 +67,74 @@ android {
     packaging {
         jniLibs {
             excludes += listOf("**/libapplovin-native-crash-reporter.so")
+        }
+    }
+
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this
+            if (output is BaseVariantOutputImpl) {
+                val date = SimpleDateFormat("yyyyMMdd").format(Date())
+                val vName = variant.versionName ?: flutter.versionName
+                val vCode = variant.versionCode ?: flutter.versionCode
+                output.outputFileName = "FW37_Mobgame_v${vName}_c${vCode}_${date}.apk"
+            }
+        }
+    }
+}
+
+fun generateBuildInfo(targetDir: File) {
+    try {
+        val rootDir = rootProject.rootDir.parentFile
+        val scriptFile = File(rootDir, "funtap_global_sdk/tools/fg-build-info.js")
+        if (scriptFile.exists()) {
+            val process = ProcessBuilder(
+                "node",
+                scriptFile.absolutePath,
+                "--project", rootDir.absolutePath,
+                "--engine", "flutter",
+                "--platform", "android",
+                "--pkg-version", "funtap-global-sdk-flutter 1.0.5",
+                "--out", targetDir.absolutePath
+            ).redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            println(output.trim())
+        }
+    } catch (e: Exception) {
+        println("[build-info] Auto-generate note: ${e.message}")
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        val apkReleaseDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        if (apkReleaseDir.exists()) {
+            generateBuildInfo(apkReleaseDir)
+        }
+        val flutterApkDir = layout.buildDirectory.dir("outputs/flutter-apk").get().asFile
+        if (flutterApkDir.exists()) {
+            generateBuildInfo(flutterApkDir)
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith("bundle") && it.name.endsWith("Bundle") }.configureEach {
+    doLast {
+        val date = SimpleDateFormat("yyyyMMdd").format(Date())
+        val vName = android.defaultConfig.versionName ?: flutter.versionName
+        val vCode = android.defaultConfig.versionCode ?: flutter.versionCode
+        val bundleDir = layout.buildDirectory.dir("outputs/bundle").get().asFile
+        if (bundleDir.exists()) {
+            bundleDir.walkTopDown().filter { it.extension == "aab" }.forEach { aabFile ->
+                if (!aabFile.name.startsWith("FW37_Mobgame")) {
+                    val targetName = "FW37_Mobgame_v${vName}_c${vCode}_${date}.aab"
+                    val targetFile = File(aabFile.parentFile, targetName)
+                    aabFile.copyTo(targetFile, overwrite = true)
+                }
+            }
+            generateBuildInfo(bundleDir)
         }
     }
 }

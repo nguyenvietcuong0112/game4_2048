@@ -22,7 +22,7 @@ class AdsManager {
   AdsManager._();
 
   /// Master switch to enable or disable ads across the entire app.
-  static bool enableAds = false;
+  static bool enableAds = true;
 
   /// Non-consumable No Ads entitlement: disables Banner, Interstitial, Splash,
   /// and Resume/AppOpen ads while keeping opt-in Rewarded Ads functional.

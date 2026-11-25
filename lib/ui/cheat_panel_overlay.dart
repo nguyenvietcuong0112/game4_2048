@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:funtap_global_sdk/funtap_global_sdk.dart';
 import '../models/level_models.dart';
 import '../services/app_version_service.dart';
 import '../services/player_progress_service.dart';
@@ -976,6 +977,22 @@ class _CheatPanelOverlayState extends State<CheatPanelOverlay> {
                   builder: (_) => const FlowerAssetsTestScreen(),
                 ),
               );
+            },
+          ),
+          SizedBox(height: ux(context, 12)),
+          _CheatActionBtn(
+            label: '🛠️ MAX Mediation Debugger',
+            color: const Color(0xFF2563EB),
+            onTap: () {
+              try {
+                FGSDK.showMediationDebugger();
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error opening MAX Debugger: $e')),
+                  );
+                }
+              }
             },
           ),
           SizedBox(height: ux(context, 12)),

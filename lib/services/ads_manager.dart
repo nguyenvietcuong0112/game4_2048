@@ -202,6 +202,11 @@ class AdsManager {
       _isBannerLoaded = true;
       _syncBannerVisibility();
     }));
+    _subscriptions.add(FGSDK.onBannerShown.listen((info) {
+      debugPrint('[AdsManager] 📺 onBannerShown: placement=${info.placement}, network=${info.networkName}');
+      _isBannerLoaded = true;
+      _syncBannerVisibility();
+    }));
     _subscriptions.add(FGSDK.onBannerFailedToLoad.listen((info) {
       debugPrint('[AdsManager] ❌ onBannerFailedToLoad: placement=${info.placement}, network=${info.networkName}');
       _isBannerLoaded = false;
@@ -210,6 +215,7 @@ class AdsManager {
     _subscriptions.add(FGSDK.onBannerHidden.listen((info) {
       debugPrint('[AdsManager] 🙈 onBannerHidden: placement=${info.placement}');
       _isBannerRequested = false;
+      _isBannerLoaded = false;
       _syncBannerVisibility();
     }));
 
@@ -693,6 +699,7 @@ class AdsManager {
 
   static void hideBanner() {
     _isBannerRequested = false;
+    _isBannerLoaded = false;
     _syncBannerVisibility();
     if (!enableAds) return;
     try {

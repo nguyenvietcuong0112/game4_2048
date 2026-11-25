@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../services/player_progress_service.dart';
 import '../services/remote_config_service.dart';
@@ -27,6 +29,13 @@ class _JourneyViewState extends State<JourneyView> {
   void initState() {
     super.initState();
     widget.progress.markJourneyUnlockedSeen();
+    unawaited(UnitySpriteRegistry.loadOne('Journey/Fr_reward.png'));
+    unawaited(UnitySpriteRegistry.loadOne('Journey/Fr_Gallery.png'));
+    unawaited(UnitySpriteRegistry.loadOne('Journey/Fr_tittle.png'));
+    unawaited(UnitySpriteRegistry.loadOne('Button_CTA.png'));
+    unawaited(UnitySpriteRegistry.loadOne('Background_Popup.png'));
+    unawaited(UnitySpriteRegistry.loadOne('Panel_Popup.png'));
+    unawaited(UnitySpriteRegistry.loadOne('Frame_Popup_Title.png'));
   }
 
   @override
@@ -89,6 +98,7 @@ class _JourneyViewState extends State<JourneyView> {
   Future<void> _openGalleryPreview(JourneyBgTheme theme) async {
     await showDialog<void>(
       context: context,
+      barrierColor: const Color(0xCC0A0520),
       builder: (dialogCtx) {
         return AnimatedBuilder(
           animation: widget.progress,
@@ -97,61 +107,82 @@ class _JourneyViewState extends State<JourneyView> {
                 widget.progress.selectedJourneyBgId == theme.id;
             return Dialog(
               backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 22),
-              child: Container(
-                padding: EdgeInsets.all(ux(ctx, 26)),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFDF2DA),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: const Color(0xFFF0A91D),
-                    width: 4,
-                  ),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    UnitySdfText(
-                      '${theme.title} World',
-                      unityFontSize: 52,
-                      material: UnityTextMaterial.popupTitle,
-                    ),
-                    SizedBox(height: ux(ctx, 16)),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: AspectRatio(
-                        aspectRatio: 16 / 10,
-                        child: Image.asset(
-                          theme.galleryCardAsset,
-                          fit: BoxFit.cover,
-                        ),
+              elevation: 0,
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 16,
+              ),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: UnityPopupCard(
+                    title: '${theme.title} World',
+                    localTitleFontSize: 104,
+                    onClose: () => Navigator.of(dialogCtx).pop(),
+                    panelChild: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        ppx(ctx, 44),
+                        ppx(ctx, 42),
+                        ppx(ctx, 44),
+                        ppx(ctx, 36),
                       ),
-                    ),
-                    SizedBox(height: ux(ctx, 22)),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        GestureDetector(
-                          onTap: () => Navigator.of(dialogCtx).pop(),
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: ux(ctx, 36),
-                              vertical: ux(ctx, 16),
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4769AA),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: const UnitySdfText(
-                              'Close',
-                              unityFontSize: 38,
-                              material: UnityTextMaterial.ctaBlue,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(ppx(ctx, 30)),
+                              child: AspectRatio(
+                                aspectRatio: 740 / 420,
+                                child: Image.asset(
+                                  theme.galleryCardAsset,
+                                  fit: BoxFit.cover,
+                                  alignment: theme.id == 0
+                                      ? const Alignment(0.0, -0.22)
+                                      : Alignment.center,
+                                ),
+                              ),
                             ),
                           ),
+                          SizedBox(height: ppx(ctx, 26)),
+                          Text(
+                            isEquipped
+                                ? 'Active on your Home screen'
+                                : 'Equip to set as your Home background',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: 'Baloo2',
+                              fontSize: ppx(ctx, 50),
+                              fontWeight: FontWeight.w800,
+                              fontVariations: const [
+                                FontVariation('wght', 800),
+                              ],
+                              color: const Color(0xFF123696),
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    footerChild: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        UnityPopupCtaButton(
+                          label: 'Close',
+                          skin: UnityButtonSkin.blue,
+                          localWidth: 430,
+                          localHeight: 204,
+                          localFontSize: 84,
+                          onTap: () => Navigator.of(dialogCtx).pop(),
                         ),
-                        SizedBox(width: ux(ctx, 20)),
-                        GestureDetector(
+                        SizedBox(width: ppx(ctx, 36)),
+                        UnityPopupCtaButton(
                           key: ValueKey('journey_equip_bg_${theme.id}'),
+                          label: isEquipped ? 'Equipped' : 'Equip',
+                          skin: UnityButtonSkin.green,
+                          localWidth: 450,
+                          localHeight: 204,
+                          localFontSize: 84,
                           onTap: isEquipped
                               ? null
                               : () {
@@ -161,31 +192,10 @@ class _JourneyViewState extends State<JourneyView> {
                                     'Equipped ${theme.title} Background!',
                                   );
                                 },
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: ux(ctx, 40),
-                              vertical: ux(ctx, 16),
-                            ),
-                            decoration: BoxDecoration(
-                              color: isEquipped
-                                  ? const Color(0xFF8AA490)
-                                  : const Color(0xFF28B53E),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 2,
-                              ),
-                            ),
-                            child: UnitySdfText(
-                              isEquipped ? 'Equipped' : 'Equip',
-                              unityFontSize: 38,
-                              material: UnityTextMaterial.ctaGreen,
-                            ),
-                          ),
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             );
@@ -198,6 +208,12 @@ class _JourneyViewState extends State<JourneyView> {
   @override
   Widget build(BuildContext context) {
     const items = JourneyMilestoneConfig.schedule;
+    final screenW = MediaQuery.sizeOf(context).width;
+    final hudSpriteH = screenW * (283.0 / 1080.0);
+    final showTopHud = widget.topClearance > 0;
+    final hudTotalH = showTopHud
+        ? math.max(widget.topClearance + ux(context, 12), hudSpriteH)
+        : 0.0;
 
     return AnimatedBuilder(
       animation: widget.progress,
@@ -213,7 +229,7 @@ class _JourneyViewState extends State<JourneyView> {
                 ),
               ),
               Positioned(
-                top: widget.topClearance,
+                top: hudTotalH + ux(context, 24),
                 left: -ux(context, 40),
                 child: IgnorePointer(
                   child: Opacity(
@@ -226,6 +242,20 @@ class _JourneyViewState extends State<JourneyView> {
                   ),
                 ),
               ),
+              Positioned(
+                top: hudTotalH + ux(context, 520),
+                right: -ux(context, 60),
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.28,
+                    child: Image.asset(
+                      'assets/images/Journey/Cloud.webp',
+                      width: ux(context, 360),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
               Positioned.fill(
                 child: ListView.builder(
                   key: const ValueKey('journey_list_view'),
@@ -233,8 +263,8 @@ class _JourneyViewState extends State<JourneyView> {
                   reverse: true,
                   physics: const BouncingScrollPhysics(),
                   padding: EdgeInsets.only(
-                    top: widget.topClearance + ux(context, 24),
-                    bottom: widget.bottomClearance + ux(context, 20),
+                    top: hudTotalH + ux(context, 28),
+                    bottom: widget.bottomClearance + ux(context, 24),
                   ),
                   itemCount: items.length,
                   itemBuilder: (context, index) {
@@ -266,6 +296,19 @@ class _JourneyViewState extends State<JourneyView> {
                   },
                 ),
               ),
+              if (showTopHud)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: hudTotalH,
+                  child: IgnorePointer(
+                    child: _JourneyTopHudBanner(
+                      hudSpriteH: hudSpriteH,
+                      totalH: hudTotalH,
+                    ),
+                  ),
+                ),
             ],
           ),
         );
@@ -283,6 +326,57 @@ class _JourneyViewState extends State<JourneyView> {
     if (completed <= prevLevel) return 0.0;
     final span = (targetLevel - prevLevel).clamp(1, 99999);
     return ((completed - prevLevel) / span).clamp(0.0, 1.0);
+  }
+}
+
+class _JourneyTopHudBanner extends StatelessWidget {
+  final double hudSpriteH;
+  final double totalH;
+
+  const _JourneyTopHudBanner({
+    required this.hudSpriteH,
+    required this.totalH,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final extraTop = math.max(0.0, totalH - hudSpriteH);
+    return Stack(
+      clipBehavior: Clip.hardEdge,
+      children: [
+        if (extraTop > 0)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: extraTop + 4,
+            child: const ColoredBox(color: Color(0xFF5A4FD9)),
+          ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: hudSpriteH,
+          child: Image.asset(
+            'assets/images/Journey/HUD.png',
+            fit: BoxFit.fill,
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: hudSpriteH * 0.14,
+          child: Opacity(
+            opacity: 0.16,
+            child: Image.asset(
+              'assets/images/Journey/Pattern HUD.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -309,10 +403,10 @@ class _JourneyMilestoneNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final spineW = ux(context, 84).clamp(32.0, 48.0);
+    final spineW = ux(context, 78);
     final nodeH = milestone.isBgMilestone
-        ? ux(context, 560).clamp(220.0, 310.0)
-        : ux(context, 236).clamp(96.0, 134.0);
+        ? ux(context, 628)
+        : ux(context, 256);
 
     return SizedBox(
       height: nodeH,
@@ -323,7 +417,7 @@ class _JourneyMilestoneNode extends StatelessWidget {
           // Continuous central progress spine (`Exp_Bar` + green fill `Proges_bar`)
           Positioned(
             top: isTopMost ? nodeH * 0.45 : 0,
-            bottom: isBottomMost ? 0 : 0,
+            bottom: isBottomMost ? nodeH * 0.45 : 0,
             child: SizedBox(
               width: spineW,
               child: Stack(
@@ -338,7 +432,7 @@ class _JourneyMilestoneNode extends StatelessWidget {
                   if (spineFillRatio > 0)
                     FractionallySizedBox(
                       heightFactor: spineFillRatio,
-                      widthFactor: 0.72,
+                      widthFactor: 0.70,
                       alignment: Alignment.bottomCenter,
                       child: Image.asset(
                         'assets/images/Journey/Proges_bar.png',
@@ -371,7 +465,7 @@ class _JourneyMilestoneNode extends StatelessWidget {
   }
 }
 
-class _RewardMilestonePill extends StatelessWidget {
+class _RewardMilestonePill extends StatefulWidget {
   final JourneyMilestoneConfig milestone;
   final bool unlocked;
   final bool claimed;
@@ -385,99 +479,128 @@ class _RewardMilestonePill extends StatelessWidget {
   });
 
   @override
+  State<_RewardMilestonePill> createState() => _RewardMilestonePillState();
+}
+
+class _RewardMilestonePillState extends State<_RewardMilestonePill> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final pillW = ux(context, 680).clamp(240.0, 356.0);
-    final pillH = ux(context, 166).clamp(68.0, 94.0);
-    final levelStr = milestone.levelUnlock.toString().padLeft(2, '0');
+    final pillW = ux(context, 760);
+    final pillH = ux(context, 178);
+    final gapW = ux(context, 44);
+    final halfW = (pillW - gapW) * 0.5;
+    final levelStr = widget.milestone.levelUnlock.toString().padLeft(2, '0');
+    final readyToClaim = widget.unlocked && !widget.claimed;
 
     return GestureDetector(
-      key: ValueKey('journey_milestone_${milestone.levelUnlock}'),
-      onTap: onTap,
-      child: SizedBox(
-        width: pillW,
-        height: pillH,
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            Row(
-              children: [
-                // Left side: Level number
-                Expanded(
-                  child: _HalfRewardBox(
-                    child: UnitySdfText(
-                      'Level\n$levelStr',
-                      unityFontSize: 40,
-                      material: UnityTextMaterial.popupTitle,
-                      textAlign: TextAlign.center,
+      key: ValueKey('journey_milestone_${widget.milestone.levelUnlock}'),
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 85),
+        curve: Curves.easeOutCubic,
+        child: SizedBox(
+          width: pillW,
+          height: pillH,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Row(
+                children: [
+                  // Left side: Level number
+                  SizedBox(
+                    width: halfW,
+                    height: pillH,
+                    child: _HalfRewardBox(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: UnitySdfText(
+                          'Level\n$levelStr',
+                          unityFontSize: 38,
+                          material: UnityTextMaterial.popupTitle,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                SizedBox(width: ux(context, 48)),
-                // Right side: Reward icon + label
-                Expanded(
-                  child: _HalfRewardBox(
-                    highlight: unlocked && !claimed,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _RewardIcon(milestone: milestone),
-                            UnitySdfText(
-                              milestone.rewardLabel,
-                              unityFontSize: 30,
-                              material: UnityTextMaterial.darkStroke,
+                  SizedBox(width: gapW),
+                  // Right side: Reward icon + label + status indicator
+                  SizedBox(
+                    width: halfW,
+                    height: pillH,
+                    child: _HalfRewardBox(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _RewardIcon(
+                            milestone: widget.milestone,
+                            size: ux(context, 72),
+                          ),
+                          SizedBox(width: ux(context, 12)),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: UnitySdfText(
+                                widget.milestone.rewardLabel,
+                                unityFontSize: 38,
+                                material: UnityTextMaterial.darkStroke,
+                              ),
+                            ),
+                          ),
+                          if (widget.claimed) ...[
+                            SizedBox(width: ux(context, 10)),
+                            Image.asset(
+                              'assets/images/Journey/asset_tick.png',
+                              width: ux(context, 52),
+                              height: ux(context, 52),
+                              fit: BoxFit.contain,
+                            ),
+                          ] else if (!widget.unlocked) ...[
+                            SizedBox(width: ux(context, 10)),
+                            Opacity(
+                              opacity: 0.9,
+                              child: Image.asset(
+                                'assets/images/Journey/lock.png',
+                                width: ux(context, 42),
+                                height: ux(context, 46),
+                                fit: BoxFit.contain,
+                              ),
                             ),
                           ],
-                        ),
-                        if (claimed) ...[
-                          SizedBox(width: ux(context, 8)),
-                          Image.asset(
-                            'assets/images/Journey/asset_tick.png',
-                            width: ux(context, 56).clamp(22.0, 32.0),
-                            height: ux(context, 56).clamp(22.0, 32.0),
-                            fit: BoxFit.contain,
-                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-
-            // "Claim" pill callout when ready
-            if (unlocked && !claimed)
-              Positioned(
-                bottom: -ux(context, 16),
-                right: ux(context, 36),
-                child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: ux(context, 24),
-                    vertical: ux(context, 6),
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF28C33E),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x66000000),
-                        offset: Offset(0, 2),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: const UnitySdfText(
-                    'Claim',
-                    unityFontSize: 30,
-                    material: UnityTextMaterial.ctaGreen,
-                  ),
-                ),
+                ],
               ),
-          ],
+
+              // 3-slice gold-rimmed "Claim" CTA button when ready
+              if (readyToClaim)
+                Positioned(
+                  bottom: -ux(context, 22),
+                  right: (halfW - ux(context, 200)) * 0.5,
+                  child: UnityCtaButton(
+                    label: 'Claim',
+                    skin: UnityButtonSkin.green,
+                    unityWidth: 200,
+                    unityHeight: 74,
+                    unityFontSize: 34,
+                    sliceScale: 0.42,
+                    onTap: widget.onTap,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -486,73 +609,60 @@ class _RewardMilestonePill extends StatelessWidget {
 
 class _HalfRewardBox extends StatelessWidget {
   final Widget child;
-  final bool highlight;
 
-  const _HalfRewardBox({
-    required this.child,
-    this.highlight = false,
-  });
+  const _HalfRewardBox({required this.child});
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Image.asset(
-            'assets/images/Journey/Fr_reward.png',
-            fit: BoxFit.fill,
-          ),
-        ),
-        if (highlight)
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: const Color(0xFF4EFF6A),
-                  width: 2.5,
-                ),
-              ),
-            ),
-          ),
-        Center(child: child),
-      ],
+    return UnityNineSlice(
+      sprite: 'Journey/Fr_reward.png',
+      pixelMultiplier: 0.72,
+      padding: EdgeInsets.fromLTRB(
+        ux(context, 22),
+        ux(context, 14),
+        ux(context, 22),
+        ux(context, 24),
+      ),
+      child: child,
     );
   }
 }
 
 class _RewardIcon extends StatelessWidget {
   final JourneyMilestoneConfig milestone;
+  final double size;
 
-  const _RewardIcon({required this.milestone});
+  const _RewardIcon({
+    required this.milestone,
+    required this.size,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final sz = ux(context, 72).clamp(28.0, 42.0);
     if (milestone.coins > 0) {
       return Image.asset(
         'assets/images/Shop/asset_coin_1.png',
-        width: sz,
-        height: sz,
+        width: size,
+        height: size,
         fit: BoxFit.contain,
       );
     }
     if (milestone.infinityMinutes > 0) {
       return SizedBox(
-        width: sz,
-        height: sz,
+        width: size,
+        height: size,
         child: Stack(
           alignment: Alignment.center,
           children: [
             Image.asset(
               'assets/images/UI Home/Home/icon_heart.png',
-              width: sz,
-              height: sz,
+              width: size,
+              height: size,
               fit: BoxFit.contain,
             ),
             const UnitySdfText(
               '∞',
-              unityFontSize: 26,
+              unityFontSize: 28,
               material: UnityTextMaterial.darkStroke,
             ),
           ],
@@ -567,14 +677,14 @@ class _RewardIcon extends StatelessWidget {
     };
     return Image.asset(
       asset,
-      width: sz,
-      height: sz,
+      width: size,
+      height: size,
       fit: BoxFit.contain,
     );
   }
 }
 
-class _GalleryBgMilestoneCard extends StatelessWidget {
+class _GalleryBgMilestoneCard extends StatefulWidget {
   final JourneyMilestoneConfig milestone;
   final bool unlocked;
   final bool claimed;
@@ -590,154 +700,141 @@ class _GalleryBgMilestoneCard extends StatelessWidget {
   });
 
   @override
+  State<_GalleryBgMilestoneCard> createState() =>
+      _GalleryBgMilestoneCardState();
+}
+
+class _GalleryBgMilestoneCardState extends State<_GalleryBgMilestoneCard> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final theme = milestone.bgTheme!;
-    final cardW = ux(context, 840).clamp(260.0, 390.0);
-    final cardH = ux(context, 430).clamp(170.0, 238.0);
-    final titleW = ux(context, 520).clamp(180.0, 250.0);
-    final titleH = ux(context, 128).clamp(50.0, 72.0);
+    final theme = widget.milestone.bgTheme!;
+    final cardW = ux(context, 840);
+    final cardH = ux(context, 508);
+    final titleW = ux(context, 460);
+    final titleH = ux(context, 128);
 
     return GestureDetector(
-      key: ValueKey('journey_milestone_${milestone.levelUnlock}'),
-      onTap: onTap,
-      child: SizedBox(
-        width: cardW,
-        height: cardH + titleH * 0.52,
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          clipBehavior: Clip.none,
-          children: [
-            SizedBox(
-              width: cardW,
-              height: cardH,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Image.asset(
-                      'assets/images/Journey/Fr_Gallery.png',
-                      fit: BoxFit.fill,
-                    ),
+      key: ValueKey('journey_milestone_${widget.milestone.levelUnlock}'),
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 85),
+        curve: Curves.easeOutCubic,
+        child: SizedBox(
+          width: cardW,
+          height: cardH + titleH * 0.52,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            clipBehavior: Clip.none,
+            children: [
+              // 9-sliced golden Gallery frame (`Fr_Gallery.png`)
+              SizedBox(
+                width: cardW,
+                height: cardH,
+                child: UnityNineSlice(
+                  sprite: 'Journey/Fr_Gallery.png',
+                  pixelMultiplier: 0.78,
+                  padding: EdgeInsets.fromLTRB(
+                    ux(context, 40),
+                    ux(context, 34),
+                    ux(context, 40),
+                    ux(context, 48),
                   ),
-                  Positioned.fill(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        ux(context, 38),
-                        ux(context, 38),
-                        ux(context, 38),
-                        ux(context, 38),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.asset(
-                              theme.galleryCardAsset,
-                              fit: BoxFit.cover,
-                            ),
-                            if (!unlocked)
-                              Container(
-                                color: Colors.black38,
-                                alignment: Alignment.center,
-                                child: Image.asset(
-                                  'assets/images/Journey/lock.png',
-                                  width: ux(context, 120).clamp(48.0, 68.0),
-                                  height: ux(context, 120).clamp(48.0, 68.0),
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            if (unlocked && !claimed)
-                              Align(
-                                alignment: Alignment.bottomCenter,
-                                child: Container(
-                                  margin: EdgeInsets.only(
-                                    bottom: ux(context, 14),
-                                  ),
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: ux(context, 32),
-                                    vertical: ux(context, 8),
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF28C33E),
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 2.5,
-                                    ),
-                                  ),
-                                  child: const UnitySdfText(
-                                    'Claim',
-                                    unityFontSize: 38,
-                                    material: UnityTextMaterial.ctaGreen,
-                                  ),
-                                ),
-                              ),
-                            if (claimed)
-                              Positioned(
-                                right: ux(context, 12),
-                                bottom: ux(context, 12),
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: ux(context, 18),
-                                    vertical: ux(context, 6),
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isEquipped
-                                        ? const Color(0xCC1E9B35)
-                                        : const Color(0xBB162B5C),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (isEquipped) ...[
-                                        Image.asset(
-                                          'assets/images/Journey/asset_tick.png',
-                                          width: ux(context, 34)
-                                              .clamp(14.0, 20.0),
-                                          height: ux(context, 34)
-                                              .clamp(14.0, 20.0),
-                                        ),
-                                        SizedBox(width: ux(context, 6)),
-                                      ],
-                                      UnitySdfText(
-                                        isEquipped ? 'Equipped' : 'Use BG',
-                                        unityFontSize: 28,
-                                        material: UnityTextMaterial.ctaGreen,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                          ],
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(ux(context, 24)),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.asset(
+                          theme.galleryCardAsset,
+                          fit: BoxFit.cover,
+                          alignment: theme.id == 0
+                              ? const Alignment(0.0, -0.22)
+                              : Alignment.center,
                         ),
-                      ),
+                        if (!widget.unlocked)
+                          Container(
+                            color: Colors.black38,
+                            alignment: Alignment.center,
+                            child: Image.asset(
+                              'assets/images/Journey/lock.png',
+                              width: ux(context, 120),
+                              height: ux(context, 120),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        if (widget.unlocked && !widget.claimed)
+                          Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Padding(
+                              padding: EdgeInsets.only(bottom: ux(context, 14)),
+                              child: UnityCtaButton(
+                                label: 'Claim',
+                                skin: UnityButtonSkin.green,
+                                unityWidth: 260,
+                                unityHeight: 100,
+                                unityFontSize: 40,
+                                sliceScale: 0.52,
+                                onTap: widget.onTap,
+                              ),
+                            ),
+                          ),
+                        if (widget.claimed)
+                          Positioned(
+                            right: ux(context, 14),
+                            bottom: ux(context, 14),
+                            child: UnityCtaButton(
+                              label: widget.isEquipped ? 'Equipped' : 'Use BG',
+                              skin: widget.isEquipped
+                                  ? UnityButtonSkin.green
+                                  : UnityButtonSkin.blue,
+                              unityWidth: widget.isEquipped ? 286 : 236,
+                              unityHeight: 86,
+                              unityFontSize: 34,
+                              sliceScale: 0.45,
+                              trailingBadge: widget.isEquipped
+                                  ? Image.asset(
+                                      'assets/images/Journey/asset_tick.png',
+                                      width: ux(context, 38),
+                                      height: ux(context, 38),
+                                      fit: BoxFit.contain,
+                                    )
+                                  : null,
+                              onTap: widget.onTap,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
 
-            // Top overlapping purple title ribbon (`Fr_tittle.png`)
-            Positioned(
-              top: 0,
-              child: SizedBox(
-                width: titleW,
-                height: titleH,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned.fill(
-                      child: Image.asset(
-                        'assets/images/Journey/Fr_tittle.png',
-                        fit: BoxFit.fill,
-                      ),
-                    ),
-                    Column(
+              // 9-sliced purple title ribbon (`Fr_tittle.png`) overlapping top center
+              Positioned(
+                top: 0,
+                child: UnityNineSlice(
+                  sprite: 'Journey/Fr_tittle.png',
+                  width: titleW,
+                  height: titleH,
+                  pixelMultiplier: 0.65,
+                  padding: EdgeInsets.fromLTRB(
+                    ux(context, 28),
+                    ux(context, 10),
+                    ux(context, 28),
+                    ux(context, 18),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         UnitySdfText(
@@ -746,17 +843,17 @@ class _GalleryBgMilestoneCard extends StatelessWidget {
                           material: UnityTextMaterial.popupTitle,
                         ),
                         UnitySdfText(
-                          'Level ${milestone.levelUnlock}',
+                          'Level ${widget.milestone.levelUnlock}',
                           unityFontSize: 28,
                           material: UnityTextMaterial.popupTitle,
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

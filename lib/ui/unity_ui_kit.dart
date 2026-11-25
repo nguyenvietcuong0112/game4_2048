@@ -70,6 +70,9 @@ class UnitySpriteRegistry {
     'frame_content.png': UnitySliceSpec(56, 56, 56, 56),
     'Button_Green.png': UnitySliceSpec(110, 0, 110, 0),
     'Button_Yellow.png': UnitySliceSpec(110, 0, 110, 0),
+    'Journey/Fr_reward.png': UnitySliceSpec(56, 66, 58, 52),
+    'Journey/Fr_Gallery.png': UnitySliceSpec(64, 72, 64, 64),
+    'Journey/Fr_tittle.png': UnitySliceSpec(52, 54, 52, 54),
   };
 
   static ui.Image? get(String spriteName) => _cache[spriteName];

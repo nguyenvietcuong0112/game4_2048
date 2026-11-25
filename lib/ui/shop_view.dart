@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../services/ads_manager.dart';
@@ -77,6 +78,7 @@ class ShopViewState extends State<ShopView> {
   @override
   void initState() {
     super.initState();
+    unawaited(UnitySpriteRegistry.loadOne('WidgetBase.png'));
     IapService.logIapShow(
       level: widget.progress.currentLevel,
       location: 'shop',
@@ -223,8 +225,8 @@ class ShopViewState extends State<ShopView> {
   @override
   Widget build(BuildContext context) {
     final screenW = MediaQuery.sizeOf(context).width;
-    final awningH = ux(context, 235).clamp(96.0, 142.0);
     final topPad = MediaQuery.paddingOf(context).top;
+    final awningH = math.max(ux(context, 235), topPad + ux(context, 168));
 
     return AnimatedBuilder(
       animation: widget.progress,
@@ -350,9 +352,12 @@ class ShopViewState extends State<ShopView> {
                           child: _ShopCloseButton(onTap: widget.onClose!),
                         ),
                       Positioned(
-                        top: math.max(topPad + 6, ux(context, 32)),
-                        right: ux(context, 34),
-                        child: _ShopCoinsBadge(coins: widget.progress.coins),
+                        top: math.max(topPad + ux(context, 14), ux(context, 24)),
+                        right: ux(context, 42),
+                        child: UnityCoinsWidget(
+                          coins: widget.progress.coins,
+                          showPlusBadge: false,
+                        ),
                       ),
                     ],
                   ),
@@ -402,60 +407,6 @@ class _ShopCloseButton extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ShopCoinsBadge extends StatelessWidget {
-  final int coins;
-
-  const _ShopCoinsBadge({required this.coins});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: ux(context, 66).clamp(30.0, 38.0),
-      padding: EdgeInsets.only(
-        left: ux(context, 10),
-        right: ux(context, 22),
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFBEEDC),
-        borderRadius: BorderRadius.circular(ux(context, 33)),
-        border: Border.all(
-          color: const Color(0xFFD69E3B),
-          width: 2,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x55000000),
-            offset: Offset(0, 3),
-            blurRadius: 4,
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            'assets/images/Shop/asset_coin_1.png',
-            width: ux(context, 52).clamp(24.0, 32.0),
-            height: ux(context, 52).clamp(24.0, 32.0),
-            fit: BoxFit.contain,
-          ),
-          SizedBox(width: ux(context, 10)),
-          Text(
-            formatShopNumber(coins),
-            style: TextStyle(
-              fontFamily: 'Baloo2',
-              fontWeight: FontWeight.w800,
-              fontSize: ux(context, 38).clamp(15.0, 20.0),
-              color: const Color(0xFF5D2D09),
-              height: 1.0,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1026,6 +977,7 @@ class _FailOfferDialogState extends State<FailOfferDialog> {
   @override
   void initState() {
     super.initState();
+    unawaited(UnitySpriteRegistry.loadOne('WidgetBase.png'));
     IapService.logIapShow(
       level: widget.progress.currentLevel,
       location: 'fail_offer',

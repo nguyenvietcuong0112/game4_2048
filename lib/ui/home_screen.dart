@@ -248,14 +248,7 @@ class _HomeScreenState extends State<HomeScreen>
           // stays uncropped and vertical landmarks (`counter rim = 1436 / 2160`) map 1:1.
           const double bgDesignH = 2160.0;
           final bgScaleY = screenSize.height / bgDesignH;
-
-          // Always reserve the bottom ad banner strip (`167px` at bottom of `1080x2160`)
-          // so the navigation bar stays pushed cleanly above the banner area.
-          final bottomBannerH = math.max(
-            167.0 * bgScaleY,
-            safePadding.bottom + ux(context, 132),
-          );
-          final bottomDockBarH = 232.0 * bgScaleY;
+          final dockArtH = 232.0 * bgScaleY;
           final activeCardLift = 89.0 * bgScaleY;
           final activeCardW = ux(context, 385);
 
@@ -263,19 +256,34 @@ class _HomeScreenState extends State<HomeScreen>
           final playH = ux(context, 259);
           final buttonTargetCenterY = 1460.0 * bgScaleY;
           final minPlayTop = safePadding.top + ux(context, 540);
-          final maxPlayTop = screenSize.height -
-              bottomBannerH -
-              bottomDockBarH -
-              activeCardLift -
-              playH -
-              ux(context, 14);
-          final double playTop = (buttonTargetCenterY - playH * 0.5)
-              .clamp(minPlayTop, math.max(minPlayTop, maxPlayTop))
-              .toDouble();
 
           return ListenableBuilder(
-            listenable: widget.progress,
+            listenable: Listenable.merge([
+              widget.progress,
+              AdsManager.bannerVisibleNotifier,
+            ]),
             builder: (context, _) {
+              // Only reserve the bottom ad banner strip (`167px` at bottom of `1080x2160`)
+              // while a banner ad is actually allowed, requested, and loaded.
+              final showBannerSpace = AdsManager.isBannerVisible;
+              final bottomBannerH = showBannerSpace
+                  ? math.max(
+                      167.0 * bgScaleY,
+                      safePadding.bottom + ux(context, 132),
+                    )
+                  : 0.0;
+              final navSafeBottom = showBannerSpace ? 0.0 : safePadding.bottom;
+              final bottomDockBarH = dockArtH + navSafeBottom;
+              final maxPlayTop = screenSize.height -
+                  bottomBannerH -
+                  bottomDockBarH -
+                  activeCardLift -
+                  playH -
+                  ux(context, 14);
+              final double playTop = (buttonTargetCenterY - playH * 0.5)
+                  .clamp(minPlayTop, math.max(minPlayTop, maxPlayTop))
+                  .toDouble();
+
               final currentLv = widget.progress.currentLevel;
               final lives = widget.progress.lives;
               final isInfinity = widget.progress.isInfinityLives();
@@ -306,11 +314,13 @@ class _HomeScreenState extends State<HomeScreen>
                   bottomClearance: navTotalClearance,
                 )
               else ...[
-                // Fullscreen Kitchen Workshop Art Backdrop (`BG.webp` fitXY)
+                // Fullscreen Home Backdrop (`Base` Kitchen `BG.webp` or unlocked Journey World BG)
                 RepaintBoundary(
                   child: Image.asset(
-                    'assets/images/UI Home/Home/BG.webp',
-                    fit: BoxFit.fill,
+                    widget.progress.selectedJourneyBgTheme.fullBgAsset,
+                    fit: widget.progress.selectedJourneyBgId == 0
+                        ? BoxFit.fill
+                        : BoxFit.cover,
                     width: double.infinity,
                     height: double.infinity,
                   ),
@@ -501,6 +511,8 @@ class _HomeScreenState extends State<HomeScreen>
                   journeyUnlocked: journeyUnlocked,
                   hasJourneyNotice: widget.progress.hasClaimableJourneyReward,
                   bottomDockBarH: bottomDockBarH,
+                  dockArtH: dockArtH,
+                  navSafeBottom: navSafeBottom,
                   activeCardLift: activeCardLift,
                   activeCardW: activeCardW,
                   bgScaleY: bgScaleY,
@@ -563,7 +575,7 @@ class _HomeScreenState extends State<HomeScreen>
                 Positioned(
                   left: 24,
                   right: 24,
-                  bottom: bottomBannerH + ux(context, 24),
+                  bottom: bottomBannerH + bottomDockBarH + ux(context, 16),
                   child: IgnorePointer(
                     child: AnimatedOpacity(
                       opacity: _toastOpacity,
@@ -1400,6 +1412,8 @@ class _HomeBottomNavDock extends StatelessWidget {
   final bool journeyUnlocked;
   final bool hasJourneyNotice;
   final double bottomDockBarH;
+  final double dockArtH;
+  final double navSafeBottom;
   final double activeCardLift;
   final double activeCardW;
   final double bgScaleY;
@@ -1412,6 +1426,8 @@ class _HomeBottomNavDock extends StatelessWidget {
     required this.journeyUnlocked,
     required this.hasJourneyNotice,
     required this.bottomDockBarH,
+    required this.dockArtH,
+    required this.navSafeBottom,
     required this.activeCardLift,
     required this.activeCardW,
     required this.bgScaleY,
@@ -1486,7 +1502,10 @@ class _HomeBottomNavDock extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: EdgeInsets.only(top: 10.0 * bgScaleY),
+                  padding: EdgeInsets.only(
+                    top: 10.0 * bgScaleY,
+                    bottom: navSafeBottom,
+                  ),
                   child: Row(
                     children: [
                       Expanded(
@@ -1499,7 +1518,7 @@ class _HomeBottomNavDock extends StatelessWidget {
                                   width: ux(context, 180),
                                   height: math.min(
                                     ux(context, 158),
-                                    bottomDockBarH - 18.0 * bgScaleY,
+                                    dockArtH - 18.0 * bgScaleY,
                                   ),
                                   child: Stack(
                                     clipBehavior: Clip.none,
@@ -1537,7 +1556,7 @@ class _HomeBottomNavDock extends StatelessWidget {
                                   width: ux(context, 152),
                                   height: math.min(
                                     ux(context, 148),
-                                    bottomDockBarH - 18.0 * bgScaleY,
+                                    dockArtH - 18.0 * bgScaleY,
                                   ),
                                   fit: BoxFit.contain,
                                 ),
@@ -1558,7 +1577,7 @@ class _HomeBottomNavDock extends StatelessWidget {
                                         width: ux(context, 180),
                                         height: math.min(
                                           ux(context, 158),
-                                          bottomDockBarH - 18.0 * bgScaleY,
+                                          dockArtH - 18.0 * bgScaleY,
                                         ),
                                         child: Stack(
                                           clipBehavior: Clip.none,
@@ -1589,7 +1608,7 @@ class _HomeBottomNavDock extends StatelessWidget {
                                         width: ux(context, 114),
                                         height: math.min(
                                           ux(context, 145),
-                                          bottomDockBarH - 22.0 * bgScaleY,
+                                          dockArtH - 22.0 * bgScaleY,
                                         ),
                                         fit: BoxFit.contain,
                                       ),
@@ -1638,7 +1657,7 @@ class _HomeBottomNavDock extends StatelessWidget {
                         ux(context, 16),
                         34.0 * bgScaleY,
                         ux(context, 16),
-                        24.0 * bgScaleY,
+                        24.0 * bgScaleY + navSafeBottom,
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,

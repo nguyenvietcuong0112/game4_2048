@@ -1575,7 +1575,8 @@ class VaseStepAdvanceResult {
   });
 }
 
-/// Visual theme unlocked via Journey Gallery milestones (`0 = Base`, `1 = Frozen`, `2 = Jungle`, `3 = Desert`).
+/// Visual Home screen background theme unlocked via Journey Gallery milestones
+/// (`0 = Base`, `1 = Frozen`, `2 = Jungle`, `3 = Desert`).
 class JourneyBgTheme {
   final int id;
   final String title;
@@ -1593,8 +1594,8 @@ class JourneyBgTheme {
     JourneyBgTheme(
       id: 0,
       title: 'Base',
-      galleryCardAsset: 'assets/images/Journey/Gallery_Boat.webp',
-      fullBgAsset: 'assets/images/Background_Core.png',
+      galleryCardAsset: 'assets/images/UI Home/Home/BG.webp',
+      fullBgAsset: 'assets/images/UI Home/Home/BG.webp',
     ),
     JourneyBgTheme(
       id: 1,

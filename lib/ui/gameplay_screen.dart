@@ -1324,18 +1324,13 @@ class _GameplayScreenState extends State<GameplayScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Dynamic Journey Background (`Base = Background_Core.png`, `Frozen`, `Jungle`, `Desert`)
+          // 1. Gameplay Backdrop (`Background_Core.png`)
           RepaintBoundary(
-            child: ListenableBuilder(
-              listenable: widget.progress,
-              builder: (context, _) {
-                return Image.asset(
-                  widget.progress.selectedJourneyBgTheme.fullBgAsset,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                );
-              },
+            child: Image.asset(
+              'assets/images/Background_Core.png',
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
             ),
           ),
 

@@ -24,6 +24,22 @@ class AdsManager {
   /// Master switch to enable or disable ads across the entire app.
   static bool enableAds = false;
 
+  /// Non-consumable No Ads entitlement: disables Banner, Interstitial, Splash,
+  /// and Resume/AppOpen ads while keeping opt-in Rewarded Ads functional.
+  static bool _adsRemoved = false;
+  static bool get isAdsRemoved => _adsRemoved;
+  static bool get areNonRewardedAdsAllowed => enableAds && !_adsRemoved;
+
+  /// Updates the No Ads entitlement state and immediately hides active banners.
+  static void setAdsRemoved(bool removed) {
+    _adsRemoved = removed;
+    if (removed) {
+      hideBanner();
+    } else {
+      _syncBannerVisibility();
+    }
+  }
+
   @visibleForTesting
   static bool? mockRewardResult;
 
@@ -60,6 +76,9 @@ class AdsManager {
 
   @visibleForTesting
   static void debugSetBannerVisible(bool visible) {
+    if (_adsRemoved && visible) {
+      visible = false;
+    }
     _isBannerRequested = visible;
     _isBannerLoaded = visible;
     bannerVisibleNotifier.value = visible;
@@ -67,7 +86,7 @@ class AdsManager {
 
   static void _syncBannerVisibility() {
     bannerVisibleNotifier.value =
-        enableAds && _isBannerRequested && _isBannerLoaded;
+        areNonRewardedAdsAllowed && _isBannerRequested && _isBannerLoaded;
   }
 
   /// Initializes AdsManager, listens to reward completions and remote config updates
@@ -241,8 +260,10 @@ class AdsManager {
     required int levelNumber,
     required VoidCallback onCompleted,
   }) async {
-    if (!enableAds) {
-      debugPrint('[AdsManager] Ads disabled (enableAds = false) -> skipping Endgame Interstitial.');
+    if (!areNonRewardedAdsAllowed) {
+      debugPrint(
+        '[AdsManager] Non-rewarded ads disabled (enableAds=$enableAds, adsRemoved=$_adsRemoved) -> skipping Endgame Interstitial.',
+      );
       onCompleted();
       return;
     }
@@ -544,7 +565,7 @@ class AdsManager {
 
   // ── Splash Ads (AOA or Inter on cold start) ──────────────────────────────
   static Future<void> showSplashAd({int timeoutMs = 1800}) async {
-    if (!enableAds) return;
+    if (!areNonRewardedAdsAllowed) return;
 
     final showInter = RemoteConfigService.adsResume;
     debugPrint('[AdsManager] showSplashAd: Requesting Splash ad (format: ${showInter ? "Inter" : "AOA"})...');
@@ -600,7 +621,7 @@ class AdsManager {
   static Future<void> handleAppResume({int currentLevel = 1}) async {
     preloadRewarded();
 
-    if (!enableAds) return;
+    if (!areNonRewardedAdsAllowed) return;
     if (_isShowingAd) return;
 
     if (_adWasClicked) {
@@ -656,7 +677,7 @@ class AdsManager {
 
   // ── Banner Ads ─────────────────────────────────────────────────────────────
   static void showBanner(String placement, {int level = 1}) {
-    if (!enableAds) {
+    if (!areNonRewardedAdsAllowed) {
       _isBannerRequested = false;
       _syncBannerVisibility();
       return;

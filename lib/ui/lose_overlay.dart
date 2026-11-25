@@ -40,6 +40,7 @@ class LoseOverlay extends StatefulWidget {
   final VoidCallback? onEnterFailedStage;
   final VoidCallback? onCloseToHome;
   final ValueChanged<bool>? onPeekingChanged;
+  final VoidCallback? onFailOfferTap;
   final VoidCallback onRetry;
 
   const LoseOverlay({
@@ -56,6 +57,7 @@ class LoseOverlay extends StatefulWidget {
     this.onEnterFailedStage,
     this.onCloseToHome,
     this.onPeekingChanged,
+    this.onFailOfferTap,
     required this.onRetry,
   });
 
@@ -656,6 +658,50 @@ class _LoseOverlayState extends State<LoseOverlay>
                     ),
                   ),
                 ),
+                if (widget.onFailOfferTap != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: math.max(
+                          MediaQuery.paddingOf(context).bottom + ux(context, 48.0),
+                          ux(context, 160.0),
+                        ) +
+                        ux(context, 106),
+                    child: Center(
+                      child: GestureDetector(
+                        key: const ValueKey('lose_failed_offer_btn'),
+                        onTap: widget.onFailOfferTap,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ux(context, 34),
+                            vertical: ux(context, 12),
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFB923), Color(0xFFE07D06)],
+                            ),
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 2.2,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x88000000),
+                                blurRadius: 8,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const UnitySdfText(
+                            'Fail Offer!',
+                            unityFontSize: 40,
+                            material: UnityTextMaterial.ctaYellowButton,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 _buildHoldToSeeBoardPrompt(context),
               ],
             ),

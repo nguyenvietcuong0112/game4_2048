@@ -828,6 +828,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   double _currentMergePushAmount = 0.0;
   _MergeColorTransitionController? _candidateTransition;
   final List<_MergeColorTransitionController> _mergeTransitions = [];
+  PieceComponent? _magnetPartner;
+  MagneticBridgeVfxComponent? _magneticBridgeVfx;
 
   // Active `0.28s` linear absorb, Level-Up flight & Hammer strike animations
   final List<_AbsorbingMergeAnim> _absorbingAnims = [];
@@ -1094,6 +1096,12 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
   @visibleForTesting
   double get debugMergeImpactShakeDuration => _mergeImpactShakeDuration;
 
+  @visibleForTesting
+  PieceComponent? get debugMagnetPartner => _magnetPartner;
+
+  @visibleForTesting
+  double get debugMagnetBridgeStrength => _magneticBridgeVfx?.debugStrength ?? 0.0;
+
   static const int maxComboShakeLevel = 5;
 
   /// Escalates combo impact shake from a gentle `1x` tremor up to a fixed
@@ -1222,6 +1230,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     }
     _mergeTransitions.clear();
     _candidateTransition = null;
+    _clearMagneticAttraction(immediate: true);
     _absorbingAnims.clear();
     _levelUpFlight = null;
     _hammerStrike = null;
@@ -1313,6 +1322,8 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     }
     _mergeTransitions.clear();
     _candidateTransition = null;
+    _magnetPartner = null;
+    _magneticBridgeVfx = null;
     _absorbingAnims.clear();
 
     // Exact decompiled Unity `GameplayView::GetPlayableAreaLayout` +
@@ -1432,6 +1443,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
         _pendingNumberPrewarms.add((comp, n * 4));
       }
     }
+
+    _magneticBridgeVfx = MagneticBridgeVfxComponent(priority: 139);
+    _addToBoardStage(_magneticBridgeVfx!);
 
     _syncOccupancyGrid();
 
@@ -1873,6 +1887,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     _forgetMergeCandidate();
     _forgetSwapCandidate();
+    _clearMagneticAttraction();
     _draggedPiece = null;
     _activePointerId = null;
     _isTapCandidate = false;
@@ -1922,6 +1937,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     final dragged = _draggedPiece;
     _forgetMergeCandidate();
     _forgetSwapCandidate();
+    _clearMagneticAttraction(immediate: silent);
     _draggedPiece = null;
     _activePointerId = null;
     _isTapCandidate = false;
@@ -2121,14 +2137,15 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     final allowsH = model.movement.allowsHorizontal;
     final allowsV = model.movement.allowsVertical;
     final stepThreshold = (0.5 + UnityBoardConfig.stepHysteresis) * _cellSize;
+    final effectiveDesired = _applyMagneticDragAssist(comp, rawDesiredOrigin);
 
     // 1. `CommitSteps` (up to `maxStepsPerFrame = 8` grid steps at `0.55 * cellSize`)
     bool movedGridCell = false;
     Color? dragTrailColor;
     for (int step = 0; step < UnityBoardConfig.maxStepsPerFrame; step++) {
       final gridOrigin = comp.targetWorldOriginForGrid(model.col, model.row);
-      final dx = allowsH ? (rawDesiredOrigin.x - gridOrigin.x) : 0.0;
-      final dy = allowsV ? (rawDesiredOrigin.y - gridOrigin.y) : 0.0;
+      final dx = allowsH ? (effectiveDesired.x - gridOrigin.x) : 0.0;
+      final dy = allowsV ? (effectiveDesired.y - gridOrigin.y) : 0.0;
 
       bool advanced = false;
       if (dx.abs() >= dy.abs()) {
@@ -2189,7 +2206,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     // 2. `ComputeOverlap` (`ClampOvershoot` on X and Y)
     final currentGridOrigin = comp.targetWorldOriginForGrid(model.col, model.row);
-    final rawDelta = rawDesiredOrigin - currentGridOrigin;
+    final rawDelta = effectiveDesired - currentGridOrigin;
     final overlapX = _clampOvershootAxis(
       piece: comp,
       rawOffsetPx: rawDelta.x,
@@ -2213,6 +2230,9 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
 
     // 3. `UpdateMergeCandidate` (Hold-to-Preview ONLY; commits on release in `_releaseDrag`!)
     _updateMergeCandidate(comp);
+
+    // 4. `UpdateMagneticAttraction` (Proximity magnet pull & bridge flux VFX between blocks)
+    _updateMagneticAttraction(comp, effectiveDesired);
   }
 
   double _depthAlong(GridCell dir) {
@@ -2579,6 +2599,209 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     _mergeContactOrigin = (0, 0);
     _mergeArmMagnitude = 0.0;
     _currentMergePushAmount = 0.0;
+  }
+
+  ({
+    PieceComponent target,
+    GridCell pushDir,
+    GridCell contactOrigin,
+    double strength,
+    double towardPx,
+    double gapCells,
+  })? _findNearbyMergeMagnet(PieceComponent dragged, Vector2 desiredOrigin) {
+    final model = dragged.model;
+    if (!model.canMerge || _cellSize <= 1.0) return null;
+
+    final gridOrigin = dragged.targetWorldOriginForGrid(model.col, model.row);
+    final delta = desiredOrigin - gridOrigin;
+
+    ({
+      PieceComponent target,
+      GridCell pushDir,
+      GridCell contactOrigin,
+      double strength,
+      double towardPx,
+      double gapCells,
+    })? best;
+
+    const dirs = <GridCell>[(1, 0), (-1, 0), (0, 1), (0, -1)];
+    for (final dir in dirs) {
+      if (!_allowsDirection(model.movement, dir)) continue;
+
+      final towardPx = delta.x * dir.$1 + delta.y * dir.$2;
+      final perpPx = (delta.x * dir.$2.abs() + delta.y * dir.$1.abs()).abs();
+      if (perpPx > 0.45 * _cellSize) continue;
+
+      // Case A: Already adjacent (`0` empty cell gap between `dragged` and `target`)
+      final adjacent = _tryGetMergeCandidate(
+        dragged: dragged,
+        originCol: model.col,
+        originRow: model.row,
+        dir: dir,
+      );
+      if (adjacent != null) {
+        if (towardPx < -0.58 * _cellSize) continue;
+        final strength =
+            ((towardPx / _cellSize + 0.62) / 0.92).clamp(0.0, 1.0);
+        if (best == null || strength > best.strength) {
+          best = (
+            target: adjacent.$1,
+            pushDir: dir,
+            contactOrigin: (model.col, model.row),
+            strength: strength,
+            towardPx: towardPx,
+            gapCells: 0.0,
+          );
+        }
+        continue;
+      }
+
+      // Case B: Approaching across 1 open cell straight toward a mergeable target
+      final nextCol = model.col + dir.$1;
+      final nextRow = model.row + dir.$2;
+      if (!_canOccupy(model, nextCol, nextRow)) continue;
+      final nextStepMerge = _tryGetMergeCandidate(
+        dragged: dragged,
+        originCol: nextCol,
+        originRow: nextRow,
+        dir: dir,
+      );
+      if (nextStepMerge == null) continue;
+      if (towardPx < 0.14 * _cellSize || towardPx < perpPx * 0.70) continue;
+
+      final gapCells = (1.0 - towardPx / _cellSize).clamp(0.0, 1.0);
+      final strength =
+          ((towardPx / _cellSize - 0.14) / 0.48).clamp(0.05, 0.72);
+      if (best == null || strength > best.strength) {
+        best = (
+          target: nextStepMerge.$1,
+          pushDir: dir,
+          contactOrigin: (nextCol, nextRow),
+          strength: strength,
+          towardPx: towardPx,
+          gapCells: gapCells,
+        );
+      }
+    }
+
+    return best;
+  }
+
+  Vector2 _applyMagneticDragAssist(
+    PieceComponent dragged,
+    Vector2 rawDesiredOrigin,
+  ) {
+    final match = _findNearbyMergeMagnet(dragged, rawDesiredOrigin);
+    if (match == null || match.towardPx <= 0.08 * _cellSize) {
+      return rawDesiredOrigin;
+    }
+
+    final assistPx = match.gapCells > 0.0
+        ? (((match.towardPx / _cellSize - 0.14) / 0.41).clamp(0.0, 1.0)) *
+            0.17 *
+            _cellSize
+        : ((match.towardPx / (0.25 * _cellSize)).clamp(0.0, 1.0)) *
+            0.09 *
+            _cellSize;
+    if (assistPx <= 1e-4) return rawDesiredOrigin;
+
+    return Vector2(
+      rawDesiredOrigin.x + match.pushDir.$1 * assistPx,
+      rawDesiredOrigin.y + match.pushDir.$2 * assistPx,
+    );
+  }
+
+  void _updateMagneticAttraction(
+    PieceComponent dragged,
+    Vector2 effectiveDesiredOrigin,
+  ) {
+    PieceComponent? partner;
+    GridCell pushDir = (0, 0);
+    GridCell contactOrigin = (dragged.model.col, dragged.model.row);
+    double strength = 0.0;
+
+    if (_mergeCandidate != null) {
+      partner = _mergeCandidate;
+      pushDir = _mergePushDir;
+      contactOrigin = _mergeContactOrigin;
+      strength = (0.62 + 0.38 * _currentMergePushAmount).clamp(0.0, 1.0);
+    } else {
+      final nearby = _findNearbyMergeMagnet(dragged, effectiveDesiredOrigin);
+      if (nearby != null) {
+        partner = nearby.target;
+        pushDir = nearby.pushDir;
+        contactOrigin = nearby.contactOrigin;
+        strength = nearby.strength;
+      }
+    }
+
+    if (partner == null || strength <= 0.02 || pushDir == (0, 0)) {
+      _clearMagneticAttraction();
+      return;
+    }
+
+    if (_magnetPartner != null && _magnetPartner != partner) {
+      _magnetPartner!.clearMagnetAttraction();
+    }
+    _magnetPartner = partner;
+
+    final partnerScale = partner.model.movement.isPinned ? 0.028 : 0.11;
+    final partnerPullOffset = Offset(
+      -pushDir.$1 * _cellSize * partnerScale * strength,
+      -pushDir.$2 * _cellSize * partnerScale * strength,
+    );
+    partner.setMagnetAttraction(
+      pullOffsetPx: partnerPullOffset,
+      strength: strength,
+    );
+
+    final draggedPullOffset = Offset(
+      pushDir.$1 * _cellSize * 0.065 * strength,
+      pushDir.$2 * _cellSize * 0.065 * strength,
+    );
+    dragged.setMagnetAttraction(
+      pullOffsetPx: draggedPullOffset,
+      strength: strength,
+    );
+
+    final seamGeom = _findMergeSeamGeometry(
+      held: dragged,
+      candidate: partner,
+      pushDir: pushDir,
+      contactOrigin: contactOrigin,
+    );
+    final fromEdgeWorld = dragged.position +
+        seamGeom.heldEdgeLocal +
+        Vector2(draggedPullOffset.dx, draggedPullOffset.dy);
+    final toEdgeWorld = seamGeom.seamWorld +
+        Vector2(partnerPullOffset.dx, partnerPullOffset.dy);
+
+    final spanCells = pushDir.$1 != 0
+        ? math.min(dragged.model.heightRows, partner.model.heightRows)
+        : math.min(dragged.model.widthCols, partner.model.widthCols);
+    final primaryColor = palette
+        .styleFor(number: dragged.model.number, isFrozen: false)
+        .topBright;
+    final mergedNumber = (dragged.model.number ?? 2) * 2;
+    final targetColor =
+        palette.styleFor(number: mergedNumber, isFrozen: false).topBright;
+
+    _magneticBridgeVfx?.updateTarget(
+      fromEdgeWorld: fromEdgeWorld,
+      toEdgeWorld: toEdgeWorld,
+      spanLength: spanCells * _cellSize,
+      cellSize: _cellSize,
+      strength: strength,
+      primaryColor: primaryColor,
+      targetColor: targetColor,
+    );
+  }
+
+  void _clearMagneticAttraction({bool immediate = false}) {
+    _draggedPiece?.clearMagnetAttraction(immediate: immediate);
+    _magnetPartner?.clearMagnetAttraction(immediate: immediate);
+    _magnetPartner = null;
+    _magneticBridgeVfx?.clear(immediate: immediate);
   }
 
   void _forgetSwapCandidate() {
@@ -2964,6 +3187,7 @@ class BlockOrderGame extends FlameGame with DragCallbacks {
     );
 
     _clearBoardMergeCandidateVisuals(wasCommitted: true);
+    _clearMagneticAttraction(immediate: true);
     _boardComponent?.clearActiveDragFootprint();
     _lastDragTrailWakeOrigin = null;
     _mergeCandidate = null;

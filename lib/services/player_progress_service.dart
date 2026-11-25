@@ -23,7 +23,14 @@ class PlayerProgressService extends ChangeNotifier {
   static const _kVaseStepCount = 'bo_vase_step_count';
   static const _kVaseClaimedIds = 'bo_vase_claimed_ids';
   static const _kVaseUnlockedIds = 'bo_vase_unlocked_ids';
+  static const _kNoAdsPurchased = 'bo_no_ads_purchased';
+  static const _kPurchasedPackIds = 'bo_purchased_pack_ids';
+  static const _kJourneyUnlockedSeen = 'bo_journey_unlocked_seen';
+  static const _kPendingJourneyShowcase = 'bo_pending_journey_showcase';
+  static const _kClaimedJourneyLevels = 'bo_claimed_journey_levels';
+  static const _kSelectedJourneyBgId = 'bo_selected_journey_bg_id';
 
+  static const int journeyUnlockLevel = 20;
   static const int maxLives = 5;
   static const int lifeRegenSeconds = 15 * 60; // 1 Heart per 15 minutes (900s)
   static const int refillLivesCost = 900;
@@ -70,6 +77,13 @@ class PlayerProgressService extends ChangeNotifier {
   Set<int> _vaseClaimedIds = {};
   Set<int> _vaseUnlockedIds = {};
 
+  bool _noAdsPurchased = false;
+  Set<String> _purchasedPackIds = {};
+  bool _journeyUnlockedSeen = false;
+  bool _pendingJourneyUnlockShowcase = false;
+  Set<int> _claimedJourneyLevels = {};
+  int _selectedJourneyBgId = 0;
+
   int get currentLevel => _currentLevel;
   int get highestLevel => _highestLevel;
   int get coins => _coins;
@@ -97,6 +111,44 @@ class PlayerProgressService extends ChangeNotifier {
       !_vaseClaimedIds.contains(_vaseCurrentId);
   bool hasClaimedVase(int id) => _vaseClaimedIds.contains(id);
   bool isVaseUnlocked(int id) => _vaseUnlockedIds.contains(id);
+
+  bool get noAdsPurchased => _noAdsPurchased;
+  bool hasPurchasedPack(String productId) =>
+      _purchasedPackIds.contains(productId);
+  bool get isJourneyUnlocked =>
+      _highestLevel > journeyUnlockLevel || _journeyUnlockedSeen;
+  bool get journeyUnlockedSeen => _journeyUnlockedSeen;
+  bool get pendingJourneyUnlockShowcase => _pendingJourneyUnlockShowcase;
+  Set<int> get claimedJourneyLevels => Set.unmodifiable(_claimedJourneyLevels);
+  int get selectedJourneyBgId => _selectedJourneyBgId;
+  JourneyBgTheme get selectedJourneyBgTheme =>
+      JourneyBgTheme.byId(_selectedJourneyBgId);
+
+  /// Whether a milestone at [unlockLevel] has been reached by completing it.
+  bool isJourneyMilestoneUnlocked(int unlockLevel) =>
+      unlockLevel <= 1 || _highestLevel > unlockLevel;
+
+  bool hasClaimedJourneyMilestone(int unlockLevel) =>
+      _claimedJourneyLevels.contains(unlockLevel);
+
+  bool isJourneyBgUnlocked(int bgId) {
+    if (bgId <= 0) return true;
+    final milestone = JourneyMilestoneConfig.forBgId(bgId);
+    if (milestone == null) return false;
+    return hasClaimedJourneyMilestone(milestone.levelUnlock);
+  }
+
+  /// True when at least one Journey milestone is unlocked & waiting to be claimed.
+  bool get hasClaimableJourneyReward {
+    if (!isJourneyUnlocked) return false;
+    for (final m in JourneyMilestoneConfig.schedule) {
+      if (isJourneyMilestoneUnlocked(m.levelUnlock) &&
+          !hasClaimedJourneyMilestone(m.levelUnlock)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   /// Exact `PowerUpService.IsUnlockLevelReached(type)` checked against active campaign level
   /// (`levelNumber >= 17` for `LevelUp`, `levelNumber >= 27` for `TimeFreeze`).
@@ -171,6 +223,21 @@ class PlayerProgressService extends ChangeNotifier {
         .map((s) => int.tryParse(s) ?? 0)
         .where((id) => id > 0)
         .toSet();
+    _noAdsPurchased = _prefs?.getBool(_kNoAdsPurchased) ?? false;
+    _purchasedPackIds =
+        (_prefs?.getStringList(_kPurchasedPackIds) ?? []).toSet();
+    _journeyUnlockedSeen =
+        (_prefs?.getBool(_kJourneyUnlockedSeen) ?? false) ||
+            _highestLevel > journeyUnlockLevel;
+    _pendingJourneyUnlockShowcase =
+        _prefs?.getBool(_kPendingJourneyShowcase) ?? false;
+    _claimedJourneyLevels =
+        (_prefs?.getStringList(_kClaimedJourneyLevels) ?? [])
+            .map((s) => int.tryParse(s) ?? 0)
+            .where((lv) => lv > 0)
+            .toSet();
+    _selectedJourneyBgId =
+        (_prefs?.getInt(_kSelectedJourneyBgId) ?? 0).clamp(0, 3);
     syncLivesRegen();
     notifyListeners();
   }
@@ -1008,6 +1075,92 @@ class PlayerProgressService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Grants or updates non-consumable No Ads ownership cleanly.
+  void setNoAdsPurchased(bool purchased) {
+    if (_noAdsPurchased == purchased) return;
+    _noAdsPurchased = purchased;
+    _prefs?.setBool(_kNoAdsPurchased, purchased);
+    notifyListeners();
+  }
+
+  /// Records a purchased IAP pack [productId] for one-time / badge tracking.
+  void markPackPurchased(String productId) {
+    if (_purchasedPackIds.add(productId)) {
+      _prefs?.setStringList(_kPurchasedPackIds, _purchasedPackIds.toList());
+      notifyListeners();
+    }
+  }
+
+  /// Marks that the player has seen the unlocked Journey feature showcase.
+  void markJourneyUnlockedSeen() {
+    if (_journeyUnlockedSeen) return;
+    _journeyUnlockedSeen = true;
+    _prefs?.setBool(_kJourneyUnlockedSeen, true);
+    notifyListeners();
+  }
+
+  /// Flags that winning Level 20 should showcase Journey immediately upon returning Home.
+  void markPendingJourneyUnlockShowcase() {
+    if (_journeyUnlockedSeen && _pendingJourneyUnlockShowcase) return;
+    _journeyUnlockedSeen = true;
+    _pendingJourneyUnlockShowcase = true;
+    _prefs?.setBool(_kJourneyUnlockedSeen, true);
+    _prefs?.setBool(_kPendingJourneyShowcase, true);
+    notifyListeners();
+  }
+
+  /// Consumes the pending Level-20 -> Home Journey showcase trigger cleanly.
+  bool consumePendingJourneyUnlockShowcase() {
+    if (!_pendingJourneyUnlockShowcase) return false;
+    _pendingJourneyUnlockShowcase = false;
+    _prefs?.setBool(_kPendingJourneyShowcase, false);
+    notifyListeners();
+    return true;
+  }
+
+  /// Claims a Journey milestone reward if unlocked and not already claimed.
+  /// Returns `true` when rewards were granted.
+  bool claimJourneyMilestone(JourneyMilestoneConfig milestone) {
+    if (!isJourneyMilestoneUnlocked(milestone.levelUnlock)) return false;
+    if (!_claimedJourneyLevels.add(milestone.levelUnlock)) return false;
+
+    if (milestone.coins > 0) {
+      _coins += milestone.coins;
+      _prefs?.setInt(_kCoins, _coins);
+    }
+    if (milestone.boosterType != null && milestone.boosterCount > 0) {
+      grantFreePowerUp(
+        boosterType: milestone.boosterType!,
+        count: milestone.boosterCount,
+      );
+    }
+    if (milestone.infinityMinutes > 0) {
+      addInfinityLives(Duration(minutes: milestone.infinityMinutes));
+    }
+    if (milestone.bgId != null && milestone.bgId! > 0) {
+      // Automatically preview/select newly unlocked background or leave selectable.
+      _selectedJourneyBgId = milestone.bgId!;
+      _prefs?.setInt(_kSelectedJourneyBgId, _selectedJourneyBgId);
+    }
+
+    _prefs?.setStringList(
+      _kClaimedJourneyLevels,
+      _claimedJourneyLevels.map((lv) => lv.toString()).toList(),
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// Equips an unlocked Journey Gallery background (`0 = Base`, `1 = Frozen`, `2 = Jungle`, `3 = Desert`).
+  bool selectJourneyBg(int bgId) {
+    if (!isJourneyBgUnlocked(bgId)) return false;
+    if (_selectedJourneyBgId == bgId) return true;
+    _selectedJourneyBgId = bgId.clamp(0, 3);
+    _prefs?.setInt(_kSelectedJourneyBgId, _selectedJourneyBgId);
+    notifyListeners();
+    return true;
+  }
+
   Future<void> cheatResetAllProgress() async {
     flushPendingWinCoins();
     _currentLevel = 1;
@@ -1027,6 +1180,12 @@ class PlayerProgressService extends ChangeNotifier {
     _vaseStepCount = 0;
     _vaseClaimedIds.clear();
     _vaseUnlockedIds.clear();
+    _purchasedPackIds.clear();
+    _noAdsPurchased = false;
+    _journeyUnlockedSeen = false;
+    _pendingJourneyUnlockShowcase = false;
+    _claimedJourneyLevels.clear();
+    _selectedJourneyBgId = 0;
     await _prefs?.setInt(_kCurrentLevel, _currentLevel);
     await _prefs?.setInt(_kHighestLevel, _highestLevel);
     await _prefs?.setInt(_kCoins, _coins);
@@ -1044,6 +1203,12 @@ class PlayerProgressService extends ChangeNotifier {
     await _prefs?.setInt(_kVaseStepCount, 0);
     await _prefs?.setStringList(_kVaseClaimedIds, const []);
     await _prefs?.setStringList(_kVaseUnlockedIds, const []);
+    await _prefs?.setStringList(_kPurchasedPackIds, const []);
+    await _prefs?.setBool(_kNoAdsPurchased, false);
+    await _prefs?.setBool(_kJourneyUnlockedSeen, false);
+    await _prefs?.setBool(_kPendingJourneyShowcase, false);
+    await _prefs?.setStringList(_kClaimedJourneyLevels, const []);
+    await _prefs?.setInt(_kSelectedJourneyBgId, 0);
     notifyListeners();
   }
 }
@@ -1409,3 +1574,173 @@ class VaseStepAdvanceResult {
     this.mechanicProgress,
   });
 }
+
+/// Visual theme unlocked via Journey Gallery milestones (`0 = Base`, `1 = Frozen`, `2 = Jungle`, `3 = Desert`).
+class JourneyBgTheme {
+  final int id;
+  final String title;
+  final String galleryCardAsset;
+  final String fullBgAsset;
+
+  const JourneyBgTheme({
+    required this.id,
+    required this.title,
+    required this.galleryCardAsset,
+    required this.fullBgAsset,
+  });
+
+  static const List<JourneyBgTheme> all = [
+    JourneyBgTheme(
+      id: 0,
+      title: 'Base',
+      galleryCardAsset: 'assets/images/Journey/Gallery_Boat.webp',
+      fullBgAsset: 'assets/images/Background_Core.png',
+    ),
+    JourneyBgTheme(
+      id: 1,
+      title: 'Frozen',
+      galleryCardAsset: 'assets/images/Journey/Gallery_NorthPole.webp',
+      fullBgAsset: 'assets/images/Journey/BG_NorthPole.webp',
+    ),
+    JourneyBgTheme(
+      id: 2,
+      title: 'Jungle',
+      galleryCardAsset: 'assets/images/Journey/Gallery_Jungle.webp',
+      fullBgAsset: 'assets/images/Journey/BG_Jungle.webp',
+    ),
+    JourneyBgTheme(
+      id: 3,
+      title: 'Desert',
+      galleryCardAsset: 'assets/images/Journey/Gallery_Desert.webp',
+      fullBgAsset: 'assets/images/Journey/BG_Desert.webp',
+    ),
+  ];
+
+  static JourneyBgTheme byId(int id) {
+    for (final t in all) {
+      if (t.id == id) return t;
+    }
+    return all.first;
+  }
+}
+
+/// Single milestone row on the vertical Journey progression track.
+class JourneyMilestoneConfig {
+  final int levelUnlock;
+  final String landTitle;
+  final String rewardLabel;
+  final int? bgId;
+  final int coins;
+  final BoosterType? boosterType;
+  final int boosterCount;
+  final int infinityMinutes;
+
+  const JourneyMilestoneConfig({
+    required this.levelUnlock,
+    required this.landTitle,
+    required this.rewardLabel,
+    this.bgId,
+    this.coins = 0,
+    this.boosterType,
+    this.boosterCount = 0,
+    this.infinityMinutes = 0,
+  });
+
+  bool get isBgMilestone => bgId != null;
+
+  JourneyBgTheme? get bgTheme => bgId == null ? null : JourneyBgTheme.byId(bgId!);
+
+  /// Full progression schedule matching the Journey specification spreadsheet:
+  /// Lv 1 (BG base), 15, 20 (Frozen BG), 30, 40, 50 (Jungle BG), 60, 75, 90,
+  /// 100 (Desert BG), 125, 150, 175.
+  static const List<JourneyMilestoneConfig> schedule = [
+    JourneyMilestoneConfig(
+      levelUnlock: 1,
+      landTitle: 'Base',
+      rewardLabel: 'Base BG',
+      bgId: 0,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 15,
+      landTitle: 'Base',
+      rewardLabel: '15m',
+      infinityMinutes: 15,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 20,
+      landTitle: 'Frozen',
+      rewardLabel: 'Frozen BG',
+      bgId: 1,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 30,
+      landTitle: 'Frozen',
+      rewardLabel: '50',
+      coins: 50,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 40,
+      landTitle: 'Frozen',
+      rewardLabel: '15m',
+      infinityMinutes: 15,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 50,
+      landTitle: 'Jungle',
+      rewardLabel: 'Jungle BG',
+      bgId: 2,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 60,
+      landTitle: 'Jungle',
+      rewardLabel: 'x1',
+      boosterType: BoosterType.shuffle,
+      boosterCount: 1,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 75,
+      landTitle: 'Jungle',
+      rewardLabel: '100',
+      coins: 100,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 90,
+      landTitle: 'Jungle',
+      rewardLabel: '30m',
+      infinityMinutes: 30,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 100,
+      landTitle: 'Desert',
+      rewardLabel: 'Desert BG',
+      bgId: 3,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 125,
+      landTitle: 'Desert',
+      rewardLabel: '100',
+      coins: 100,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 150,
+      landTitle: 'Desert',
+      rewardLabel: '30m',
+      infinityMinutes: 30,
+    ),
+    JourneyMilestoneConfig(
+      levelUnlock: 175,
+      landTitle: 'Desert',
+      rewardLabel: 'x1',
+      boosterType: BoosterType.levelUp,
+      boosterCount: 1,
+    ),
+  ];
+
+  static JourneyMilestoneConfig? forBgId(int bgId) {
+    for (final m in schedule) {
+      if (m.bgId == bgId) return m;
+    }
+    return null;
+  }
+}
+

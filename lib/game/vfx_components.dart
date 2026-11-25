@@ -3361,6 +3361,206 @@ void drawEmeraldStopwatchIcon(
   canvas.restore();
 }
 
+/// Renders live magnetic field arcs, inward-pulling luminous droplets, and a seam
+/// ionization glow between two nearby mergeable blocks (`cảm giác tự hút lại như nam châm`).
+class MagneticBridgeVfxComponent extends PositionComponent {
+  double _clock = 0.0;
+  double _targetStrength = 0.0;
+  double _strength = 0.0;
+
+  final Vector2 _fromWorld = Vector2.zero();
+  final Vector2 _toWorld = Vector2.zero();
+  double _spanLength = 40.0;
+  double _cellSize = 60.0;
+  Color _primaryColor = const Color(0xFF66E3FF);
+  Color _targetColor = const Color(0xFFFFFFFF);
+
+  final ui.Paint _glowPaint = ui.Paint()..blendMode = BlendMode.plus;
+  final ui.Paint _haloStrokePaint = ui.Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..blendMode = BlendMode.plus;
+  final ui.Paint _coreStrokePaint = ui.Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..blendMode = BlendMode.plus;
+  final ui.Paint _motePaint = ui.Paint()..blendMode = BlendMode.plus;
+  final ui.Path _arcPath = ui.Path();
+
+  MagneticBridgeVfxComponent({super.priority = 139});
+
+  void updateTarget({
+    required Vector2 fromEdgeWorld,
+    required Vector2 toEdgeWorld,
+    required double spanLength,
+    required double cellSize,
+    required double strength,
+    required Color primaryColor,
+    required Color targetColor,
+  }) {
+    _fromWorld.setFrom(fromEdgeWorld);
+    _toWorld.setFrom(toEdgeWorld);
+    _spanLength = math.max(cellSize * 0.65, spanLength);
+    _cellSize = cellSize;
+    _targetStrength = strength.clamp(0.0, 1.0);
+    _primaryColor = primaryColor;
+    _targetColor = targetColor;
+  }
+
+  void clear({bool immediate = false}) {
+    _targetStrength = 0.0;
+    if (immediate) {
+      _strength = 0.0;
+    }
+  }
+
+  double get debugStrength => _strength;
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    final clampedDt = dt.clamp(0.0, 0.05);
+    _clock = (_clock + clampedDt) % 1000.0;
+    final rate = _targetStrength > _strength ? 26.0 : 18.0;
+    final alpha = (1.0 - math.exp(-rate * clampedDt)).clamp(0.0, 1.0);
+    _strength = ui.lerpDouble(_strength, _targetStrength, alpha)!;
+    if (_targetStrength <= 1e-4 && _strength <= 0.005) {
+      _strength = 0.0;
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    super.render(canvas);
+    if (_strength <= 0.01 || _cellSize <= 1.0) return;
+
+    final dx = _toWorld.x - _fromWorld.x;
+    final dy = _toWorld.y - _fromWorld.y;
+    final dist = math.sqrt(dx * dx + dy * dy);
+    // Keep axis stable even when the blocks touch or slightly overlap (`dist ~= 0`)
+    final nx = dist > 1e-3 ? dx / dist : 1.0;
+    final ny = dist > 1e-3 ? dy / dist : 0.0;
+    final tx = -ny;
+    final ty = nx;
+
+    final midX = (_fromWorld.x + _toWorld.x) * 0.5;
+    final midY = (_fromWorld.y + _toWorld.y) * 0.5;
+    final reach = math.max(dist * 0.5, _cellSize * 0.20);
+    final startA = Offset(midX - nx * reach, midY - ny * reach);
+    final startB = Offset(midX + nx * reach, midY + ny * reach);
+    final mid = Offset(midX, midY);
+
+    final pulse = 0.85 + 0.15 * math.sin(_clock * 14.0);
+    final blendColor =
+        Color.lerp(_primaryColor, _targetColor, 0.55) ?? _targetColor;
+    final seamAuraRadius = _cellSize * (0.34 + 0.18 * _strength);
+
+    // 1. Central Magnetic Seam Glow
+    _glowPaint.shader = ui.Gradient.radial(
+      mid,
+      seamAuraRadius,
+      [
+        Colors.white.withValues(alpha: (0.48 * _strength * pulse).clamp(0.0, 1.0)),
+        blendColor.withValues(alpha: (0.36 * _strength * pulse).clamp(0.0, 1.0)),
+        blendColor.withValues(alpha: 0.0),
+      ],
+      const [0.0, 0.42, 1.0],
+    );
+    canvas.drawCircle(mid, seamAuraRadius, _glowPaint);
+    _glowPaint.shader = null;
+
+    // 2. Pulsing Seam Line Hugging the Shared Boundary
+    final edgeHalf = _spanLength * (0.34 + 0.10 * _strength);
+    final seamP1 = Offset(midX - tx * edgeHalf, midY - ty * edgeHalf);
+    final seamP2 = Offset(midX + tx * edgeHalf, midY + ty * edgeHalf);
+    _haloStrokePaint
+      ..strokeWidth = (_cellSize * (0.14 + 0.06 * _strength)).clamp(4.0, 14.0)
+      ..maskFilter = ui.MaskFilter.blur(
+        ui.BlurStyle.normal,
+        (_cellSize * 0.08).clamp(2.5, 8.0),
+      )
+      ..color =
+          blendColor.withValues(alpha: (0.55 * _strength * pulse).clamp(0.0, 1.0));
+    canvas.drawLine(seamP1, seamP2, _haloStrokePaint);
+
+    _coreStrokePaint
+      ..strokeWidth = (_cellSize * (0.045 + 0.025 * _strength)).clamp(1.8, 5.0)
+      ..color = Colors.white.withValues(
+        alpha: (0.82 * _strength * pulse).clamp(0.0, 1.0),
+      );
+    canvas.drawLine(seamP1, seamP2, _coreStrokePaint);
+
+    // 3. Three Hourglass Magnetic Flux Arcs pulling inward from both faces
+    final maxLateral = _spanLength * 0.29;
+    final pinch = 1.0 - 0.58 * _strength;
+    for (int lane = -1; lane <= 1; lane++) {
+      final offsetEnd = lane * maxLateral;
+      final wave =
+          math.sin(_clock * 11.0 + lane * 1.9) * _cellSize * 0.032 * _strength;
+      final p0 = Offset(startA.dx + tx * offsetEnd, startA.dy + ty * offsetEnd);
+      final p2 = Offset(startB.dx + tx * offsetEnd, startB.dy + ty * offsetEnd);
+      final ctrl = Offset(
+        midX + tx * (offsetEnd * pinch * 0.35 + wave),
+        midY + ty * (offsetEnd * pinch * 0.35 + wave),
+      );
+
+      _arcPath
+        ..reset()
+        ..moveTo(p0.dx, p0.dy)
+        ..quadraticBezierTo(ctrl.dx, ctrl.dy, p2.dx, p2.dy);
+
+      final laneWeight = lane == 0 ? 1.0 : 0.78;
+      _haloStrokePaint
+        ..strokeWidth = (_cellSize * 0.085 * laneWeight).clamp(2.5, 8.5)
+        ..maskFilter = ui.MaskFilter.blur(
+          ui.BlurStyle.normal,
+          (_cellSize * 0.055).clamp(1.5, 5.5),
+        )
+        ..color = blendColor.withValues(
+          alpha: (0.58 * _strength * laneWeight).clamp(0.0, 1.0),
+        );
+      canvas.drawPath(_arcPath, _haloStrokePaint);
+
+      _coreStrokePaint
+        ..strokeWidth = (_cellSize * 0.032 * laneWeight).clamp(1.2, 3.4)
+        ..color = Colors.white.withValues(
+          alpha: (0.85 * _strength * laneWeight).clamp(0.0, 1.0),
+        );
+      canvas.drawPath(_arcPath, _coreStrokePaint);
+    }
+
+    // 4. Inward-Sucking Energy Droplets racing from each block into the center seam
+    final edgeTravel = math.max(reach * 1.18, _cellSize * 0.24);
+    for (int i = 0; i < 8; i++) {
+      final fromSideA = i.isEven;
+      final laneFrac = ((i ~/ 2) - 1.5) / 1.5; // -1..+1 across contact edge
+      final phase = ((_clock * (2.2 + 0.35 * (i % 3)) + i * 0.21) % 1.0);
+      final inwardProgress = phase * phase; // Ease-in acceleration toward magnet core
+      final sign = fromSideA ? -1.0 : 1.0;
+      final distFromMid = edgeTravel * (1.0 - inwardProgress);
+      final lateral = laneFrac * maxLateral * (1.0 - inwardProgress * 0.72);
+
+      final mx = midX + nx * sign * distFromMid + tx * lateral;
+      final my = midY + ny * sign * distFromMid + ty * lateral;
+      final moteR =
+          (_cellSize * (0.028 + 0.022 * _strength) * (0.65 + 0.55 * phase))
+              .clamp(1.4, 5.5);
+      final fade = math.sin(phase * math.pi).clamp(0.0, 1.0);
+
+      _motePaint.color = blendColor.withValues(
+        alpha: (0.68 * _strength * fade).clamp(0.0, 1.0),
+      );
+      canvas.drawCircle(Offset(mx, my), moteR * 1.65, _motePaint);
+
+      _motePaint.color = Colors.white.withValues(
+        alpha: (0.95 * _strength * fade).clamp(0.0, 1.0),
+      );
+      canvas.drawCircle(Offset(mx, my), moteR, _motePaint);
+    }
+  }
+}
+
+
 
 
 

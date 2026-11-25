@@ -1,12 +1,19 @@
 {
   "consumablePack": [
-    "com.funtap.global.gems_small",
-    "com.funtap.global.gems_large"
+    "com.fw.water.block.number.merge.no_ads_bundle",
+    "com.fw.water.block.number.merge.starter_pack",
+    "com.fw.water.block.number.merge.limited_pack",
+    "com.fw.water.block.number.merge.beginner_bundle",
+    "com.fw.water.block.number.merge.master_bundle",
+    "com.fw.water.block.number.merge.fail_offer",
+    "com.fw.water.block.number.merge.gold_1",
+    "com.fw.water.block.number.merge.gold_2",
+    "com.fw.water.block.number.merge.gold_3",
+    "com.fw.water.block.number.merge.gold_4",
+    "com.fw.water.block.number.merge.gold_5"
   ],
   "nonConsumablePack": [
-    "com.funtap.global.remove_ads"
+    "com.fw.water.block.number.merge"
   ],
-  "subscriptionPack": [
-    "com.funtap.global.vip_monthly"
-  ]
+  "subscriptionPack": []
 }

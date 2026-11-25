@@ -6,18 +6,26 @@ import '../services/ads_manager.dart';
 import '../services/analytics_service.dart';
 import '../services/app_version_service.dart';
 import '../services/audio_haptics_service.dart';
+import '../services/iap_service.dart';
 import '../services/player_progress_service.dart';
+import 'journey_view.dart';
 import 'more_lives_dialog.dart';
+import 'shop_view.dart';
 import 'unity_ui_kit.dart';
 
+enum _HomeTab {
+  shop,
+  home,
+  journey,
+}
+
 /// Home Screen displayed before Gameplay matching `assets/images/UI Home/Home/Home_view.png`:
-/// - Fullscreen `BG.png` kitchen/workshop scene with Water-Drop Mascot & glowing `4` block
-/// - Top bar: Avatar (`frame_avatar.png`), Hearts pill (`asset_frame.png` + `icon_heart.png`),
-///   Coins pill (`asset_frame.png` + `Icon_Coin.png` + `PowerUp_Plus.png`), Settings (`btn_setting.png`)
+/// - Tabs: `Shop`, `Home` (Kitchen Scene + Play CTA), and `Journey` (unlocks after Level 20)
+/// - Top bar: Avatar (`frame_avatar.png`), Hearts pill, Coins pill, Settings (`btn_setting.png`)
 /// - Upper promo badges: `No Ads` (`icon_ads.png`) and `Starter Pack` (`icon_reward 1.png`)
 /// - Primary Play CTA: `btn_green_play.png` (`"Level X"`), gated by Heart > 0 (`MoreLivesDialog`)
-/// - Bottom bar: `frame_menubar.png` + Shop (`icon_shop.png` + `notice.png`), raised active Home
-///   card (`frame_footer.png` + `icon_home.png` + `"Home"`), and Locked feature tab (`icon_lock.png`).
+/// - Bottom bar: `frame_menubar.png` + Shop (`icon_shop.png`), raised active tab (`frame_footer.png`),
+///   and Journey (`Icon_Gllery.png`) / Locked tab (`icon_lock.png`).
 class HomeScreen extends StatefulWidget {
   final LevelRepository repository;
   final AudioHapticsService audio;
@@ -46,6 +54,8 @@ class _HomeScreenState extends State<HomeScreen>
   bool _settingsOpen = false;
   bool _showMoreLivesModal = false;
   bool _pendingPlayAfterLifeRecovery = false;
+  _HomeTab _activeTab = _HomeTab.home;
+  ShopScrollSection _shopSection = ShopScrollSection.top;
 
   @override
   void initState() {
@@ -58,8 +68,35 @@ class _HomeScreenState extends State<HomeScreen>
 
     _ctaPulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200), 
+      duration: const Duration(milliseconds: 2200),
     )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkPendingJourneyShowcase();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkPendingJourneyShowcase();
+    });
+  }
+
+  void _checkPendingJourneyShowcase() {
+    if (!mounted) return;
+    if (widget.progress.consumePendingJourneyUnlockShowcase()) {
+      setState(() => _activeTab = _HomeTab.journey);
+      _showToast('Journey Unlocked!');
+    }
+  }
+
+  void _openShopTab([ShopScrollSection section = ShopScrollSection.top]) {
+    setState(() {
+      _activeTab = _HomeTab.shop;
+      _shopSection = section;
+    });
   }
 
   @override
@@ -218,19 +255,20 @@ class _HomeScreenState extends State<HomeScreen>
             167.0 * bgScaleY,
             safePadding.bottom + ux(context, 132),
           );
-          // ignore: unused_local_variable
           final bottomDockBarH = 232.0 * bgScaleY;
-          // ignore: unused_local_variable
           final activeCardLift = 89.0 * bgScaleY;
-          // ignore: unused_local_variable
           final activeCardW = ux(context, 385);
 
           final playW = ux(context, 491);
           final playH = ux(context, 259);
-          final buttonTargetCenterY = 1600.0 * bgScaleY;
+          final buttonTargetCenterY = 1460.0 * bgScaleY;
           final minPlayTop = safePadding.top + ux(context, 540);
-          final maxPlayTop =
-              screenSize.height - bottomBannerH - playH - ux(context, 36);
+          final maxPlayTop = screenSize.height -
+              bottomBannerH -
+              bottomDockBarH -
+              activeCardLift -
+              playH -
+              ux(context, 14);
           final double playTop = (buttonTargetCenterY - playH * 0.5)
               .clamp(minPlayTop, math.max(minPlayTop, maxPlayTop))
               .toDouble();
@@ -238,7 +276,6 @@ class _HomeScreenState extends State<HomeScreen>
           return ListenableBuilder(
             listenable: widget.progress,
             builder: (context, _) {
-
               final currentLv = widget.progress.currentLevel;
               final lives = widget.progress.lives;
               final isInfinity = widget.progress.isInfinityLives();
@@ -247,185 +284,202 @@ class _HomeScreenState extends State<HomeScreen>
               final heartText = isFull
                   ? 'Full'
                   : widget.progress.formattedNextLifeCountdown();
+              final journeyUnlocked = widget.progress.isJourneyUnlocked;
+              final navTotalClearance =
+                  bottomBannerH + bottomDockBarH + ux(context, 24);
+              final topHudClearance = safePadding.top + ux(context, 185);
 
               return Stack(
                 fit: StackFit.expand,
                 children: [
-              // 1. Fullscreen Kitchen Workshop Art Backdrop (`BG.png` fitXY)
-              RepaintBoundary(
-                child: Image.asset(
-                  'assets/images/UI Home/Home/BG.webp',
-                  fit: BoxFit.fill,
-                  width: double.infinity,
-                  height: double.infinity,
+              // 1. Active Tab Body (`Shop`, `Home`, or `Journey`)
+              if (_activeTab == _HomeTab.shop)
+                ShopView(
+                  progress: widget.progress,
+                  initialSection: _shopSection,
+                  bottomClearance: navTotalClearance,
+                )
+              else if (_activeTab == _HomeTab.journey)
+                JourneyView(
+                  progress: widget.progress,
+                  topClearance: topHudClearance,
+                  bottomClearance: navTotalClearance,
+                )
+              else ...[
+                // Fullscreen Kitchen Workshop Art Backdrop (`BG.webp` fitXY)
+                RepaintBoundary(
+                  child: Image.asset(
+                    'assets/images/UI Home/Home/BG.webp',
+                    fit: BoxFit.fill,
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
                 ),
-              ),
 
-              // 2. Subtle top vignette for crisp HUD contrast
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: safePadding.top + ux(context, 200),
-                child: const IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0x5512052E), Color(0x0012052E)],
+                // Subtle top vignette for crisp HUD contrast
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: safePadding.top + ux(context, 200),
+                  child: const IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x5512052E), Color(0x0012052E)],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
 
-              // 3. Top Resource Bar (`Avatar 161x161`, `Hearts`, `Coins`, `Settings 139x139`)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      ux(context, 40),
-                      ux(context, 22),
-                      ux(context, 46),
-                      0,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Left Avatar Frame + Stylized Cat Character (`161x161` in `Home_view.png`)
-                        _HomeAvatarBadge(size: ux(context, 161)),
-                        SizedBox(width: ux(context, 18)),
-
-                        // Hearts Pill (`asset_frame.png` + `icon_heart.png` + `'Full'` / `MM:SS` / Infinity `∞`)
-                        Expanded(
-                          child: _HomeResourcePill(
-                            key: const ValueKey('home_hearts_pill'),
-                            onTap: _handleHeartsPillTapped,
-                            leadingAsset:
-                                'assets/images/UI Home/Home/icon_heart.png',
-                            leadingOverlayText: isInfinity
-                                ? '∞'
-                                : (isFull ? null : '$lives'),
-                            label: heartText,
+              // 3. Top Resource Bar (`Avatar`, `Hearts`, `Coins`, `Settings`)
+              // Hidden on Shop tab because ShopView draws its own scalloped awning + Coin HUD.
+              if (_activeTab != _HomeTab.shop)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        ux(context, 40),
+                        ux(context, 22),
+                        ux(context, 46),
+                        0,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _HomeAvatarBadge(size: ux(context, 161)),
+                          SizedBox(width: ux(context, 18)),
+                          Expanded(
+                            child: _HomeResourcePill(
+                              key: const ValueKey('home_hearts_pill'),
+                              onTap: _handleHeartsPillTapped,
+                              leadingAsset:
+                                  'assets/images/UI Home/Home/icon_heart.png',
+                              leadingOverlayText: isInfinity
+                                  ? '∞'
+                                  : (isFull ? null : '$lives'),
+                              label: heartText,
+                            ),
                           ),
-                        ),
-                        SizedBox(width: ux(context, 18)),
-
-                        // Coins Pill (`asset_frame.png` + `Icon_Coin.png` + `+` + balance)
-                        Expanded(
-                          child: _HomeResourcePill(
-                            key: const ValueKey('home_coins_pill'),
+                          SizedBox(width: ux(context, 18)),
+                          Expanded(
+                            child: _HomeResourcePill(
+                              key: const ValueKey('home_coins_pill'),
+                              onTap: () {
+                                widget.audio.playClick();
+                                _openShopTab(ShopScrollSection.coins);
+                              },
+                              leadingAsset: 'assets/images/Icon_Coin.png',
+                              showPlusBadge: true,
+                              label: '${widget.progress.coins}',
+                            ),
+                          ),
+                          SizedBox(width: ux(context, 18)),
+                          UnitySpriteButton(
+                            key: const ValueKey('home_settings_btn'),
+                            asset: 'UI Home/Home/btn_setting.png',
+                            unitySize: 139,
                             onTap: () {
                               widget.audio.playClick();
-                              _showToast('Shop coming soon!');
+                              setState(() => _settingsOpen = true);
                             },
-                            leadingAsset: 'assets/images/Icon_Coin.png',
-                            showPlusBadge: true,
-                            label: '${widget.progress.coins}',
                           ),
-                        ),
-                        SizedBox(width: ux(context, 18)),
-
-                        // Settings Gear (`btn_setting.png`, `139x139` in `Home_view.png`)
-                        UnitySpriteButton(
-                          key: const ValueKey('home_settings_btn'),
-                          asset: 'UI Home/Home/btn_setting.png',
-                          unitySize: 139,
-                          onTap: () {
-                            widget.audio.playClick();
-                            setState(() => _settingsOpen = true);
-                          },
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              // 4. Upper Promo Shortcuts (`No Ads` & `Starter Pack`) — temporarily commented out until navigation is wired
-              /*
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      ux(context, 31),
-                      ux(context, 260),
-                      ux(context, 32),
-                      0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _HomePromoShortcut(
-                          key: const ValueKey('home_no_ads_btn'),
-                          iconAsset: 'assets/images/UI Home/Home/icon_ads.png',
-                          label: 'No Ads',
-                          unityWidth: 204,
-                          unityHeight: 214,
-                          unityIconWidth: 182,
-                          unityIconHeight: 185,
-                          onTap: () {
-                            widget.audio.playClick();
-                            _showToast('Remove Ads coming soon!');
-                          },
-                        ),
-                        _HomePromoShortcut(
-                          key: const ValueKey('home_starter_pack_btn'),
-                          iconAsset:
-                              'assets/images/UI Home/Home/icon_reward 1.png',
-                          label: 'Starter Pack',
-                          unityWidth: 204,
-                          unityHeight: 224,
-                          unityIconWidth: 183,
-                          unityIconHeight: 196,
-                          onTap: () {
-                            widget.audio.playClick();
-                            _showToast('Starter Pack coming soon!');
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              */
-
-              // 5. Primary Play Button (`btn_green_play.png` `491x259` -> `"Level X"`)
-              // Centered directly on `BG.png`'s horizontal counter rim (`vạch ngang của bàn`).
-              Positioned(
-                left: 0,
-                right: 0,
-                top: playTop,
-                child: Center(
-                  child: AnimatedBuilder(
-                    animation: _ctaPulseCtrl,
-                    builder: (context, child) {
-                      final pulse =
-                          1.0 + 0.022 * math.sin(_ctaPulseCtrl.value * math.pi);
-                      return Transform.scale(scale: pulse, child: child);
-                    },
-                    child: _HomePlayButton(
-                      key: const ValueKey('home_play_level_btn'),
-                      levelNumber: currentLv,
-                      width: playW,
-                      height: playH,
-                      onTap: _handlePlayTapped,
+              // 4. Upper Promo Shortcuts (`No Ads` & `Starter Pack`) on Home tab
+              if (_activeTab == _HomeTab.home)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        ux(context, 31),
+                        ux(context, 260),
+                        ux(context, 32),
+                        0,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (!widget.progress.noAdsPurchased)
+                            _HomePromoShortcut(
+                              key: const ValueKey('home_no_ads_btn'),
+                              iconAsset:
+                                  'assets/images/UI Home/Home/icon_ads.png',
+                              label: 'No Ads',
+                              unityWidth: 204,
+                              unityHeight: 214,
+                              unityIconWidth: 182,
+                              unityIconHeight: 185,
+                              onTap: () {
+                                widget.audio.playClick();
+                                _openShopTab(ShopScrollSection.top);
+                              },
+                            )
+                          else
+                            const SizedBox.shrink(),
+                          _HomePromoShortcut(
+                            key: const ValueKey('home_starter_pack_btn'),
+                            iconAsset:
+                                'assets/images/UI Home/Home/icon_reward 1.png',
+                            label: 'Starter Pack',
+                            unityWidth: 204,
+                            unityHeight: 224,
+                            unityIconWidth: 183,
+                            unityIconHeight: 196,
+                            onTap: () {
+                              widget.audio.playClick();
+                              _openShopTab(ShopScrollSection.bundles);
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              // 6. Transparent Reserved Bottom Ad Banner Overlay Region (sits cleanly over fullscreen `BG.webp`)
+              // 5. Primary Play Button (`btn_green_play.png` -> `"Level X"`) on Home tab
+              if (_activeTab == _HomeTab.home)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: playTop,
+                  child: Center(
+                    child: AnimatedBuilder(
+                      animation: _ctaPulseCtrl,
+                      builder: (context, child) {
+                        final pulse =
+                            1.0 + 0.022 * math.sin(_ctaPulseCtrl.value * math.pi);
+                        return Transform.scale(scale: pulse, child: child);
+                      },
+                      child: _HomePlayButton(
+                        key: const ValueKey('home_play_level_btn'),
+                        levelNumber: currentLv,
+                        width: playW,
+                        height: playH,
+                        onTap: _handlePlayTapped,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // 6. Transparent Reserved Bottom Ad Banner Overlay Region
               Positioned(
                 key: const ValueKey('home_bottom_banner'),
                 left: 0,
@@ -435,170 +489,39 @@ class _HomeScreenState extends State<HomeScreen>
                 child: const IgnorePointer(child: SizedBox.expand()),
               ),
 
-              // Bottom Navigation Bar (`Shop`, `Home`, `Lock`) — temporarily commented out until navigation is wired
-              /*
+              // 6b. Bottom Navigation Bar (`Shop`, `Home`, `Journey`/`Lock`)
               Positioned(
                 key: const ValueKey('home_bottom_nav_bar'),
                 left: 0,
                 right: 0,
                 bottom: bottomBannerH,
                 height: bottomDockBarH + activeCardLift,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    // Base Indigo Bar with Gold Rim (`frame_menubar.png` `1080x400`, cropped at banner edge)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: bottomDockBarH,
-                      child: ClipRect(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              top: 0,
-                              height: math.max(bottomDockBarH, ux(context, 400)),
-                              child: Image.asset(
-                                'assets/images/UI Home/Home/frame_menubar.png',
-                                fit: BoxFit.fill,
-                              ),
-                            ),
-                            Padding(
-                              padding: EdgeInsets.only(top: 10.0 * bgScaleY),
-                              child: Row(
-                                children: [
-                                  // Left Wing (`347.5` wide): Shop + `!` Notice Badge
-                                  Expanded(
-                                    child: _HomeNavTabButton(
-                                      key: const ValueKey('home_nav_shop_btn'),
-                                      onTap: () {
-                                        widget.audio.playClick();
-                                        _showToast('Shop coming soon!');
-                                      },
-                                      child: SizedBox(
-                                        width: ux(context, 180),
-                                        height: math.min(
-                                          ux(context, 158),
-                                          bottomDockBarH - 18.0 * bgScaleY,
-                                        ),
-                                        child: Stack(
-                                          clipBehavior: Clip.none,
-                                          alignment: Alignment.center,
-                                          children: [
-                                            Image.asset(
-                                              'assets/images/UI Home/Home/icon_shop.png',
-                                              width: ux(context, 157),
-                                              height: ux(context, 146),
-                                              fit: BoxFit.contain,
-                                            ),
-                                            Positioned(
-                                              right: -ux(context, 4),
-                                              top: -ux(context, 4),
-                                              child: Image.asset(
-                                                'assets/images/UI Home/Home/notice.png',
-                                                width: ux(context, 78),
-                                                height: ux(context, 83),
-                                                fit: BoxFit.contain,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  // Center Spacer matching exact `frame_footer.png` width (`385`)
-                                  SizedBox(width: activeCardW),
-                                  // Right Wing (`347.5` wide): Locked Feature Padlock
-                                  Expanded(
-                                    child: _HomeNavTabButton(
-                                      key: const ValueKey('home_nav_lock_btn'),
-                                      onTap: () {
-                                        widget.audio.playClick();
-                                        _showToast(
-                                          'Keep playing to unlock more!',
-                                        );
-                                      },
-                                      child: Image.asset(
-                                        'assets/images/UI Home/Home/icon_lock.png',
-                                        width: ux(context, 114),
-                                        height: math.min(
-                                          ux(context, 145),
-                                          bottomDockBarH - 22.0 * bgScaleY,
-                                        ),
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Center Active Raised `Home` Card (`frame_footer.png` `385x484` + `icon_home.png` + `"Home"`)
-                    Positioned(
-                      bottom: 0,
-                      width: activeCardW,
-                      height: bottomDockBarH + activeCardLift,
-                      child: ClipRect(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              top: 0,
-                              height: math.max(
-                                bottomDockBarH + activeCardLift,
-                                ux(context, 484),
-                              ),
-                              child: Image.asset(
-                                'assets/images/UI Home/Home/frame_footer.png',
-                                fit: BoxFit.fill,
-                              ),
-                            ),
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                ux(context, 16),
-                                34.0 * bgScaleY,
-                                ux(context, 16),
-                                24.0 * bgScaleY,
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: Image.asset(
-                                      'assets/images/UI Home/Home/icon_home.png',
-                                      width: ux(context, 177),
-                                      height: ux(context, 173),
-                                      fit: BoxFit.contain,
-                                    ),
-                                  ),
-                                  SizedBox(height: 10.0 * bgScaleY),
-                                  const UnitySdfText(
-                                    'Home',
-                                    unityFontSize: 52,
-                                    material: _homeTabTextMaterial,
-                                    singleTextNode: true,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                child: _HomeBottomNavDock(
+                  activeTab: _activeTab,
+                  journeyUnlocked: journeyUnlocked,
+                  hasJourneyNotice: widget.progress.hasClaimableJourneyReward,
+                  bottomDockBarH: bottomDockBarH,
+                  activeCardLift: activeCardLift,
+                  activeCardW: activeCardW,
+                  bgScaleY: bgScaleY,
+                  onSelectShop: () {
+                    widget.audio.playClick();
+                    _openShopTab(ShopScrollSection.top);
+                  },
+                  onSelectHome: () {
+                    widget.audio.playClick();
+                    setState(() => _activeTab = _HomeTab.home);
+                  },
+                  onSelectJourney: () {
+                    widget.audio.playClick();
+                    if (!journeyUnlocked) {
+                      _showToast('Unlock at Level 20!');
+                      return;
+                    }
+                    setState(() => _activeTab = _HomeTab.journey);
+                  },
                 ),
               ),
-              */
 
               // 7. Home Settings Modal (`PopUp_Setting`)
               if (_settingsOpen) _buildHomeSettingsOverlay(context),
@@ -690,7 +613,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ignore: unused_field
   static const _homeTabTextMaterial = UnityTextMaterial(
     faceTop: Colors.white,
     faceBottom: Colors.white,
@@ -719,8 +641,7 @@ class _HomeScreenState extends State<HomeScreen>
           onTap: () {},
           child: SizedBox(
             width: ux(context, 884),
-            // Compact height while Restore is commented out (was 780 with Restore button)
-            height: ux(context, 600),
+            height: ux(context, 780),
             child: Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.topCenter,
@@ -739,8 +660,7 @@ class _HomeScreenState extends State<HomeScreen>
                   left: ux(context, 50),
                   right: ux(context, 50),
                   top: ux(context, 184),
-                  // Compact inner panel while Restore is commented out (was 520 with Restore button)
-                  height: ux(context, 340),
+                  height: ux(context, 520),
                   child: UnityNineSlice(
                     sprite: 'Panel_Popup.png',
                     pixelMultiplier: 1.0,
@@ -781,21 +701,28 @@ class _HomeScreenState extends State<HomeScreen>
                             );
                           },
                         ),
-                        // Temporarily disabled while Restore Purchases feature is not used yet:
-                        // SizedBox(height: ux(context, 36)),
-                        // _HomeAssetActionButton(
-                        //   key: const ValueKey('home_settings_restore_btn'),
-                        //   assetPath:
-                        //       'assets/images/UI Home/btn_green_setting 2.png',
-                        //   label: 'Restore',
-                        //   width: ux(context, 420),
-                        //   height: ux(context, 190),
-                        //   onTap: () {
-                        //     widget.audio.playClick();
-                        //     _showToast('Purchases restored!');
-                        //   },
-                        // ),
-                        SizedBox(height: ux(context, 44)),
+                        SizedBox(height: ux(context, 36)),
+                        _HomeAssetActionButton(
+                          key: const ValueKey('home_settings_restore_btn'),
+                          assetPath:
+                              'assets/images/UI Home/btn_green_setting 2.png',
+                          label: 'Restore',
+                          width: ux(context, 420),
+                          height: ux(context, 190),
+                          onTap: () async {
+                            widget.audio.playClick();
+                            final ok = await IapService.restorePurchases(
+                              widget.progress,
+                            );
+                            if (!mounted) return;
+                            _showToast(
+                              ok
+                                  ? 'Purchases restored!'
+                                  : 'No previous purchases found.',
+                            );
+                          },
+                        ),
+                        SizedBox(height: ux(context, 26)),
                         ValueListenableBuilder<String>(
                           valueListenable: AppVersionService.versionNotifier,
                           builder: (context, _, _) => Text(
@@ -1315,13 +1242,11 @@ class _HomePlayButtonState extends State<_HomePlayButton> {
   }
 }
 
-// ignore: unused_element
 class _HomeNavTabButton extends StatefulWidget {
   final VoidCallback onTap;
   final Widget child;
 
   const _HomeNavTabButton({
-    // ignore: unused_element_parameter
     super.key,
     required this.onTap,
     required this.child,
@@ -1397,7 +1322,6 @@ class _HomeSettingToggle extends StatelessWidget {
   }
 }
 
-// ignore: unused_element
 class _HomeAssetActionButton extends StatefulWidget {
   final String assetPath;
   final String label;
@@ -1406,7 +1330,6 @@ class _HomeAssetActionButton extends StatefulWidget {
   final VoidCallback onTap;
 
   const _HomeAssetActionButton({
-    // ignore: unused_element_parameter
     super.key,
     required this.assetPath,
     required this.label,
@@ -1471,4 +1394,275 @@ class _HomeAssetActionButtonState extends State<_HomeAssetActionButton> {
     );
   }
 }
+
+class _HomeBottomNavDock extends StatelessWidget {
+  final _HomeTab activeTab;
+  final bool journeyUnlocked;
+  final bool hasJourneyNotice;
+  final double bottomDockBarH;
+  final double activeCardLift;
+  final double activeCardW;
+  final double bgScaleY;
+  final VoidCallback onSelectShop;
+  final VoidCallback onSelectHome;
+  final VoidCallback onSelectJourney;
+
+  const _HomeBottomNavDock({
+    required this.activeTab,
+    required this.journeyUnlocked,
+    required this.hasJourneyNotice,
+    required this.bottomDockBarH,
+    required this.activeCardLift,
+    required this.activeCardW,
+    required this.bgScaleY,
+    required this.onSelectShop,
+    required this.onSelectHome,
+    required this.onSelectJourney,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final activeAlignment = switch (activeTab) {
+      _HomeTab.shop => Alignment.bottomLeft,
+      _HomeTab.home => Alignment.bottomCenter,
+      _HomeTab.journey => Alignment.bottomRight,
+    };
+
+    final activeIcon = switch (activeTab) {
+      _HomeTab.shop => Image.asset(
+          'assets/images/UI Home/Home/icon_shop.png',
+          width: ux(context, 172),
+          height: ux(context, 165),
+          fit: BoxFit.contain,
+        ),
+      _HomeTab.home => Image.asset(
+          'assets/images/UI Home/Home/icon_home.png',
+          width: ux(context, 177),
+          height: ux(context, 173),
+          fit: BoxFit.contain,
+        ),
+      _HomeTab.journey => Image.asset(
+          'assets/images/Journey/Icon_Gllery.png',
+          width: ux(context, 172),
+          height: ux(context, 165),
+          fit: BoxFit.contain,
+        ),
+    };
+
+    final activeLabel = switch (activeTab) {
+      _HomeTab.shop => 'Shop',
+      _HomeTab.home => 'Home',
+      _HomeTab.journey => 'Journey',
+    };
+
+    final activeKey = switch (activeTab) {
+      _HomeTab.shop => const ValueKey('home_nav_shop_btn'),
+      _HomeTab.home => const ValueKey('home_nav_home_btn'),
+      _HomeTab.journey => const ValueKey('home_nav_journey_btn'),
+    };
+
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.bottomCenter,
+      children: [
+        // Base Indigo Bar with Gold Rim (`frame_menubar.png`)
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: bottomDockBarH,
+          child: ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: math.max(bottomDockBarH, ux(context, 400)),
+                  child: Image.asset(
+                    'assets/images/UI Home/Home/frame_menubar.png',
+                    fit: BoxFit.fill,
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.only(top: 10.0 * bgScaleY),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: activeTab == _HomeTab.shop
+                            ? const SizedBox.shrink()
+                            : _HomeNavTabButton(
+                                key: const ValueKey('home_nav_shop_btn'),
+                                onTap: onSelectShop,
+                                child: SizedBox(
+                                  width: ux(context, 180),
+                                  height: math.min(
+                                    ux(context, 158),
+                                    bottomDockBarH - 18.0 * bgScaleY,
+                                  ),
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    alignment: Alignment.center,
+                                    children: [
+                                      Image.asset(
+                                        'assets/images/UI Home/Home/icon_shop.png',
+                                        width: ux(context, 157),
+                                        height: ux(context, 146),
+                                        fit: BoxFit.contain,
+                                      ),
+                                      Positioned(
+                                        right: -ux(context, 4),
+                                        top: -ux(context, 4),
+                                        child: Image.asset(
+                                          'assets/images/UI Home/Home/notice.png',
+                                          width: ux(context, 78),
+                                          height: ux(context, 83),
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                      ),
+                      Expanded(
+                        child: activeTab == _HomeTab.home
+                            ? const SizedBox.shrink()
+                            : _HomeNavTabButton(
+                                key: const ValueKey('home_nav_home_btn'),
+                                onTap: onSelectHome,
+                                child: Image.asset(
+                                  'assets/images/UI Home/Home/icon_home.png',
+                                  width: ux(context, 152),
+                                  height: math.min(
+                                    ux(context, 148),
+                                    bottomDockBarH - 18.0 * bgScaleY,
+                                  ),
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                      ),
+                      Expanded(
+                        child: activeTab == _HomeTab.journey
+                            ? const SizedBox.shrink()
+                            : _HomeNavTabButton(
+                                key: ValueKey(
+                                  journeyUnlocked
+                                      ? 'home_nav_journey_btn'
+                                      : 'home_nav_lock_btn',
+                                ),
+                                onTap: onSelectJourney,
+                                child: journeyUnlocked
+                                    ? SizedBox(
+                                        width: ux(context, 180),
+                                        height: math.min(
+                                          ux(context, 158),
+                                          bottomDockBarH - 18.0 * bgScaleY,
+                                        ),
+                                        child: Stack(
+                                          clipBehavior: Clip.none,
+                                          alignment: Alignment.center,
+                                          children: [
+                                            Image.asset(
+                                              'assets/images/Journey/Icon_Gllery.png',
+                                              width: ux(context, 152),
+                                              height: ux(context, 145),
+                                              fit: BoxFit.contain,
+                                            ),
+                                            if (hasJourneyNotice)
+                                              Positioned(
+                                                right: -ux(context, 4),
+                                                top: -ux(context, 4),
+                                                child: Image.asset(
+                                                  'assets/images/UI Home/Home/notice.png',
+                                                  width: ux(context, 74),
+                                                  height: ux(context, 78),
+                                                  fit: BoxFit.contain,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      )
+                                    : Image.asset(
+                                        'assets/images/UI Home/Home/icon_lock.png',
+                                        width: ux(context, 114),
+                                        height: math.min(
+                                          ux(context, 145),
+                                          bottomDockBarH - 22.0 * bgScaleY,
+                                        ),
+                                        fit: BoxFit.contain,
+                                      ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Raised Active Tab Card (`frame_footer.png`)
+        Align(
+          alignment: activeAlignment,
+          child: GestureDetector(
+            key: activeKey,
+            onTap: switch (activeTab) {
+              _HomeTab.shop => onSelectShop,
+              _HomeTab.home => onSelectHome,
+              _HomeTab.journey => onSelectJourney,
+            },
+            child: SizedBox(
+              width: activeCardW,
+              height: bottomDockBarH + activeCardLift,
+              child: ClipRect(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      height: math.max(
+                        bottomDockBarH + activeCardLift,
+                        ux(context, 484),
+                      ),
+                      child: Image.asset(
+                        'assets/images/UI Home/Home/frame_footer.png',
+                        fit: BoxFit.fill,
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        ux(context, 16),
+                        34.0 * bgScaleY,
+                        ux(context, 16),
+                        24.0 * bgScaleY,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Expanded(child: activeIcon),
+                          SizedBox(height: 10.0 * bgScaleY),
+                          UnitySdfText(
+                            activeLabel,
+                            unityFontSize: 52,
+                            material: _HomeScreenState._homeTabTextMaterial,
+                            singleTextNode: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 

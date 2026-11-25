@@ -19,6 +19,7 @@ import 'lose_overlay.dart';
 import 'mechanic_unlock_dialog.dart';
 import 'more_lives_dialog.dart';
 import 'powerup_buy_popup.dart';
+import 'shop_view.dart';
 import 'unity_ui_kit.dart';
 import 'win_overlay.dart';
 
@@ -547,7 +548,15 @@ class _GameplayScreenState extends State<GameplayScreen>
       _startLevel(nextBonus);
       return;
     }
+    final unlockedJourneyNow =
+        _activeLevel.number == PlayerProgressService.journeyUnlockLevel &&
+            !widget.progress.journeyUnlockedSeen;
     widget.progress.advanceToNextCampaignLevel();
+    if (unlockedJourneyNow && widget.onExitToHome != null) {
+      widget.progress.markPendingJourneyUnlockShowcase();
+      widget.onExitToHome!();
+      return;
+    }
     final nextLv =
         widget.repository.getCampaignLevel(widget.progress.currentLevel);
     _startLevel(nextLv);
@@ -1315,13 +1324,18 @@ class _GameplayScreenState extends State<GameplayScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Redesigned Purple Gameplay Background (`Background_Core.png`)
+          // 1. Dynamic Journey Background (`Base = Background_Core.png`, `Frozen`, `Jungle`, `Desert`)
           RepaintBoundary(
-            child: Image.asset(
-              'assets/images/Background_Core.png',
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
+            child: ListenableBuilder(
+              listenable: widget.progress,
+              builder: (context, _) {
+                return Image.asset(
+                  widget.progress.selectedJourneyBgTheme.fullBgAsset,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                );
+              },
             ),
           ),
 
@@ -2504,6 +2518,13 @@ class _GameplayScreenState extends State<GameplayScreen>
                         _syncGamePauseState();
                       });
                     }
+                  },
+                  onFailOfferTap: () {
+                    widget.audio.playClick();
+                    showFailOfferDialog(
+                      context,
+                      progress: widget.progress,
+                    );
                   },
                   onRetry: _handleRetryLevel,
                 );

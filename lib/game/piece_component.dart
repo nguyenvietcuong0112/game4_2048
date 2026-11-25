@@ -327,6 +327,11 @@ class PieceComponent extends PositionComponent {
   double _inflateReleaseElapsed = 0.0;
   bool _isInflateReleasing = false;
 
+  // Magnetic proximity attraction pull (`cảm giác tự hút lại như nam châm`)
+  Offset _magnetPullTargetPx = Offset.zero;
+  Offset _magnetPullOffsetPx = Offset.zero;
+  double _magnetAttractStrength = 0.0;
+
   // Exact `MergeNumberPreview` (`BeginAsSurvivor`, `BeginAsPartner`, `ShrinkAway`, `Settle`)
   _NumberPreviewMode _numberPreviewMode = _NumberPreviewMode.idle;
   int? _activePreviewNumber;
@@ -521,6 +526,9 @@ class PieceComponent extends PositionComponent {
       _leanImpulseElapsed < 0 &&
       _shakeElapsed < 0 &&
       _shakeOffsetPx.distanceSquared < 1e-4 &&
+      _magnetPullOffsetPx.distanceSquared < 1e-4 &&
+      _magnetPullTargetPx.distanceSquared < 1e-4 &&
+      _magnetAttractStrength <= 0.005 &&
       levelUpTargetGlow <= 0.005 &&
       (_mergeCylinderRadius <= 0.2 || _mergeCylinderTargetStyle == null) &&
       _mergeOverlapStrength <= 0.005 &&
@@ -537,6 +545,12 @@ class PieceComponent extends PositionComponent {
       _sandReformFlash <= 0.005 &&
       _winFractureProgress <= 0.001 &&
       _winCrumbleProgress <= 0.001;
+
+  @visibleForTesting
+  Offset get debugMagnetPullOffsetPx => _magnetPullOffsetPx;
+
+  @visibleForTesting
+  double get debugMagnetAttractStrength => _magnetAttractStrength;
 
   @visibleForTesting
   bool get debugHasStaticBakedSprite {
@@ -880,6 +894,7 @@ class PieceComponent extends PositionComponent {
     _jellyLean = Offset.zero;
     _jellyVel = Offset.zero;
     _jellyDeformWritten = Offset.zero;
+    clearMagnetAttraction(immediate: true);
   }
 
   /// Exact match of `PieceView.AbsorbIntoAsync(worldDestination, 0.28f)`:
@@ -900,6 +915,7 @@ class PieceComponent extends PositionComponent {
     _jellyLean = Offset.zero;
     _jellyVel = Offset.zero;
     _jellyDeformWritten = Offset.zero;
+    clearMagnetAttraction(immediate: true);
     finishNumberPreview();
   }
 
@@ -1101,6 +1117,35 @@ class PieceComponent extends PositionComponent {
       _isInflateReleasing = false;
       _candidateInflate = 0.0;
       _candidatePush = 0.0;
+    }
+  }
+
+  /// Sets smooth magnetic pull displacement ([pullOffsetPx]) and proximity strength (`0..1`)
+  /// while another mergeable block approaches this piece cleanly like a magnet.
+  void setMagnetAttraction({
+    required Offset pullOffsetPx,
+    required double strength,
+  }) {
+    final prevStrength = _magnetAttractStrength;
+    final clamped = strength.clamp(0.0, 1.0);
+    _magnetPullTargetPx = pullOffsetPx;
+    _magnetAttractStrength = clamped;
+    if (!model.isDud && prevStrength < 0.08 && clamped >= 0.08) {
+      final pullSign = pullOffsetPx.dx.abs() > 0.5
+          ? (pullOffsetPx.dx > 0 ? -1.0 : 1.0)
+          : 1.0;
+      _waterSloshVel += pullSign * 3.4 * clamped;
+      _sandErosionIntensity =
+          math.max(_sandErosionIntensity, (0.34 * clamped).clamp(0.0, 1.0));
+    }
+  }
+
+  /// Releases magnetic attraction so the block springs smoothly back to rest.
+  void clearMagnetAttraction({bool immediate = false}) {
+    _magnetPullTargetPx = Offset.zero;
+    _magnetAttractStrength = 0.0;
+    if (immediate) {
+      _magnetPullOffsetPx = Offset.zero;
     }
   }
 
@@ -1685,6 +1730,18 @@ class PieceComponent extends PositionComponent {
       levelUpTargetGlow =
           math.max(0.0, levelUpTargetGlow - clampedDt * decayRate);
     }
+
+    if ((_magnetPullTargetPx - _magnetPullOffsetPx).distanceSquared > 1e-4) {
+      final mAlpha = (1.0 - math.exp(-22.0 * clampedDt)).clamp(0.0, 1.0);
+      _magnetPullOffsetPx = Offset.lerp(
+        _magnetPullOffsetPx,
+        _magnetPullTargetPx,
+        mAlpha,
+      )!;
+      if ((_magnetPullTargetPx - _magnetPullOffsetPx).distanceSquared <= 1e-4) {
+        _magnetPullOffsetPx = _magnetPullTargetPx;
+      }
+    }
   }
 
   bool get _isLiquidGlassBlock => !_isIceCovered && !model.isDud;
@@ -1849,18 +1906,32 @@ class PieceComponent extends PositionComponent {
                         _sandReformFlash * 0.024)) *
             sizeDamp);
 
+    double magnetStretchX = 1.0;
+    double magnetStretchY = 1.0;
+    if (_magnetAttractStrength > 0.01 &&
+        _magnetPullOffsetPx.distanceSquared > 0.04) {
+      final magLen = _magnetPullOffsetPx.distance;
+      final dirX = (_magnetPullOffsetPx.dx / magLen).abs();
+      final dirY = (_magnetPullOffsetPx.dy / magLen).abs();
+      final stretch = 0.048 * _magnetAttractStrength * sizeDamp;
+      magnetStretchX = 1.0 + dirX * stretch - dirY * stretch * 0.42;
+      magnetStretchY = 1.0 + dirY * stretch - dirX * stretch * 0.42;
+    }
+
     final finalScaleX = visualScale *
         visualScaleXMultiplier *
         _mergePulseScale *
         wallInflateScaleX *
         sandReformPop *
-        sloshScaleX;
+        sloshScaleX *
+        magnetStretchX;
     final finalScaleY = visualScale *
         visualScaleYMultiplier *
         _mergePulseScale *
         wallInflateScaleY *
         sandReformPop *
-        sloshScaleY;
+        sloshScaleY *
+        magnetStretchY;
     final finalScaleZ = _mergePulseScale * _candidatePulseScaleZ * _tapScaleZ;
 
     final effectiveLipDepth =
@@ -1894,8 +1965,8 @@ class PieceComponent extends PositionComponent {
     }
 
     canvas.translate(
-      _visualPivotLocal.dx + _shakeOffsetPx.dx,
-      _visualPivotLocal.dy + _shakeOffsetPx.dy,
+      _visualPivotLocal.dx + _shakeOffsetPx.dx + _magnetPullOffsetPx.dx,
+      _visualPivotLocal.dy + _shakeOffsetPx.dy + _magnetPullOffsetPx.dy,
     );
     if (sloshRotRad.abs() > 1e-4) {
       canvas.rotate(sloshRotRad);

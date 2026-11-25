@@ -36,6 +36,8 @@ flutter:
     - assets/images/
     - assets/images/flowers/
     - assets/images/Level Complete/
+    - assets/images/Shop/
+    - assets/images/Journey/
     - assets/images/UI Home/
     - assets/images/UI Home/Home/
 

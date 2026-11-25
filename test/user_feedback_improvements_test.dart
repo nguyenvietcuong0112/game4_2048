@@ -358,8 +358,8 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 200));
 
-      // Verify Settings gear icon sits in the Bottom-Right Footer (`Play_Scene.png`)
-      final gearImg = find.image(const AssetImage('assets/images/Icon_Settings.png'));
+      // Verify Settings icon (`btn_setting.png`) sits in the Bottom-Right Footer
+      final gearImg = find.image(const AssetImage('assets/images/UI Home/Home/btn_setting.png'));
       expect(gearImg, findsOneWidget);
       final gearCenter = tester.getCenter(gearImg);
       expect(gearCenter.dx, greaterThan(540 * 0.75));
@@ -371,7 +371,7 @@ void main() {
       // Verify `PopUp_Setting.png` elements render without layout errors
       expect(find.text('Setting'), findsWidgets);
       expect(find.text('Restart'), findsWidgets);
-      expect(find.text('v.1.0.6'), findsOneWidget);
+      expect(find.text('v.1.0.0'), findsOneWidget);
 
       // Toggle Sound OFF -> `Icon_Sounds_Off.png` appears
       expect(audio.soundEnabled, isTrue);
@@ -386,7 +386,7 @@ void main() {
       // Tap Close (`Button_Close.png`) -> Settings modal closes
       await tester.tap(find.image(const AssetImage('assets/images/Button_Close.png')));
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.text('v.1.0.6'), findsNothing);
+      expect(find.text('v.1.0.0'), findsNothing);
     });
 
     testWidgets('7. Redesigned Gameplay HUD (Play_Scene.png): Top-Right Stopwatch Timer Pill & Top-Center Combo Progress Bar', (tester) async {

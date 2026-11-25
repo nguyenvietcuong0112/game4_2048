@@ -1134,10 +1134,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 220));
 
       expect(failedStageEntered, isTrue);
-      expect(find.text('Level 4 failed'), findsWidgets);
+      expect(find.text('Level 4'), findsWidgets);
       expect(find.text('-1'), findsWidgets);
+      expect(find.text('Level Failed!'), findsOneWidget);
       expect(find.text('Try Again'), findsWidgets);
-      expect(closeBtnFinder, findsNothing);
+      expect(
+        find.byKey(const ValueKey('lose_failed_close_btn')),
+        findsOneWidget,
+      );
 
       // Tap `Try Again` (`UnityPopupCtaButton`) -> fires `onRetry`
       await tester.tap(find.byType(UnityPopupCtaButton));

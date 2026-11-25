@@ -675,7 +675,7 @@ void main() {
       expect(find.text('New Feature'), findsWidgets);
       expect(find.text('New Mechanic'), findsNothing);
       expect(find.byKey(const ValueKey('mechanic_claim_btn')), findsOneWidget);
-      expect(find.byKey(const ValueKey('mechanic_claim_x2_btn')), findsOneWidget);
+      expect(find.byKey(const ValueKey('mechanic_claim_x2_btn')), findsNothing);
       expect(find.byKey(const ValueKey('mechanic_next_level_btn')), findsNothing);
 
       // B. Generic custom Mechanic renders as "New Mechanic" with ONLY 1 long green "Next Level" button

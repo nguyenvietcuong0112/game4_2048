@@ -1,3 +1,4 @@
+import 'package:block_order_2048/services/audio_haptics_service.dart';
 import 'package:block_order_2048/services/player_progress_service.dart';
 import 'package:block_order_2048/ui/unity_ui_kit.dart';
 import 'package:block_order_2048/ui/water_garden_view.dart';
@@ -83,10 +84,10 @@ void main() {
       expect(cfg2.title, 'Azure Ceramic Vase');
       expect(cfg2.flowerTitle, 'Trio Daisies');
       expect(cfg2.totalSteps, 5);
-      expect(cfg2.unlockMechanicId, 'ice');
+      expect(cfg2.unlockMechanicId, isNull);
     });
 
-    test('3. Completing Vase 2 (Levels 4..8) unlocks Ice mechanic and awards 200 coins', () async {
+    test('3. Completing Vase 2 awards 200 coins Bonus Reward without blocking Mechanic unlocks', () async {
       SharedPreferences.setMockInitialValues({
         'bo_vase_current_id': 2,
         'bo_vase_step_count': 4, // 4/5 steps
@@ -96,7 +97,6 @@ void main() {
 
       expect(progress.vaseCurrentId, 2);
       expect(progress.vaseStepCount, 4);
-      expect(progress.hasSeenMechanic('ice'), isFalse);
 
       // 5th win reaches 100%
       final r = progress.recordLevelWonVaseStep(8);
@@ -107,7 +107,6 @@ void main() {
       progress.claimCurrentVaseMilestone();
 
       expect(progress.coins, initialCoins + 200);
-      expect(progress.hasSeenMechanic('ice'), isTrue);
       expect(progress.vaseCurrentId, 3);
       expect(progress.vaseStepCount, 0);
     });
@@ -151,24 +150,33 @@ void main() {
       expect(find.text('Reward x2'), findsOneWidget);
       expect(find.text('+25'), findsOneWidget);
       expect(find.text('+50'), findsOneWidget);
-      expect(find.text('67% to unlock'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('feature_unlock_frame_card')),
+        findsOneWidget,
+      );
+      expect(find.text('Bonus chest'), findsOneWidget);
+      expect(find.text('33%'), findsWidgets);
 
       // Tap Next Level button
       await tester.tap(find.text('Next Level').first, warnIfMissed: false);
       await tester.pump();
       expect(nextLevelTapped, isTrue);
 
-      // Verify on tall modern phone (412x915): header stays strictly above flower stage
-      // and Next Level button is lifted comfortably above the bottom edge.
+      // Verify on tall modern phone (412x915): header stays strictly above flower stage,
+      // card-to-button gap is generous (>= 26px), and Next Level sits cleanly above bottom edge.
       await tester.binding.setSurfaceSize(const Size(412, 915));
       await tester.pump();
       final headerRect =
           tester.getRect(find.byKey(const ValueKey<String>('Level Complete!')));
       final stageRect =
           tester.getRect(find.byKey(const ValueKey('garden_vase_stage')));
+      final frameRect = tester.getRect(
+        find.byKey(const ValueKey('feature_unlock_frame_card')),
+      );
       final nextBtnRect =
           tester.getRect(find.byKey(const ValueKey('garden_next_level_btn')));
       expect(stageRect.top, greaterThanOrEqualTo(headerRect.bottom));
+      expect(nextBtnRect.top - frameRect.bottom, greaterThanOrEqualTo(26.0));
       expect(nextBtnRect.bottom, lessThan(915.0 - 80.0));
     });
 
@@ -206,7 +214,8 @@ void main() {
       await tester.tapAt(const Offset(270, 480));
       await tester.pump();
 
-      expect(find.text('33% to unlock'), findsOneWidget);
+      expect(find.text('Bonus chest'), findsOneWidget);
+      expect(find.text('67%'), findsWidgets);
     });
 
     testWidgets('6. WaterGardenView 100% bloom displays New Mechanic claim modal with rewards', (tester) async {
@@ -245,8 +254,8 @@ void main() {
       }
 
       // 100% Bloom Modal
-      expect(find.byKey(const ValueKey<String>('New Mechanic!')), findsOneWidget);
-      expect(find.text('Ice Blocks'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('Bonus Reward!')), findsOneWidget);
+      expect(find.text('Trio Daisies Chest'), findsOneWidget);
       expect(find.text('+200'), findsOneWidget);
       expect(find.text('Claim'), findsWidgets);
 
@@ -258,21 +267,22 @@ void main() {
 
     testWidgets('7. WinOverlay shows single Next Level button on Levels 1..6 and unlocks Dual Next Level + Reward x2 from Level 7+', (tester) async {
       final advanceResult = VaseStepAdvanceResult(
-        vaseId: 1,
-        oldStep: 0,
-        newStep: 1,
-        totalSteps: 3,
-        oldProgress: 0.0,
-        newProgress: 0.333,
+        vaseId: 2,
+        oldStep: 2,
+        newStep: 3,
+        totalSteps: 5,
+        oldProgress: 0.40,
+        newProgress: 0.60,
         didReach100Percent: false,
-        config: VaseMilestoneConfig.getForVaseId(1),
+        config: VaseMilestoneConfig.getForVaseId(2),
       );
 
       bool nextLevelCalled = false;
       await tester.binding.setSurfaceSize(const Size(540, 960));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      // A. Level 6 (< 7): ONLY single centered Next Level (+25) button, NO Reward x2 button
+      // A. Level 6 (< 7): ONLY single centered Next Level (+25) button, NO Reward x2 button,
+      // and mechanic bar reaches 100% unlocking Ice Blocks for Level 7!
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -294,7 +304,7 @@ void main() {
       }
 
       expect(find.byType(WaterGardenView), findsOneWidget);
-      expect(find.text('67% to unlock'), findsOneWidget);
+      expect(find.text('Ice Blocks Unlocked!'), findsOneWidget);
       expect(find.text('Next Level'), findsOneWidget);
       expect(find.text('+25'), findsOneWidget);
       expect(find.text('Reward x2'), findsNothing);
@@ -380,8 +390,9 @@ void main() {
         }
         expect(claimed, isTrue);
 
-        // Panel 6: New Empty Vase (100% to unlock + ? badge) + Dual Buttons
-        expect(find.text('100% to unlock'), findsOneWidget);
+        // Panel 6: New Empty Vase (Bonus chest + 0% + ? badge) + Dual Buttons
+        expect(find.text('Bonus chest'), findsOneWidget);
+        expect(find.text('0%'), findsWidgets);
         expect(find.text('?'), findsOneWidget);
         expect(find.text('Next Level'), findsOneWidget);
         expect(find.text('Reward x2'), findsOneWidget);
@@ -463,6 +474,287 @@ void main() {
       expect(regularNextCalled, isFalse);
       expect(progress.coins, startCoins + 50);
     });
+
+    testWidgets(
+      '10. Claiming 200-coin vase mechanic milestone preserves and separately credits +25 endgame coins on Next Level',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'bo_vase_current_id': 2,
+          'bo_vase_step_count': 4, // 4/5 -> next win completes 100% Vase 2 (+200 coins)
+        });
+        final progress = PlayerProgressService();
+        await progress.init();
+        final startCoins = progress.coins;
+
+        progress.stageLevelWinReward(rewardCoins: 25, isBonus: false);
+        final advanceResult = progress.recordLevelWonVaseStep(8);
+        expect(advanceResult.didReach100Percent, isTrue);
+
+        bool nextCalled = false;
+
+        await tester.binding.setSurfaceSize(const Size(540, 960));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: WinOverlay(
+                levelNumber: 8,
+                levelLabel: 'Level 8',
+                rewardCoins: 25,
+                gardenResult: advanceResult,
+                finalBlockNumber: 2048,
+                onStageMilestoneClaim: progress.stageCurrentVaseMilestoneClaim,
+                onMilestoneCoinChunkArrived:
+                    progress.collectPendingMilestoneCoinChunk,
+                onCoinChunkArrived: progress.collectPendingWinCoinChunk,
+                onNextLevel: () {
+                  progress.flushPendingWinCoins();
+                  nextCalled = true;
+                },
+              ),
+            ),
+          ),
+        );
+
+        for (int i = 0; i < 30; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        // Before tapping Claim: HUD coins has NOT been credited early!
+        expect(progress.coins, startCoins);
+        expect(progress.pendingWinCoins, 25);
+
+        // 1. Tap Claim (+200): flying milestone coins arrive and visibly add +200 while keeping +25 staged!
+        await tester.tap(find.text('Claim').last);
+        await tester.pump();
+        expect(progress.coins, startCoins);
+        expect(progress.pendingMilestoneCoins, 200);
+        for (int i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(progress.pendingMilestoneCoins, 0);
+        expect(progress.coins, startCoins + 200);
+        expect(progress.pendingWinCoins, 25);
+
+        // 2. Tap Next Level (+25): flying endgame coins arrive and visibly add +25!
+        await tester.tap(find.text('Next Level').first);
+        for (int i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        expect(nextCalled, isTrue);
+        expect(progress.pendingWinCoins, 0);
+        expect(progress.coins, startCoins + 225);
+      },
+    );
+
+    testWidgets(
+      '11. WaterGardenView "% to unlock" tracks next Mechanic unlock level cleanly (Lv 16 unlocks Level Up at 17, Lv 17 counts toward 22)',
+      (tester) async {
+        // Verify all 6 mechanic unlock windows mathematically
+        final lv1 = PlayerProgressService.computeMechanicAdvance(1)!;
+        expect(lv1.milestone.mechanicId, 'ice');
+        expect(lv1.milestone.unlockLevel, 7);
+        expect(lv1.remainingPercent, 83);
+        expect(lv1.didUnlockNext, isFalse);
+
+        final lv13 = PlayerProgressService.computeMechanicAdvance(13)!;
+        expect(lv13.milestone.mechanicId, 'dud');
+        expect(lv13.milestone.unlockLevel, 14);
+        expect(lv13.didUnlockNext, isTrue);
+
+        final lv16 = PlayerProgressService.computeMechanicAdvance(16)!;
+        expect(lv16.milestone.mechanicId, 'pu_level_up');
+        expect(lv16.milestone.unlockLevel, 17);
+        expect(lv16.newProgress, 1.0);
+        expect(lv16.didUnlockNext, isTrue);
+
+        final lv17 = PlayerProgressService.computeMechanicAdvance(17)!;
+        expect(lv17.milestone.mechanicId, 'arrows');
+        expect(lv17.milestone.unlockLevel, 22);
+        expect(lv17.remainingPercent, 80);
+        expect(lv17.didUnlockNext, isFalse);
+
+        final lv26 = PlayerProgressService.computeMechanicAdvance(26)!;
+        expect(lv26.milestone.mechanicId, 'pu_time_freeze');
+        expect(lv26.milestone.unlockLevel, 27);
+        expect(lv26.didUnlockNext, isTrue);
+
+        final lv41 = PlayerProgressService.computeMechanicAdvance(41)!;
+        expect(lv41.milestone.mechanicId, 'pinned');
+        expect(lv41.milestone.unlockLevel, 42);
+        expect(lv41.didUnlockNext, isTrue);
+
+        expect(PlayerProgressService.computeMechanicAdvance(42), isNull);
+
+        // Render WinOverlay for Level 16 -> shows "Level Up Unlocked!" (ready for Level 17)
+        await tester.binding.setSurfaceSize(const Size(540, 960));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final v3Step = VaseStepAdvanceResult(
+          vaseId: 3,
+          oldStep: 6,
+          newStep: 7,
+          totalSteps: 8,
+          oldProgress: 6 / 8,
+          newProgress: 7 / 8,
+          didReach100Percent: false,
+          config: VaseMilestoneConfig.getForVaseId(3),
+          mechanicProgress: lv16,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: WinOverlay(
+                levelNumber: 16,
+                levelLabel: 'Level 16',
+                rewardCoins: 25,
+                gardenResult: v3Step,
+                finalBlockNumber: 2048,
+                onNextLevel: () {},
+              ),
+            ),
+          ),
+        );
+        for (int i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.text('Level Up Unlocked!'), findsOneWidget);
+        expect(find.text('100%'), findsWidgets);
+
+        // Render WinOverlay for Level 17 -> immediately shows "Next feature" at "20%" (1/5 toward Level 22 Arrows)
+        final v4Step = VaseStepAdvanceResult(
+          vaseId: 4,
+          oldStep: 0,
+          newStep: 1,
+          totalSteps: 10,
+          oldProgress: 0.0,
+          newProgress: 0.1,
+          didReach100Percent: false,
+          config: VaseMilestoneConfig.getForVaseId(4),
+          mechanicProgress: lv17,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            key: const ValueKey('win_lv17'),
+            home: Scaffold(
+              body: WinOverlay(
+                levelNumber: 17,
+                levelLabel: 'Level 17',
+                rewardCoins: 25,
+                gardenResult: v4Step,
+                finalBlockNumber: 2048,
+                onNextLevel: () {},
+              ),
+            ),
+          ),
+        );
+        for (int i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.text('Next feature'), findsOneWidget);
+        expect(find.text('20%'), findsWidgets);
+      },
+    );
+
+    test('12. AudioHapticsService uses stronger medium/heavy/vibrate tiers', () async {
+      SharedPreferences.setMockInitialValues({});
+      final audio = AudioHapticsService();
+      audio.clearDebugLogs();
+
+      audio.playGrab();
+      audio.hapticMergeImpact();
+      audio.playIceBreak();
+      audio.playHighTierMergeBoost(64);
+      audio.playWinComplete();
+
+      expect(
+        audio.debugHapticsLog,
+        equals([
+          'mediumImpact',
+          'heavyImpact',
+          'vibrate',
+          'vibrate',
+          'vibrate',
+        ]),
+      );
+      expect(audio.debugHapticsLog, isNot(contains('selectionClick')));
+      expect(audio.debugHapticsLog, isNot(contains('lightImpact')));
+      audio.dispose();
+    });
+
+    testWidgets(
+      '13. Level 3 full Vase 1 Claim (+150) preserves 50% Next feature and credits +25 on Next Level',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({
+          'bo_coins': 925,
+          'bo_current_level': 3,
+          'bo_highest_level': 3,
+          'bo_vase_current_id': 1,
+          'bo_vase_step_count': 2,
+        });
+        final progress = PlayerProgressService();
+        await progress.init();
+        expect(progress.coins, 925);
+
+        progress.stageLevelWinReward(rewardCoins: 25, isBonus: false);
+        final adv = progress.recordLevelWonVaseStep(3);
+        expect(adv.didReach100Percent, isTrue);
+        expect(progress.pendingWinCoins, 25);
+
+        await tester.binding.setSurfaceSize(const Size(540, 960));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        bool nextDone = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: WinOverlay(
+                levelNumber: 3,
+                levelLabel: 'Level 3',
+                rewardCoins: 25,
+                gardenResult: adv,
+                finalBlockNumber: 32,
+                onStageMilestoneClaim: progress.stageCurrentVaseMilestoneClaim,
+                onMilestoneCoinChunkArrived:
+                    progress.collectPendingMilestoneCoinChunk,
+                onCoinChunkArrived: progress.collectPendingWinCoinChunk,
+                onNextLevel: () {
+                  progress.flushPendingWinCoins();
+                  nextDone = true;
+                },
+              ),
+            ),
+          ),
+        );
+
+        for (int i = 0; i < 30; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        expect(progress.coins, 925);
+        await tester.tap(find.text('Claim').last);
+        await tester.pump();
+        for (int i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(progress.coins, 1075);
+        expect(progress.pendingWinCoins, 25);
+        // Mechanic unlock progress stays on Ice Blocks ("Next feature" at "50%") even after flower swap!
+        expect(find.text('Next feature'), findsOneWidget);
+        expect(find.text('50%'), findsWidgets);
+
+        await tester.tap(find.text('Next Level').first);
+        for (int i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(nextDone, isTrue);
+        expect(progress.coins, 1100);
+        expect(progress.pendingWinCoins, 0);
+      },
+    );
   });
 }
 

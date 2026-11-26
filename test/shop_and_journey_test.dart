@@ -200,9 +200,9 @@ void main() {
     });
   });
 
-  group('ShopView & JourneyView widgets inside HomeScreen', () {
+  group('ShopView & JourneyView widgets (standalone while Home nav is deferred)', () {
     testWidgets(
-      'navigates Home <-> Shop (with free coins ad), handles locked Journey, and auto-opens Journey after Lv20 win',
+      'HomeScreen hides Shop/Journey/IAP while standalone ShopView & JourneyView render and award coins cleanly',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(412, 892));
         try {
@@ -216,6 +216,7 @@ void main() {
           });
           progress.cheatSetCoins(500);
 
+          // 1. HomeScreen keeps Shop/Journey/Promo controls commented out
           await tester.pumpWidget(
             MaterialApp(
               home: HomeScreen(
@@ -228,22 +229,29 @@ void main() {
           );
           await tester.pump(const Duration(milliseconds: 250));
           expect(tester.takeException(), isNull);
+          expect(find.byKey(const ValueKey('home_nav_shop_btn')), findsNothing);
+          expect(find.byKey(const ValueKey('home_nav_lock_btn')), findsNothing);
+          expect(find.byKey(const ValueKey('home_no_ads_btn')), findsNothing);
+          expect(
+            find.byKey(const ValueKey('home_starter_pack_btn')),
+            findsNothing,
+          );
 
-          // 1. Tapping locked Journey shows Unlock at Level 20 toast
-          await tester.tap(find.byKey(const ValueKey('home_nav_lock_btn')));
-          await tester.pump(const Duration(milliseconds: 200));
-          expect(find.text('Unlock at Level 20!'), findsOneWidget);
-
-          // 2. Tapping Shop tab renders ShopView without overflow
-          await tester.tap(find.byKey(const ValueKey('home_nav_shop_btn')));
-          await tester.pump(const Duration(milliseconds: 300));
+          // 2. Standalone ShopView renders cleanly and Free Gold 0 awards +100 coins
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: ShopView(progress: progress),
+              ),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 250));
           expect(tester.takeException(), isNull);
           expect(find.byType(ShopView), findsOneWidget);
           expect(find.text('No Ads'), findsOneWidget);
           expect(find.text('No Ads Bundle'), findsWidgets);
           expect(find.text('Coins'), findsWidgets);
 
-          // 3. Tapping Free Gold 0 card awards +100 coins
           AdsManager.enableAds = true;
           AdsManager.mockRewardResult = true;
           await tester.ensureVisible(
@@ -254,23 +262,22 @@ void main() {
           await tester.pump(const Duration(milliseconds: 250));
           expect(progress.coins, 600);
 
-          // 4. Simulate winning Level 20 -> returning to Home auto-opens Journey!
+          // 3. Standalone JourneyView renders progression track cleanly after Lv20 unlock
           progress.setCurrentLevel(21);
-          progress.markPendingJourneyUnlockShowcase();
-          await tester.pumpWidget(const SizedBox.shrink());
           await tester.pumpWidget(
             MaterialApp(
-              home: HomeScreen(
-                repository: repo,
-                audio: audio,
-                progress: progress,
-                onPlayLevel: () {},
+              home: Scaffold(
+                body: JourneyView(progress: progress),
               ),
             ),
           );
-          await tester.pump(const Duration(milliseconds: 300));
+          await tester.pump(const Duration(milliseconds: 250));
           expect(tester.takeException(), isNull);
           expect(find.byType(JourneyView), findsOneWidget);
+          expect(
+            find.byKey(const ValueKey('journey_list_view')),
+            findsOneWidget,
+          );
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump();

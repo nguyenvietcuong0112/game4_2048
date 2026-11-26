@@ -10,7 +10,8 @@ import 'services/ads_manager.dart';
 import 'services/analytics_service.dart';
 import 'services/app_version_service.dart';
 import 'services/audio_haptics_service.dart';
-import 'services/iap_service.dart';
+// Temporarily disabled while IAP/Shop/Journey are deferred to next version:
+// import 'services/iap_service.dart';
 import 'services/player_progress_service.dart';
 import 'ui/gameplay_screen.dart';
 import 'ui/home_screen.dart';
@@ -206,7 +207,8 @@ class _BlockOrder2048AppState extends State<BlockOrder2048App>
     try {
       await _progress.init();
     } catch (_) {}
-    unawaited(IapService.syncOnBoot(_progress));
+    // Temporarily disabled while IAP/Shop/Journey are deferred to next version:
+    // unawaited(IapService.syncOnBoot(_progress));
     final logFtueLoading = _progress.consumeFtueLoadingIfPending();
     AnalyticsService.logLoadingStart(placement: 'splash');
     if (logFtueLoading) {

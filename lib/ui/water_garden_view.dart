@@ -2168,6 +2168,7 @@ class _WaterGardenMasterPainter extends CustomPainter {
       cx: cx,
       metrics: metrics,
       waterTopY: waterTopY,
+      waterFraction: clampedFill,
       hasWater: clampedFill > 0.02,
       bloomFraction: bloomProgress,
     );
@@ -2930,23 +2931,100 @@ class _WaterGardenMasterPainter extends CustomPainter {
     required double cx,
     required _VaseMetrics metrics,
     required double waterTopY,
+    required double waterFraction,
     required bool hasWater,
     required double bloomFraction,
   }) {
     final usingSprites = _GardenFlowerSpriteCache.instance.hasStages(
       config.flowerType,
     );
+    if (usingSprites) {
+      // Sprite stages bring their own natural stem inside the vase neck; avoid
+      // drawing an opaque vector green stick across empty air or low water.
+      if (!hasWater || waterFraction < 0.35) return;
+
+      final underwaterOpacity =
+          ((waterFraction - 0.35) / 0.65).clamp(0.0, 1.0) * 0.32;
+      if (underwaterOpacity <= 0.01) return;
+
+      final stemBaseY = metrics.innerBaseY - 8.0;
+      if (stemBaseY <= waterTopY + 12.0) return;
+
+      canvas.save();
+      canvas.clipPath(_vaseInnerPath);
+      canvas.clipRect(
+        Rect.fromLTRB(
+          cx - metrics.bellyHalfW - 4,
+          waterTopY + 1.0,
+          cx + metrics.bellyHalfW + 4,
+          stemBaseY,
+        ),
+      );
+
+      const refractShift = 3.2;
+      final fadeBottomY = math.max(waterTopY + 14.0, stemBaseY - 8.0);
+      final topColor = const Color(0xFF1F7A52).withValues(alpha: underwaterOpacity);
+      final midColor = const Color(0xFF176652).withValues(alpha: underwaterOpacity * 0.68);
+      final botColor = const Color(0xFF12544A).withValues(alpha: 0.0);
+
+      _paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.8
+        ..strokeCap = StrokeCap.round
+        ..blendMode = BlendMode.srcOver
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 1.4)
+        ..color = Colors.white
+        ..shader = ui.Gradient.linear(
+          Offset(cx + refractShift * 0.4, waterTopY + 1.0),
+          Offset(cx - 1.5 + refractShift, fadeBottomY),
+          [topColor, midColor, botColor],
+          const [0.0, 0.55, 1.0],
+        );
+
+      _scratchPath
+        ..reset()
+        ..moveTo(cx + refractShift * 0.4, waterTopY + 1.0)
+        ..quadraticBezierTo(
+          cx + 3.6 + refractShift,
+          (waterTopY + fadeBottomY) * 0.52,
+          cx - 1.5 + refractShift,
+          fadeBottomY,
+        );
+      canvas.drawPath(_scratchPath, _paint);
+
+      // Subtle aqua caustic sheen along the refracted underwater silhouette
+      _paint
+        ..strokeWidth = 1.4
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 0.9)
+        ..shader = ui.Gradient.linear(
+          Offset(cx + refractShift * 0.4, waterTopY + 1.0),
+          Offset(cx - 1.5 + refractShift, fadeBottomY),
+          [
+            const Color(0xFF8FF5E0).withValues(alpha: underwaterOpacity * 0.55),
+            const Color(0xFF8FF5E0).withValues(alpha: 0.0),
+          ],
+        );
+      canvas.drawPath(_scratchPath, _paint);
+
+      _paint
+        ..shader = null
+        ..maskFilter = null;
+      canvas.restore();
+      return;
+    }
+
     if (!hasWater) {
       canvas.save();
       canvas.clipPath(_vaseInnerPath);
       final fadeTop = metrics.topRimY + 6;
       final fadeBot = metrics.neckY + 22;
-      final topX = usingSprites ? cx : cx + 5;
-      final botX = usingSprites ? cx - 1.5 : cx + 2;
+      final topX = cx + 5;
+      final botX = cx + 2;
       _paint
         ..style = PaintingStyle.stroke
         ..strokeWidth = 5.4
         ..strokeCap = StrokeCap.round
+        ..maskFilter = null
         ..color = Colors.white
         ..shader = ui.Gradient.linear(
           Offset(topX, fadeTop),
@@ -2973,57 +3051,17 @@ class _WaterGardenMasterPainter extends CustomPainter {
     const refractShift = 3.2;
     final stemBaseY = metrics.innerBaseY - 2.5;
     final neckMidY = metrics.topRimY + 6;
-    final stemExitX = usingSprites
-        ? cx
-        : ui.lerpDouble(cx + 12, cx + 1, bloomFraction.clamp(0.0, 1.0))!;
-
-    // When using real flower sprites, seamlessly connect the air-gap stem from vase rim down to waterTopY
-    if (usingSprites && waterTopY > neckMidY + 2) {
-      canvas.restore();
-      canvas.save();
-      canvas.clipPath(_vaseInnerPath);
-      canvas.clipRect(
-        Rect.fromLTRB(
-          cx - metrics.mouthHalfW - 4,
-          neckMidY,
-          cx + metrics.mouthHalfW + 4,
-          waterTopY + 1.5,
-        ),
-      );
-      _paint
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 5.4
-        ..strokeCap = StrokeCap.round
-        ..shader = null
-        ..color = const Color(0xD82F943A);
-      _scratchPath
-        ..reset()
-        ..moveTo(cx, neckMidY)
-        ..quadraticBezierTo(
-          cx + 1.2,
-          (neckMidY + waterTopY) * 0.5,
-          cx + refractShift * 0.4,
-          waterTopY + 1.5,
-        );
-      canvas.drawPath(_scratchPath, _paint);
-      canvas.restore();
-
-      canvas.save();
-      canvas.clipPath(_vaseInnerPath);
-      canvas.clipRect(
-        Rect.fromLTRB(
-          cx - metrics.bellyHalfW - 4,
-          waterTopY,
-          cx + metrics.bellyHalfW + 4,
-          metrics.innerBaseY + 6,
-        ),
-      );
-    }
+    final stemExitX = ui.lerpDouble(
+      cx + 12,
+      cx + 1,
+      bloomFraction.clamp(0.0, 1.0),
+    )!;
 
     _paint
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6.2
       ..strokeCap = StrokeCap.round
+      ..maskFilter = null
       ..color = Colors.white
       ..shader = ui.Gradient.linear(
         Offset(stemExitX, waterTopY),
@@ -3625,12 +3663,12 @@ class _WaterGardenMasterPainter extends CustomPainter {
       _ => 224.0,
     };
     final boxW = boxH * (640.0 / 600.0);
-    final stemAnchor = Offset(cx, metrics.topRimY + 9.0);
-    final rimMouthBottom =
-        metrics.topRimY + metrics.ellipseHalfHeight(metrics.mouthHalfW) * 0.68;
+    final stemAnchor = Offset(cx, metrics.topRimY + 18.0);
+    final fadeTop = metrics.topRimY + 5.0;
+    final fadeBottom = metrics.topRimY + 20.5;
     final clipBottom = hasWater
-        ? math.min(waterTopY + 3.0, math.max(metrics.topRimY + 10.0, rimMouthBottom))
-        : (metrics.topRimY + 9.5);
+        ? math.max(fadeBottom, math.min(waterTopY + 4.0, metrics.neckY + 16.0))
+        : fadeBottom;
 
     void drawStage(
       ui.Image img, {
@@ -3640,14 +3678,32 @@ class _WaterGardenMasterPainter extends CustomPainter {
       double alpha = 1.0,
     }) {
       if (alpha <= 0.01 || scaleX <= 0.01 || scaleY <= 0.01) return;
+      final layerHalfW = boxW * 0.72 * math.max(1.0, scaleX);
+      final layerTop = metrics.topRimY - boxH * 1.25 * math.max(1.0, scaleY);
+      final layerRect = Rect.fromLTRB(
+        cx - layerHalfW,
+        layerTop,
+        cx + layerHalfW,
+        clipBottom + 2.0,
+      );
+
       _paint
         ..style = PaintingStyle.fill
         ..shader = null
         ..maskFilter = null
         ..blendMode = BlendMode.srcOver
         ..color = Colors.white.withValues(alpha: alpha.clamp(0.0, 1.0));
+
+      canvas.saveLayer(layerRect, Paint());
+      canvas.clipRect(
+        Rect.fromLTRB(
+          layerRect.left,
+          layerRect.top,
+          layerRect.right,
+          clipBottom,
+        ),
+      );
       canvas.save();
-      canvas.clipRect(Rect.fromLTRB(-24.0, -240.0, 404.0, clipBottom));
       canvas.translate(stemAnchor.dx, stemAnchor.dy);
       canvas.rotate(angleRad);
       canvas.scale(scaleX, scaleY);
@@ -3657,6 +3713,31 @@ class _WaterGardenMasterPainter extends CustomPainter {
         Rect.fromLTWH(-boxW * 0.5, -boxH * (444.0 / 450.0), boxW, boxH),
         _paint,
       );
+      canvas.restore();
+
+      // Feather the bottom tail of the sprite's real stem behind the glass neck & collar.
+      _fxPaint
+        ..style = PaintingStyle.fill
+        ..maskFilter = null
+        ..blendMode = BlendMode.dstIn
+        ..color = Colors.white
+        ..shader = ui.Gradient.linear(
+          Offset(0, fadeTop),
+          Offset(0, fadeBottom),
+          const [Colors.white, Colors.transparent],
+        );
+      canvas.drawRect(
+        Rect.fromLTRB(
+          layerRect.left,
+          fadeTop,
+          layerRect.right,
+          layerRect.bottom,
+        ),
+        _fxPaint,
+      );
+      _fxPaint
+        ..shader = null
+        ..blendMode = BlendMode.srcOver;
       canvas.restore();
     }
 

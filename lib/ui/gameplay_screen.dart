@@ -19,7 +19,8 @@ import 'lose_overlay.dart';
 import 'mechanic_unlock_dialog.dart';
 import 'more_lives_dialog.dart';
 import 'powerup_buy_popup.dart';
-import 'shop_view.dart';
+// Temporarily disabled while IAP/Shop are deferred to next version:
+// import 'shop_view.dart';
 import 'unity_ui_kit.dart';
 import 'win_overlay.dart';
 
@@ -548,15 +549,16 @@ class _GameplayScreenState extends State<GameplayScreen>
       _startLevel(nextBonus);
       return;
     }
-    final unlockedJourneyNow =
-        _activeLevel.number == PlayerProgressService.journeyUnlockLevel &&
-            !widget.progress.journeyUnlockedSeen;
+    // Temporarily disabled while Journey is deferred to next version:
+    // final unlockedJourneyNow =
+    //     _activeLevel.number == PlayerProgressService.journeyUnlockLevel &&
+    //         !widget.progress.journeyUnlockedSeen;
     widget.progress.advanceToNextCampaignLevel();
-    if (unlockedJourneyNow && widget.onExitToHome != null) {
-      widget.progress.markPendingJourneyUnlockShowcase();
-      widget.onExitToHome!();
-      return;
-    }
+    // if (unlockedJourneyNow && widget.onExitToHome != null) {
+    //   widget.progress.markPendingJourneyUnlockShowcase();
+    //   widget.onExitToHome!();
+    //   return;
+    // }
     final nextLv =
         widget.repository.getCampaignLevel(widget.progress.currentLevel);
     _startLevel(nextLv);
@@ -2514,13 +2516,14 @@ class _GameplayScreenState extends State<GameplayScreen>
                       });
                     }
                   },
-                  onFailOfferTap: () {
-                    widget.audio.playClick();
-                    showFailOfferDialog(
-                      context,
-                      progress: widget.progress,
-                    );
-                  },
+                  // Temporarily disabled while IAP/Shop/Journey are deferred to next version:
+                  // onFailOfferTap: () {
+                  //   widget.audio.playClick();
+                  //   showFailOfferDialog(
+                  //     context,
+                  //     progress: widget.progress,
+                  //   );
+                  // },
                   onRetry: _handleRetryLevel,
                 );
               },

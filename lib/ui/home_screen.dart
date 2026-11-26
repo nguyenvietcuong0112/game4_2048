@@ -6,26 +6,24 @@ import '../services/ads_manager.dart';
 import '../services/analytics_service.dart';
 import '../services/app_version_service.dart';
 import '../services/audio_haptics_service.dart';
-import '../services/iap_service.dart';
+// Temporarily disabled while IAP/Shop/Journey are deferred to next version:
+// import '../services/iap_service.dart';
 import '../services/player_progress_service.dart';
-import 'journey_view.dart';
+// import 'journey_view.dart';
 import 'more_lives_dialog.dart';
-import 'shop_view.dart';
+// import 'shop_view.dart';
 import 'unity_ui_kit.dart';
 
-enum _HomeTab {
-  shop,
-  home,
-  journey,
-}
+// enum _HomeTab {
+//   shop,
+//   home,
+//   journey,
+// }
 
 /// Home Screen displayed before Gameplay matching `assets/images/UI Home/Home/Home_view.png`:
-/// - Tabs: `Shop`, `Home` (Kitchen Scene + Play CTA), and `Journey` (unlocks after Level 20)
+/// - Tabs: `Shop`, `Home` (Kitchen Scene + Play CTA), and `Journey` (currently commented for next version)
 /// - Top bar: Avatar (`frame_avatar.png`), Hearts pill, Coins pill, Settings (`btn_setting.png`)
-/// - Upper promo badges: `No Ads` (`icon_ads.png`) and `Starter Pack` (`icon_reward 1.png`)
 /// - Primary Play CTA: `btn_green_play.png` (`"Level X"`), gated by Heart > 0 (`MoreLivesDialog`)
-/// - Bottom bar: `frame_menubar.png` + Shop (`icon_shop.png`), raised active tab (`frame_footer.png`),
-///   and Journey (`Icon_Gllery.png`) / Locked tab (`icon_lock.png`).
 class HomeScreen extends StatefulWidget {
   final LevelRepository repository;
   final AudioHapticsService audio;
@@ -54,8 +52,9 @@ class _HomeScreenState extends State<HomeScreen>
   bool _settingsOpen = false;
   bool _showMoreLivesModal = false;
   bool _pendingPlayAfterLifeRecovery = false;
-  _HomeTab _activeTab = _HomeTab.home;
-  ShopScrollSection _shopSection = ShopScrollSection.top;
+  // Temporarily disabled while IAP/Shop/Journey are deferred to next version:
+  // _HomeTab _activeTab = _HomeTab.home;
+  // ShopScrollSection _shopSection = ShopScrollSection.top;
 
   @override
   void initState() {
@@ -71,33 +70,33 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 2200),
     )..repeat(reverse: true);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkPendingJourneyShowcase();
-    });
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   _checkPendingJourneyShowcase();
+    // });
   }
 
-  @override
-  void didUpdateWidget(covariant HomeScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkPendingJourneyShowcase();
-    });
-  }
+  // @override
+  // void didUpdateWidget(covariant HomeScreen oldWidget) {
+  //   super.didUpdateWidget(oldWidget);
+  //   WidgetsBinding.instance.addPostFrameCallback((_) {
+  //     _checkPendingJourneyShowcase();
+  //   });
+  // }
 
-  void _checkPendingJourneyShowcase() {
-    if (!mounted) return;
-    if (widget.progress.consumePendingJourneyUnlockShowcase()) {
-      setState(() => _activeTab = _HomeTab.journey);
-      _showToast('Journey Unlocked!');
-    }
-  }
+  // void _checkPendingJourneyShowcase() {
+  //   if (!mounted) return;
+  //   if (widget.progress.consumePendingJourneyUnlockShowcase()) {
+  //     setState(() => _activeTab = _HomeTab.journey);
+  //     _showToast('Journey Unlocked!');
+  //   }
+  // }
 
-  void _openShopTab([ShopScrollSection section = ShopScrollSection.top]) {
-    setState(() {
-      _activeTab = _HomeTab.shop;
-      _shopSection = section;
-    });
-  }
+  // void _openShopTab([ShopScrollSection section = ShopScrollSection.top]) {
+  //   setState(() {
+  //     _activeTab = _HomeTab.shop;
+  //     _shopSection = section;
+  //   });
+  // }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -248,13 +247,14 @@ class _HomeScreenState extends State<HomeScreen>
           // stays uncropped and vertical landmarks (`counter rim = 1436 / 2160`) map 1:1.
           const double bgDesignH = 2160.0;
           final bgScaleY = screenSize.height / bgDesignH;
-          final dockArtH = 232.0 * bgScaleY;
-          final activeCardLift = 89.0 * bgScaleY;
-          final activeCardW = ux(context, 385);
+          // Temporarily unused while bottom nav dock is commented out for next version:
+          // final dockArtH = 232.0 * bgScaleY;
+          // final activeCardLift = 89.0 * bgScaleY;
+          // final activeCardW = ux(context, 385);
 
           final playW = ux(context, 491);
           final playH = ux(context, 259);
-          final buttonTargetCenterY = 1460.0 * bgScaleY;
+          final buttonTargetCenterY = 1600.0 * bgScaleY;
           final minPlayTop = safePadding.top + ux(context, 540);
 
           return ListenableBuilder(
@@ -272,14 +272,10 @@ class _HomeScreenState extends State<HomeScreen>
                       safePadding.bottom + ux(context, 132),
                     )
                   : 0.0;
-              final navSafeBottom = showBannerSpace ? 0.0 : safePadding.bottom;
-              final bottomDockBarH = dockArtH + navSafeBottom;
-              final maxPlayTop = screenSize.height -
-                  bottomBannerH -
-                  bottomDockBarH -
-                  activeCardLift -
-                  playH -
-                  ux(context, 14);
+              // final navSafeBottom = showBannerSpace ? 0.0 : safePadding.bottom;
+              // final bottomDockBarH = dockArtH + navSafeBottom;
+              final maxPlayTop =
+                  screenSize.height - bottomBannerH - playH - ux(context, 36);
               final double playTop = (buttonTargetCenterY - playH * 0.5)
                   .clamp(minPlayTop, math.max(minPlayTop, maxPlayTop))
                   .toDouble();
@@ -292,15 +288,16 @@ class _HomeScreenState extends State<HomeScreen>
               final heartText = isFull
                   ? 'Full'
                   : widget.progress.formattedNextLifeCountdown();
-              final journeyUnlocked = widget.progress.isJourneyUnlocked;
-              final navTotalClearance =
-                  bottomBannerH + bottomDockBarH + ux(context, 24);
-              final topHudClearance = safePadding.top + ux(context, 185);
+              // final journeyUnlocked = widget.progress.isJourneyUnlocked;
+              // final navTotalClearance =
+              //     bottomBannerH + bottomDockBarH + ux(context, 24);
+              // final topHudClearance = safePadding.top + ux(context, 185);
 
               return Stack(
                 fit: StackFit.expand,
                 children: [
-              // 1. Active Tab Body (`Shop`, `Home`, or `Journey`)
+              // 1. Active Tab Body (`Shop` & `Journey` temporarily commented out for next version)
+              /*
               if (_activeTab == _HomeTab.shop)
                 ShopView(
                   progress: widget.progress,
@@ -314,13 +311,12 @@ class _HomeScreenState extends State<HomeScreen>
                   bottomClearance: navTotalClearance,
                 )
               else ...[
-                // Fullscreen Home Backdrop (`Base` Kitchen `BG.webp` or unlocked Journey World BG)
+              */
+                // Fullscreen Kitchen Workshop Art Backdrop (`BG.webp` fitXY)
                 RepaintBoundary(
                   child: Image.asset(
-                    widget.progress.selectedJourneyBgTheme.fullBgAsset,
-                    fit: widget.progress.selectedJourneyBgId == 0
-                        ? BoxFit.fill
-                        : BoxFit.cover,
+                    'assets/images/UI Home/Home/BG.webp',
+                    fit: BoxFit.fill,
                     width: double.infinity,
                     height: double.infinity,
                   ),
@@ -344,71 +340,71 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ),
-              ],
+              // ],
 
               // 3. Top Resource Bar (`Avatar`, `Hearts`, `Coins`, `Settings`)
-              // Hidden on Shop tab because ShopView draws its own scalloped awning + Coin HUD.
-              if (_activeTab != _HomeTab.shop)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        ux(context, 40),
-                        ux(context, 22),
-                        ux(context, 46),
-                        0,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _HomeAvatarBadge(size: ux(context, 161)),
-                          SizedBox(width: ux(context, 18)),
-                          Expanded(
-                            child: _HomeResourcePill(
-                              key: const ValueKey('home_hearts_pill'),
-                              onTap: _handleHeartsPillTapped,
-                              leadingAsset:
-                                  'assets/images/UI Home/Home/icon_heart.png',
-                              leadingOverlayText: isInfinity
-                                  ? '∞'
-                                  : (isFull ? null : '$lives'),
-                              label: heartText,
-                            ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      ux(context, 40),
+                      ux(context, 22),
+                      ux(context, 46),
+                      0,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _HomeAvatarBadge(size: ux(context, 161)),
+                        SizedBox(width: ux(context, 18)),
+                        Expanded(
+                          child: _HomeResourcePill(
+                            key: const ValueKey('home_hearts_pill'),
+                            onTap: _handleHeartsPillTapped,
+                            leadingAsset:
+                                'assets/images/UI Home/Home/icon_heart.png',
+                            leadingOverlayText: isInfinity
+                                ? '∞'
+                                : (isFull ? null : '$lives'),
+                            label: heartText,
                           ),
-                          SizedBox(width: ux(context, 18)),
-                          Expanded(
-                            child: _HomeResourcePill(
-                              key: const ValueKey('home_coins_pill'),
-                              onTap: () {
-                                widget.audio.playClick();
-                                _openShopTab(ShopScrollSection.coins);
-                              },
-                              leadingAsset: 'assets/images/Icon_Coin.png',
-                              showPlusBadge: true,
-                              label: '${widget.progress.coins}',
-                            ),
-                          ),
-                          SizedBox(width: ux(context, 18)),
-                          UnitySpriteButton(
-                            key: const ValueKey('home_settings_btn'),
-                            asset: 'UI Home/Home/btn_setting.png',
-                            unitySize: 139,
+                        ),
+                        SizedBox(width: ux(context, 18)),
+                        Expanded(
+                          child: _HomeResourcePill(
+                            key: const ValueKey('home_coins_pill'),
                             onTap: () {
                               widget.audio.playClick();
-                              setState(() => _settingsOpen = true);
+                              _showToast('Shop coming soon!');
+                              // _openShopTab(ShopScrollSection.coins);
                             },
+                            leadingAsset: 'assets/images/Icon_Coin.png',
+                            showPlusBadge: true,
+                            label: '${widget.progress.coins}',
                           ),
-                        ],
-                      ),
+                        ),
+                        SizedBox(width: ux(context, 18)),
+                        UnitySpriteButton(
+                          key: const ValueKey('home_settings_btn'),
+                          asset: 'UI Home/Home/btn_setting.png',
+                          unitySize: 139,
+                          onTap: () {
+                            widget.audio.playClick();
+                            setState(() => _settingsOpen = true);
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
 
-              // 4. Upper Promo Shortcuts (`No Ads` & `Starter Pack`) on Home tab
+              // 4. Upper Promo Shortcuts (`No Ads` & `Starter Pack`) — temporarily commented out
+              /*
               if (_activeTab == _HomeTab.home)
                 Positioned(
                   top: 0,
@@ -463,31 +459,31 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ),
+              */
 
-              // 5. Primary Play Button (`btn_green_play.png` -> `"Level X"`) on Home tab
-              if (_activeTab == _HomeTab.home)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: playTop,
-                  child: Center(
-                    child: AnimatedBuilder(
-                      animation: _ctaPulseCtrl,
-                      builder: (context, child) {
-                        final pulse =
-                            1.0 + 0.022 * math.sin(_ctaPulseCtrl.value * math.pi);
-                        return Transform.scale(scale: pulse, child: child);
-                      },
-                      child: _HomePlayButton(
-                        key: const ValueKey('home_play_level_btn'),
-                        levelNumber: currentLv,
-                        width: playW,
-                        height: playH,
-                        onTap: _handlePlayTapped,
-                      ),
+              // 5. Primary Play Button (`btn_green_play.png` -> `"Level X"`)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: playTop,
+                child: Center(
+                  child: AnimatedBuilder(
+                    animation: _ctaPulseCtrl,
+                    builder: (context, child) {
+                      final pulse =
+                          1.0 + 0.022 * math.sin(_ctaPulseCtrl.value * math.pi);
+                      return Transform.scale(scale: pulse, child: child);
+                    },
+                    child: _HomePlayButton(
+                      key: const ValueKey('home_play_level_btn'),
+                      levelNumber: currentLv,
+                      width: playW,
+                      height: playH,
+                      onTap: _handlePlayTapped,
                     ),
                   ),
                 ),
+              ),
 
               // 6. Transparent Reserved Bottom Ad Banner Overlay Region
               Positioned(
@@ -499,7 +495,8 @@ class _HomeScreenState extends State<HomeScreen>
                 child: const IgnorePointer(child: SizedBox.expand()),
               ),
 
-              // 6b. Bottom Navigation Bar (`Shop`, `Home`, `Journey`/`Lock`)
+              // 6b. Bottom Navigation Bar (`Shop`, `Home`, `Journey`/`Lock`) — temporarily commented out
+              /*
               Positioned(
                 key: const ValueKey('home_bottom_nav_bar'),
                 left: 0,
@@ -534,6 +531,7 @@ class _HomeScreenState extends State<HomeScreen>
                   },
                 ),
               ),
+              */
 
               // 7. Home Settings Modal (`PopUp_Setting`)
               if (_settingsOpen) _buildHomeSettingsOverlay(context),
@@ -575,7 +573,7 @@ class _HomeScreenState extends State<HomeScreen>
                 Positioned(
                   left: 24,
                   right: 24,
-                  bottom: bottomBannerH + bottomDockBarH + ux(context, 16),
+                  bottom: bottomBannerH + ux(context, 24),
                   child: IgnorePointer(
                     child: AnimatedOpacity(
                       opacity: _toastOpacity,
@@ -625,6 +623,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ignore: unused_field
   static const _homeTabTextMaterial = UnityTextMaterial(
     faceTop: Colors.white,
     faceBottom: Colors.white,
@@ -653,7 +652,8 @@ class _HomeScreenState extends State<HomeScreen>
           onTap: () {},
           child: SizedBox(
             width: ux(context, 884),
-            height: ux(context, 780),
+            // Compact height while Restore is commented out (was 780 with Restore button)
+            height: ux(context, 600),
             child: Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.topCenter,
@@ -672,7 +672,8 @@ class _HomeScreenState extends State<HomeScreen>
                   left: ux(context, 50),
                   right: ux(context, 50),
                   top: ux(context, 184),
-                  height: ux(context, 520),
+                  // Compact inner panel while Restore is commented out (was 520 with Restore button)
+                  height: ux(context, 340),
                   child: UnityNineSlice(
                     sprite: 'Panel_Popup.png',
                     pixelMultiplier: 1.0,
@@ -713,28 +714,29 @@ class _HomeScreenState extends State<HomeScreen>
                             );
                           },
                         ),
-                        SizedBox(height: ux(context, 36)),
-                        _HomeAssetActionButton(
-                          key: const ValueKey('home_settings_restore_btn'),
-                          assetPath:
-                              'assets/images/UI Home/btn_green_setting 2.png',
-                          label: 'Restore',
-                          width: ux(context, 420),
-                          height: ux(context, 190),
-                          onTap: () async {
-                            widget.audio.playClick();
-                            final ok = await IapService.restorePurchases(
-                              widget.progress,
-                            );
-                            if (!mounted) return;
-                            _showToast(
-                              ok
-                                  ? 'Purchases restored!'
-                                  : 'No previous purchases found.',
-                            );
-                          },
-                        ),
-                        SizedBox(height: ux(context, 26)),
+                        // Temporarily disabled while IAP/Shop/Journey are deferred to next version:
+                        // SizedBox(height: ux(context, 36)),
+                        // _HomeAssetActionButton(
+                        //   key: const ValueKey('home_settings_restore_btn'),
+                        //   assetPath:
+                        //       'assets/images/UI Home/btn_green_setting 2.png',
+                        //   label: 'Restore',
+                        //   width: ux(context, 420),
+                        //   height: ux(context, 190),
+                        //   onTap: () async {
+                        //     widget.audio.playClick();
+                        //     final ok = await IapService.restorePurchases(
+                        //       widget.progress,
+                        //     );
+                        //     if (!mounted) return;
+                        //     _showToast(
+                        //       ok
+                        //           ? 'Purchases restored!'
+                        //           : 'No previous purchases found.',
+                        //     );
+                        //   },
+                        // ),
+                        SizedBox(height: ux(context, 44)),
                         ValueListenableBuilder<String>(
                           valueListenable: AppVersionService.versionNotifier,
                           builder: (context, _, _) => Text(
@@ -1254,11 +1256,13 @@ class _HomePlayButtonState extends State<_HomePlayButton> {
   }
 }
 
+// ignore: unused_element
 class _HomeNavTabButton extends StatefulWidget {
   final VoidCallback onTap;
   final Widget child;
 
   const _HomeNavTabButton({
+    // ignore: unused_element_parameter
     super.key,
     required this.onTap,
     required this.child,
@@ -1334,6 +1338,7 @@ class _HomeSettingToggle extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _HomeAssetActionButton extends StatefulWidget {
   final String assetPath;
   final String label;
@@ -1342,6 +1347,7 @@ class _HomeAssetActionButton extends StatefulWidget {
   final VoidCallback onTap;
 
   const _HomeAssetActionButton({
+    // ignore: unused_element_parameter
     super.key,
     required this.assetPath,
     required this.label,
@@ -1407,6 +1413,7 @@ class _HomeAssetActionButtonState extends State<_HomeAssetActionButton> {
   }
 }
 
+/*
 class _HomeBottomNavDock extends StatelessWidget {
   final _HomeTab activeTab;
   final bool journeyUnlocked;
@@ -1683,5 +1690,6 @@ class _HomeBottomNavDock extends StatelessWidget {
     );
   }
 }
+*/
 
 

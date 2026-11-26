@@ -17,6 +17,11 @@ plugins {
     id("com.google.firebase.crashlytics")
     // END: FlutterFire Configuration
     id("dev.flutter.flutter-gradle-plugin")
+    id("applovin-quality-service")
+}
+
+applovin {
+    apiKey = "qRZzTMEyyQ0xxLqyERK6esE2su_KcIIRQ1FAqWCTxoo0bTSiVBtIwzyHEEmQd4WdqgOU8BkmP2M7isrUS50p4f"
 }
 
 android {
@@ -34,8 +39,8 @@ android {
         applicationId = "com.fw.water.block.number.merge"
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        versionCode = 101
-        versionName = "1.0.1"
+        versionCode = 102
+        versionName = "1.0.2"
     }
 
     signingConfigs {

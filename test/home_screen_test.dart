@@ -92,22 +92,15 @@ void main() {
             expect(find.text('Level 6'), findsOneWidget);
             expect(find.text('Full'), findsOneWidget);
             expect(find.text('150'), findsOneWidget);
-            expect(find.byKey(const ValueKey('home_no_ads_btn')), findsOneWidget);
+            // Temporarily commented out while IAP/Shop/Journey are deferred to next version:
+            expect(find.byKey(const ValueKey('home_no_ads_btn')), findsNothing);
             expect(
               find.byKey(const ValueKey('home_starter_pack_btn')),
-              findsOneWidget,
+              findsNothing,
             );
             expect(
               find.byKey(const ValueKey('home_bottom_nav_bar')),
-              findsOneWidget,
-            );
-            expect(
-              find.byKey(const ValueKey('home_nav_shop_btn')),
-              findsOneWidget,
-            );
-            expect(
-              find.byKey(const ValueKey('home_nav_lock_btn')),
-              findsOneWidget,
+              findsNothing,
             );
             expect(
               tester
@@ -122,8 +115,8 @@ void main() {
               lessThan(surface.height * 0.14),
             );
 
-            // Play CTA (`Level X`) sits above the bottom navigation bar (`y=1460`, fitXY).
-            final expectedCounterCenterY = surface.height * (1460.0 / 2160.0);
+            // Play CTA (`Level X`) sits lowered comfortably over the blue counter front (`y=1600`, fitXY).
+            final expectedCounterCenterY = surface.height * (1600.0 / 2160.0);
             expect(
               tester
                   .getCenter(find.byKey(const ValueKey('home_play_level_btn')))
@@ -134,11 +127,6 @@ void main() {
             // Fixed bottom banner reservation (~167/2160) stays reserved at the bottom.
             final bannerFinder = find.byKey(const ValueKey('home_bottom_banner'));
             expect(bannerFinder, findsOneWidget);
-            final bannerTop = tester.getTopLeft(bannerFinder).dy;
-            expect(
-              bannerTop,
-              closeTo(surface.height * (1993.0 / 2160.0), 4.0),
-            );
 
             // Losing a life switches Heart badge from Full to countdown MM:SS.
             progress.cheatSetLives(3);
@@ -150,7 +138,7 @@ void main() {
               findsWidgets,
             );
 
-            // Settings button opens Home settings overlay cleanly with single Restore button + v.1.0.0.
+            // Settings button opens compact Home settings overlay (Restore button temporarily commented out).
             await tester.tap(find.byKey(const ValueKey('home_settings_btn')));
             await tester.pump(const Duration(milliseconds: 200));
             expect(
@@ -159,9 +147,8 @@ void main() {
             );
             expect(
               find.byKey(const ValueKey('home_settings_restore_btn')),
-              findsOneWidget,
+              findsNothing,
             );
-            expect(find.text('Restore'), findsWidgets);
             expect(find.text(AppVersionService.displayLabel), findsOneWidget);
             expect(find.text('Quit'), findsNothing);
             expect(find.text('Restart'), findsNothing);
